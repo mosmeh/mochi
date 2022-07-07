@@ -108,37 +108,29 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         heap.allocate(LuaString::from("require")).into(),
         heap.allocate(NativeClosure::new(move |heap, vm, key| {
             let package_str = Value::from(heap.allocate(LuaString::from("package")));
-            let package_table = *vm.global_table().borrow().0.get(&package_str).unwrap();
+            let package_table = vm.global_table().borrow().get(package_str);
             let package_table = package_table.as_table().unwrap();
 
             let loaded_str = Value::from(heap.allocate(LuaString::from("loaded")));
             let maybe_loaded_value = {
-                let loaded_table = package_table
-                    .0
-                    .get(&loaded_str)
-                    .unwrap()
-                    .as_table()
-                    .unwrap();
+                let loaded_table = package_table.get(loaded_str);
+                let loaded_table = loaded_table.as_table().unwrap();
                 let name = vm.local_stack(key.clone())[1];
-                loaded_table.0.get(&name).cloned()
+                loaded_table.get(name)
             };
 
-            let loaded_value = if let Some(value) = maybe_loaded_value {
-                value
-            } else {
+            let loaded_value = if maybe_loaded_value == Value::Nil {
                 let name = get_string_arg(vm, key.clone(), 1)?;
                 let filename = format!("{}.lua", name.as_str()?);
                 let closure = crate::load_file(heap, &filename).unwrap();
                 let value = vm.execute(heap, closure).unwrap();
-                let mut loaded_table = package_table
-                    .0
-                    .get(&loaded_str)
-                    .unwrap()
-                    .as_table_mut(heap)
-                    .unwrap();
+                let loaded_table = package_table.get(loaded_str);
+                let mut loaded_table = loaded_table.as_table_mut(heap).unwrap();
                 let name = vm.local_stack(key.clone())[1];
-                loaded_table.0.insert(name, value);
+                loaded_table.set(name, value);
                 value
+            } else {
+                maybe_loaded_value
             };
 
             vm.local_stack_mut(key)[0] = loaded_value;
@@ -446,8 +438,7 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     let global = heap.allocate_cell(Table::from(env));
     global
         .borrow_mut(heap)
-        .0
-        .insert(heap.allocate(LuaString::from("_G")).into(), global.into());
+        .set(heap.allocate(LuaString::from("_G")), global);
     global
 }
 

@@ -194,22 +194,19 @@ impl<'a> Vm<'a> {
                             operation: Operation::Index,
                             ty: value.ty(),
                         })?;
-                        let rc = &closure.proto.constants[insn.c() as usize];
-                        table.0.get(rc).cloned().unwrap_or_else(|| {
-                            eprintln!("Not found: {}", rc);
-                            Value::Nil
-                        })
+                        let rc = closure.proto.constants[insn.c() as usize];
+                        table.get(rc)
                     };
                 }
                 OpCode::GetTable => {
                     state.stack[insn.a()] = {
                         let rb = &state.stack[insn.b()];
-                        let rc = &state.stack[insn.c() as usize];
+                        let rc = state.stack[insn.c() as usize];
                         let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
                         })?;
-                        table.0.get(rc).cloned().unwrap_or_default()
+                        table.get(rc)
                     };
                 }
                 OpCode::GetI => {
@@ -219,8 +216,8 @@ impl<'a> Vm<'a> {
                             operation: Operation::Index,
                             ty: rb.ty(),
                         })?;
-                        let c = (insn.c() as Integer).into();
-                        table.0.get(&c).cloned().unwrap_or_default()
+                        let c = insn.c() as Integer;
+                        table.get(c)
                     };
                 }
                 OpCode::GetField => {
@@ -230,11 +227,8 @@ impl<'a> Vm<'a> {
                             operation: Operation::Index,
                             ty: rb.ty(),
                         })?;
-                        let rc = &closure.proto.constants[insn.c() as usize];
-                        table.0.get(rc).cloned().unwrap_or_else(|| {
-                            eprintln!("Not found: {}", rc);
-                            Value::Nil
-                        })
+                        let rc = closure.proto.constants[insn.c() as usize];
+                        table.get(rc)
                     };
                 }
                 OpCode::SetTabUp => {
@@ -249,12 +243,12 @@ impl<'a> Vm<'a> {
                                 ty: table_value.ty(),
                             })?;
                     let c = insn.c() as usize;
-                    let rkc = *if insn.k() {
-                        &closure.proto.constants[c]
+                    let rkc = if insn.k() {
+                        closure.proto.constants[c]
                     } else {
-                        &state.stack[c]
+                        state.stack[c]
                     };
-                    table.0.insert(kb, rkc);
+                    table.set(kb, rkc);
                 }
                 OpCode::SetTable => {
                     let ra = &state.stack[insn.a()];
@@ -264,12 +258,12 @@ impl<'a> Vm<'a> {
                     })?;
                     let rb = state.stack[insn.b()];
                     let c = insn.c() as usize;
-                    let rkc = *if insn.k() {
-                        &closure.proto.constants[c]
+                    let rkc = if insn.k() {
+                        closure.proto.constants[c]
                     } else {
-                        &state.stack[c]
+                        state.stack[c]
                     };
-                    table.0.insert(rb, rkc);
+                    table.set(rb, rkc);
                 }
                 OpCode::SetI => {
                     let ra = &state.stack[insn.a()];
@@ -277,29 +271,29 @@ impl<'a> Vm<'a> {
                         operation: Operation::Index,
                         ty: ra.ty(),
                     })?;
-                    let b = (insn.b() as Integer).into();
+                    let b = insn.b() as Integer;
                     let c = insn.c() as usize;
-                    let rkc = *if insn.k() {
-                        &closure.proto.constants[c]
+                    let rkc = if insn.k() {
+                        closure.proto.constants[c]
                     } else {
-                        &state.stack[c]
+                        state.stack[c]
                     };
-                    table.0.insert(b, rkc);
+                    table.set(b, rkc);
                 }
                 OpCode::SetField => {
-                    let ra = &state.stack[insn.a()];
+                    let ra = state.stack[insn.a()];
                     let mut table = ra.as_table_mut(heap).ok_or_else(|| ErrorKind::TypeError {
                         operation: Operation::Index,
                         ty: ra.ty(),
                     })?;
                     let kb = closure.proto.constants[insn.b()];
                     let c = insn.c() as usize;
-                    let rkc = *if insn.k() {
-                        &closure.proto.constants[c]
+                    let rkc = if insn.k() {
+                        closure.proto.constants[c]
                     } else {
-                        &state.stack[c]
+                        state.stack[c]
                     };
-                    table.0.insert(kb, rkc);
+                    table.set(kb, rkc);
                 }
                 OpCode::NewTable => {
                     state.stack[insn.a()] = heap.allocate_cell(Table::new()).into();
@@ -315,11 +309,11 @@ impl<'a> Vm<'a> {
                     })?;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
-                        &closure.proto.constants[c]
+                        closure.proto.constants[c]
                     } else {
-                        &state.stack[c]
+                        state.stack[c]
                     };
-                    state.stack[a] = table.0.get(rkc).cloned().unwrap_or_default();
+                    state.stack[a] = table.get(rkc);
                 }
                 OpCode::AddI => {
                     ops::do_arithmetic_with_immediate(&mut state, insn, Integer::add, Number::add)
@@ -629,7 +623,7 @@ impl<'a> Vm<'a> {
                         ty: ra.ty(),
                     })?;
                     for (i, x) in state.stack[a + 1..=a + b].iter().cloned().enumerate() {
-                        table.0.insert(Value::Integer((c + i + 1) as Integer), x);
+                        table.set((c + i + 1) as Integer, x);
                     }
                 }
                 OpCode::Closure => {

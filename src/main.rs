@@ -51,25 +51,21 @@ fn main() -> Result<()> {
             #[cfg(not(unix))]
             script.to_string_lossy()
         };
-        arg.0
-            .insert(0.into(), heap.0.allocate(LuaString::from(script)).into());
+        arg.set(0, heap.0.allocate(LuaString::from(script)));
     }
     for (i, x) in args.args.into_iter().enumerate() {
         let key = (i + 1) as Integer;
         let value = LuaString::from(x);
-        arg.0.insert(key.into(), heap.0.allocate(value).into());
+        arg.set(key, heap.0.allocate(value));
     }
 
     let global_table = mochi::create_global_table(&heap.0);
     {
         let mut table = global_table.borrow_mut(&heap.0);
-        table.0.insert(
-            heap.0.allocate(LuaString::from("_ENV")).into(),
-            global_table.into(),
-        );
-        table.0.insert(
-            heap.0.allocate(LuaString::from("arg")).into(),
-            heap.0.allocate_cell(arg).into(),
+        table.set(heap.0.allocate(LuaString::from("_ENV")), global_table);
+        table.set(
+            heap.0.allocate(LuaString::from("arg")),
+            heap.0.allocate_cell(arg),
         );
     }
 
