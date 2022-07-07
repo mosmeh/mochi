@@ -147,6 +147,10 @@ impl GcHeap {
     }
 
     fn write_barrier<T: Trace>(&self, ptr: GcPtr<T>) {
+        if self.phase.get() != Phase::Propagate {
+            return;
+        }
+
         let gc_box = unsafe { ptr.as_ref() };
         if gc_box.color.get() == Color::Black {
             gc_box.color.set(Color::Gray);
