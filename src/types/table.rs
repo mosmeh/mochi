@@ -44,4 +44,24 @@ impl<'a> Table<'a> {
             self.0.insert(key, value);
         }
     }
+
+    pub fn lua_len(&self) -> Integer {
+        let mut i = 0;
+        let mut j = 1;
+        while self.0.contains_key(&j.into()) {
+            if j == Integer::MAX {
+                return j;
+            }
+            j = j.saturating_mul(2);
+        }
+        while j - i > 1 {
+            let m = (j - i) / 2 + i;
+            if self.0.contains_key(&m.into()) {
+                i = m;
+            } else {
+                j = m;
+            }
+        }
+        i
+    }
 }

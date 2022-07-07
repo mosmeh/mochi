@@ -416,7 +416,17 @@ impl<'a> Vm<'a> {
                         Value::Boolean(!rb.as_boolean())
                     }
                 }
-                OpCode::Len => unimplemented!("LEN"),
+                OpCode::Len => {
+                    state.stack[insn.a()] = {
+                        let rb = state.stack[insn.b()];
+                        let len = match rb {
+                            Value::String(s) => s.len() as Integer,
+                            Value::Table(t) => t.borrow().lua_len(),
+                            _ => unimplemented!("LEN"),
+                        };
+                        len.into()
+                    };
+                }
                 OpCode::Concat => {
                     let a = insn.a();
                     let b = insn.b();
