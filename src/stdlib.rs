@@ -64,9 +64,9 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         heap.allocate(LuaString::from("tonumber")).into(),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
-            stack[0] = match &stack[1] {
-                Value::Integer(x) => Value::Integer(*x),
-                Value::Number(x) => Value::Number(*x),
+            stack[0] = match stack[1] {
+                Value::Integer(x) => Value::Integer(x),
+                Value::Number(x) => Value::Number(x),
                 Value::String(x) => x
                     .as_str()
                     .ok()
@@ -240,8 +240,8 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         heap.allocate(LuaString::from("floor")).into(),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
-            stack[0] = match &stack[1] {
-                value @ Value::Integer(_) => *value,
+            stack[0] = match stack[1] {
+                value @ Value::Integer(_) => value,
                 value => {
                     let x = value
                         .as_number()

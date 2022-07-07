@@ -116,8 +116,8 @@ impl<'a> Vm<'a> {
                     .iter()
                     .rev()
                     .map(|frame| {
-                        let value = &self.stack[frame.bottom];
-                        let proto = &value.as_lua_closure().unwrap().proto;
+                        let value = self.stack[frame.bottom];
+                        let proto = value.as_lua_closure().unwrap().proto;
                         TracebackFrame {
                             source: String::from_utf8_lossy(&proto.source).to_string(),
                             lines_defined: proto.lines_defined.clone(),
@@ -138,7 +138,7 @@ impl<'a> Vm<'a> {
         let prev_stack_top = self.stack.len();
         self.stack.resize(
             {
-                let value = &self.stack[frame.bottom];
+                let value = self.stack[frame.bottom];
                 let closure = value.as_lua_closure().unwrap();
                 frame.bottom + 1 + closure.proto.max_stack_size as usize
             },
@@ -200,7 +200,7 @@ impl<'a> Vm<'a> {
                 }
                 OpCode::GetTable => {
                     state.stack[insn.a()] = {
-                        let rb = &state.stack[insn.b()];
+                        let rb = state.stack[insn.b()];
                         let rc = state.stack[insn.c() as usize];
                         let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
@@ -211,7 +211,7 @@ impl<'a> Vm<'a> {
                 }
                 OpCode::GetI => {
                     state.stack[insn.a()] = {
-                        let rb = &state.stack[insn.b()];
+                        let rb = state.stack[insn.b()];
                         let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
@@ -222,7 +222,7 @@ impl<'a> Vm<'a> {
                 }
                 OpCode::GetField => {
                     state.stack[insn.a()] = {
-                        let rb = &state.stack[insn.b()];
+                        let rb = state.stack[insn.b()];
                         let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
@@ -251,7 +251,7 @@ impl<'a> Vm<'a> {
                     table.set(kb, rkc);
                 }
                 OpCode::SetTable => {
-                    let ra = &state.stack[insn.a()];
+                    let ra = state.stack[insn.a()];
                     let mut table = ra.as_table_mut(heap).ok_or_else(|| ErrorKind::TypeError {
                         operation: Operation::Index,
                         ty: ra.ty(),
@@ -266,7 +266,7 @@ impl<'a> Vm<'a> {
                     table.set(rb, rkc);
                 }
                 OpCode::SetI => {
-                    let ra = &state.stack[insn.a()];
+                    let ra = state.stack[insn.a()];
                     let mut table = ra.as_table_mut(heap).ok_or_else(|| ErrorKind::TypeError {
                         operation: Operation::Index,
                         ty: ra.ty(),
@@ -390,7 +390,7 @@ impl<'a> Vm<'a> {
                 OpCode::MmBinK => unimplemented!("MMBINK"),
                 OpCode::Unm => {
                     state.stack[insn.a()] = {
-                        let rb = &state.stack[insn.b()];
+                        let rb = state.stack[insn.b()];
                         if let Some(x) = rb.as_integer() {
                             Value::Integer(-x)
                         } else if let Some(x) = rb.as_number() {
@@ -402,7 +402,7 @@ impl<'a> Vm<'a> {
                 }
                 OpCode::BNot => {
                     state.stack[insn.a()] = {
-                        let rb = &state.stack[insn.b()];
+                        let rb = state.stack[insn.b()];
                         if let Some(x) = rb.as_integer() {
                             Value::Integer(!x)
                         } else {
@@ -412,7 +412,7 @@ impl<'a> Vm<'a> {
                 }
                 OpCode::Not => {
                     state.stack[insn.a()] = {
-                        let rb = &state.stack[insn.b()];
+                        let rb = state.stack[insn.b()];
                         Value::Boolean(!rb.as_boolean())
                     }
                 }
@@ -617,7 +617,7 @@ impl<'a> Vm<'a> {
                     let a = insn.a();
                     let b = insn.b();
                     let c = insn.c() as usize;
-                    let ra = &state.stack[a];
+                    let ra = state.stack[a];
                     let mut table = ra.as_table_mut(heap).ok_or_else(|| ErrorKind::TypeError {
                         operation: Operation::Index,
                         ty: ra.ty(),
@@ -652,7 +652,7 @@ impl<'a> Vm<'a> {
 
             struct Root<'a, 'b> {
                 state: &'b State<'a, 'b>,
-                global_table: &'b GcCell<'a, Table<'a>>,
+                global_table: GcCell<'a, Table<'a>>,
                 open_upvalues: &'b BTreeMap<usize, GcCell<'a, Upvalue<'a>>>,
             }
             unsafe impl Trace for Root<'_, '_> {
@@ -664,7 +664,7 @@ impl<'a> Vm<'a> {
             }
             let root = Root {
                 state: &state,
-                global_table: &self.global_table,
+                global_table: self.global_table,
                 open_upvalues: &self.open_upvalues,
             };
             unsafe { heap.step(&root) };
