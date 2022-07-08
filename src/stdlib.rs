@@ -123,9 +123,9 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
                 loaded_table.get(name)
             };
 
+            let name = get_string_arg(vm, key.clone(), 1)?;
+            let filename = format!("./{}.lua", name.as_str()?);
             let loaded_value = if maybe_loaded_value == Value::Nil {
-                let name = get_string_arg(vm, key.clone(), 1)?;
-                let filename = format!("{}.lua", name.as_str()?);
                 let closure = crate::load_file(heap, &filename).unwrap();
                 let value = vm.execute(heap, closure).unwrap();
                 let loaded_table = package_table.get(loaded_str);
@@ -137,8 +137,10 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
                 maybe_loaded_value
             };
 
-            vm.local_stack_mut(key)[0] = loaded_value;
-            Ok(1)
+            let stack = vm.local_stack_mut(key);
+            stack[0] = loaded_value;
+            stack[1] = heap.allocate(LuaString::from(filename)).into();
+            Ok(2)
         }))
         .into(),
     );
