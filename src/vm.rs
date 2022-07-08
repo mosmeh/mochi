@@ -15,7 +15,7 @@ use crate::{
 use std::{
     cmp::PartialOrd,
     collections::BTreeMap,
-    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub},
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Range, Shl, Shr, Sub},
 };
 
 #[derive(Debug, Clone)]
@@ -520,50 +520,39 @@ impl<'a> Vm<'a> {
                 OpCode::Call => {
                     self.frames.last_mut().unwrap().pc = state.pc;
                     let a = insn.a();
-                    let ra = state.stack[a];
-                    match &ra {
-                        Value::LuaClosure(_) => {
-                            self.frames.push(Frame {
-                                bottom: frame.bottom + a + 1,
-                                pc: 0,
-                            });
-                            return Ok(());
-                        }
-                        Value::NativeClosure(closure) => {
-                            let b = insn.b();
-                            let start = frame.bottom + 1 + a;
-                            let range = if b > 0 {
-                                start..start + b // fixed number of args
-                            } else {
-                                start..prev_stack_top // variable number of args
-                            };
-                            let num_results = (closure.0)(heap, self, StackKey(range))?;
-                            self.stack.truncate(start + num_results);
-                            return Ok(());
-                        }
-                        value => {
-                            return Err(ErrorKind::TypeError {
-                                operation: Operation::Call,
-                                ty: value.ty(),
-                            });
-                        }
-                    }
+                    let callee = state.stack[a];
+                    return self.call_closure(
+                        heap,
+                        callee,
+                        frame.bottom + 1 + a..prev_stack_top,
+                        insn,
+                    );
                 }
-                OpCode::TailCall => unimplemented!("TAILCALL"),
+                OpCode::TailCall => {
+                    let a = insn.a();
+                    let b = insn.b();
+                    let callee = state.stack[a];
+                    if insn.k() {
+                        self.close_upvalues(heap, frame.bottom);
+                    }
+                    let num_results = if b > 0 { b - 1 } else { self.stack.len() - a };
+                    for i in 0..num_results + 1 {
+                        self.stack[frame.bottom + i] = self.stack[frame.bottom + 1 + a + i];
+                    }
+                    let new_stack_len = frame.bottom + num_results + 1;
+                    self.stack.truncate(new_stack_len);
+                    self.frames.pop().unwrap();
+                    return self.call_closure(heap, callee, frame.bottom..new_stack_len, insn);
+                }
                 OpCode::Return => {
                     if insn.k() {
-                        for (_, upvalue) in self.open_upvalues.split_off(&frame.bottom) {
-                            let mut upvalue = upvalue.borrow_mut(heap);
-                            if let Upvalue::Open(i) = *upvalue {
-                                *upvalue = Upvalue::Closed(self.stack[i]);
-                            }
-                        }
+                        self.close_upvalues(heap, frame.bottom);
                     }
                     let a = insn.a();
                     let b = insn.b();
                     let num_results = if b > 0 { b - 1 } else { self.stack.len() - a };
                     for i in 0..num_results {
-                        self.stack[frame.bottom + i] = self.stack[frame.bottom + 1 + a];
+                        self.stack[frame.bottom + i] = self.stack[frame.bottom + 1 + a + i];
                     }
                     self.stack.truncate(frame.bottom + num_results);
                     self.frames.pop().unwrap();
@@ -678,6 +667,48 @@ impl<'a> Vm<'a> {
                 open_upvalues: &self.open_upvalues,
             };
             unsafe { heap.step(&root) };
+        }
+    }
+
+    fn call_closure(
+        &mut self,
+        heap: &'a GcHeap,
+        callee: Value<'a>,
+        stack_range: Range<usize>,
+        insn: Instruction,
+    ) -> Result<(), ErrorKind> {
+        match callee {
+            Value::LuaClosure(_) => {
+                self.frames.push(Frame {
+                    bottom: stack_range.start,
+                    pc: 0,
+                });
+                Ok(())
+            }
+            Value::NativeClosure(closure) => {
+                let b = insn.b();
+                let range = if b > 0 {
+                    stack_range.start..stack_range.start + b // fixed number of args
+                } else {
+                    stack_range.clone() // variable number of args
+                };
+                let num_results = (closure.0)(heap, self, StackKey(range))?;
+                self.stack.truncate(stack_range.start + num_results);
+                Ok(())
+            }
+            value => Err(ErrorKind::TypeError {
+                operation: Operation::Call,
+                ty: value.ty(),
+            }),
+        }
+    }
+
+    fn close_upvalues(&mut self, heap: &GcHeap, boundary: usize) {
+        for (_, upvalue) in self.open_upvalues.split_off(&boundary) {
+            let mut upvalue = upvalue.borrow_mut(heap);
+            if let Upvalue::Open(i) = *upvalue {
+                *upvalue = Upvalue::Closed(self.stack[i]);
+            }
         }
     }
 }
