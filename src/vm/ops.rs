@@ -123,7 +123,6 @@ pub(crate) fn do_float_arithmetic_with_constant<F>(
     state.stack[insn.a()] = {
         let rb = state.stack[insn.b()];
         let kc = proto.constants[insn.c() as usize];
-        debug_assert!(matches!(kc, Value::Number(_)));
         if let (Some(b), Some(c)) = (rb.as_number(), kc.as_number()) {
             state.pc += 1;
             Value::Number(float_op(b, c))
