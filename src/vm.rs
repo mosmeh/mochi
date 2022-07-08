@@ -124,6 +124,8 @@ impl<'a> Vm<'a> {
                         }
                     })
                     .collect();
+                self.stack.truncate(bottom);
+                self.frames.truncate(frame_level);
                 return Err(RuntimeError { source, traceback });
             }
         }
