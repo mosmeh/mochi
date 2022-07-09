@@ -11,6 +11,26 @@ pub fn create_table(heap: &GcHeap) -> Table {
     let mut table = FxHashMap::default();
 
     table.insert(
+        heap.allocate(LuaString::from("abs")).into(),
+        heap.allocate(NativeClosure::new(|_, vm, key| {
+            let stack = vm.local_stack_mut(key);
+            stack[0] = match stack[1] {
+                Value::Integer(x) => x.abs().into(),
+                Value::Number(x) => x.abs().into(),
+                _ => {
+                    return Err(ErrorKind::ArgumentTypeError {
+                        nth: 1,
+                        expected_type: Type::Number,
+                        got_type: stack[1].ty(),
+                    })
+                }
+            };
+            Ok(1)
+        }))
+        .into(),
+    );
+
+    table.insert(
         heap.allocate(LuaString::from("acos")).into(),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.acos().into();
@@ -86,6 +106,21 @@ pub fn create_table(heap: &GcHeap) -> Table {
     table.insert(
         heap.allocate(LuaString::from("huge")).into(),
         Number::INFINITY.into(),
+    );
+
+    table.insert(
+        heap.allocate(LuaString::from("log")).into(),
+        heap.allocate(NativeClosure::new(|_, vm, key| {
+            let x = get_number_arg(vm, key.clone(), 1)?;
+            let result = if vm.local_stack(key.clone()).len() > 2 {
+                x.log(get_number_arg(vm, key.clone(), 2)?)
+            } else {
+                x.ln()
+            };
+            vm.local_stack_mut(key)[0] = result.into();
+            Ok(1)
+        }))
+        .into(),
     );
 
     table.insert(
