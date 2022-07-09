@@ -317,28 +317,31 @@ impl<'a> Vm<'a> {
                     };
                     state.stack[a] = table.get(rkc);
                 }
-                OpCode::AddI => {
-                    ops::do_arithmetic_with_immediate(&mut state, insn, Integer::add, Number::add)
-                }
+                OpCode::AddI => ops::do_arithmetic_with_immediate(
+                    &mut state,
+                    insn,
+                    Integer::wrapping_add,
+                    Number::add,
+                ),
                 OpCode::AddK => ops::do_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
-                    Integer::add,
+                    Integer::wrapping_add,
                     Number::add,
                 ),
                 OpCode::SubK => ops::do_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
-                    Integer::sub,
+                    Integer::wrapping_sub,
                     Number::sub,
                 ),
                 OpCode::MulK => ops::do_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
-                    Integer::mul,
+                    Integer::wrapping_mul,
                     Number::mul,
                 ),
                 OpCode::ModK => unimplemented!("MODK"),
@@ -375,9 +378,15 @@ impl<'a> Vm<'a> {
                 ),
                 OpCode::ShrI => unimplemented!("SHRI"),
                 OpCode::ShlI => unimplemented!("SHLI"),
-                OpCode::Add => ops::do_arithmetic(&mut state, insn, Integer::add, Number::add),
-                OpCode::Sub => ops::do_arithmetic(&mut state, insn, Integer::sub, Number::sub),
-                OpCode::Mul => ops::do_arithmetic(&mut state, insn, Integer::mul, Number::mul),
+                OpCode::Add => {
+                    ops::do_arithmetic(&mut state, insn, Integer::wrapping_add, Number::add)
+                }
+                OpCode::Sub => {
+                    ops::do_arithmetic(&mut state, insn, Integer::wrapping_sub, Number::sub)
+                }
+                OpCode::Mul => {
+                    ops::do_arithmetic(&mut state, insn, Integer::wrapping_mul, Number::mul)
+                }
                 OpCode::Mod => unimplemented!("MOD"),
                 OpCode::Pow => ops::do_float_arithmetic(&mut state, insn, Number::powf),
                 OpCode::Div => ops::do_float_arithmetic(&mut state, insn, Number::div),
