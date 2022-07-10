@@ -18,12 +18,23 @@ use std::{collections::BTreeMap, ops::Range};
 #[derive(Debug, Clone)]
 struct Frame {
     bottom: usize,
+    base: usize,
     pc: usize,
+}
+
+impl Frame {
+    fn new(bottom: usize) -> Self {
+        Self {
+            bottom,
+            base: bottom + 1,
+            pc: 0,
+        }
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct State<'a, 'b> {
-    bottom: usize,
+    base: usize,
     pc: usize,
     stack: &'b mut [Value<'a>],
     lower_stack: &'b [Value<'a>],
@@ -40,11 +51,10 @@ impl<'a, 'b> State<'a, 'b> {
     fn resolve_upvalue(&'b self, upvalue: &'b Upvalue<'a>) -> &'b Value<'a> {
         match upvalue {
             Upvalue::Open(i) => {
-                let boundary = self.bottom + 1;
-                if *i < boundary {
+                if *i < self.base {
                     &self.lower_stack[*i]
                 } else {
-                    &self.stack[*i - boundary]
+                    &self.stack[*i - self.base]
                 }
             }
             Upvalue::Closed(x) => x,
@@ -104,7 +114,7 @@ impl<'a> Vm<'a> {
         self.stack.push(heap.allocate(closure).into());
 
         let frame_level = self.frames.len();
-        self.frames.push(Frame { bottom, pc: 0 });
+        self.frames.push(Frame::new(bottom));
 
         while self.frames.len() > frame_level {
             if let Err(source) = self.execute_frame(heap) {
@@ -141,10 +151,7 @@ impl<'a> Vm<'a> {
     ) -> Result<(), ErrorKind> {
         match callee {
             Value::LuaClosure(_) => {
-                self.frames.push(Frame {
-                    bottom: stack_range.start,
-                    pc: 0,
-                });
+                self.frames.push(Frame::new(stack_range.start));
                 Ok(())
             }
             Value::NativeClosure(closure) => {

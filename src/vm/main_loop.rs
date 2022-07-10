@@ -13,21 +13,17 @@ use std::{
 impl<'a> Vm<'a> {
     pub(super) fn execute_frame(&mut self, heap: &'a GcHeap) -> Result<(), ErrorKind> {
         let frame = self.frames.last().unwrap().clone();
-        let prev_stack_top = self.stack.len();
-        self.stack.resize(
-            {
-                let value = self.stack[frame.bottom];
-                let closure = value.as_lua_closure().unwrap();
-                frame.bottom + 1 + closure.proto.max_stack_size as usize
-            },
-            Value::Nil,
-        );
 
-        let (lower_stack, stack) = self.stack.split_at_mut(frame.bottom + 1);
-        let bottom_value = lower_stack.last().unwrap();
+        let bottom_value = self.stack[frame.bottom];
         let closure = bottom_value.as_lua_closure().unwrap();
+
+        let saved_stack_top = self.stack.len();
+        let new_stack_len = frame.base + closure.proto.max_stack_size as usize;
+        self.stack.resize(new_stack_len, Value::Nil);
+
+        let (lower_stack, stack) = self.stack.split_at_mut(frame.base);
         let mut state = State {
-            bottom: frame.bottom,
+            base: frame.base,
             pc: frame.pc,
             stack,
             lower_stack,
@@ -35,10 +31,9 @@ impl<'a> Vm<'a> {
 
         loop {
             let insn = closure.proto.code[state.pc];
-            let opcode = insn.opcode();
             state.pc += 1;
 
-            match opcode {
+            match insn.opcode() {
                 OpCode::Move => state.stack[insn.a()] = state.stack[insn.b()],
                 OpCode::LoadI => state.stack[insn.a()] = Value::Integer(insn.sbx() as Integer),
                 OpCode::LoadF => state.stack[insn.a()] = Value::Number(insn.sbx() as Number),
@@ -408,12 +403,7 @@ impl<'a> Vm<'a> {
                     self.frames.last_mut().unwrap().pc = state.pc;
                     let a = insn.a();
                     let callee = state.stack[a];
-                    return self.call_closure(
-                        heap,
-                        callee,
-                        frame.bottom + 1 + a..prev_stack_top,
-                        insn,
-                    );
+                    return self.call_closure(heap, callee, frame.base + a..saved_stack_top, insn);
                 }
                 OpCode::TailCall => {
                     let a = insn.a();
@@ -423,9 +413,10 @@ impl<'a> Vm<'a> {
                         self.close_upvalues(heap, frame.bottom);
                     }
                     let num_results = if b > 0 { b - 1 } else { self.stack.len() - a };
-                    for i in 0..num_results + 1 {
-                        self.stack[frame.bottom + i] = self.stack[frame.bottom + 1 + a + i];
-                    }
+                    self.stack.copy_within(
+                        frame.base + a..frame.base + a + num_results + 1,
+                        frame.bottom,
+                    );
                     let new_stack_len = frame.bottom + num_results + 1;
                     self.stack.truncate(new_stack_len);
                     self.frames.pop().unwrap();
@@ -438,9 +429,8 @@ impl<'a> Vm<'a> {
                     let a = insn.a();
                     let b = insn.b();
                     let num_results = if b > 0 { b - 1 } else { self.stack.len() - a };
-                    for i in 0..num_results {
-                        self.stack[frame.bottom + i] = self.stack[frame.bottom + 1 + a + i];
-                    }
+                    self.stack
+                        .copy_within(frame.base + a..frame.base + a + num_results, frame.bottom);
                     self.stack.truncate(frame.bottom + num_results);
                     self.frames.pop().unwrap();
                     return Ok(());
@@ -519,7 +509,7 @@ impl<'a> Vm<'a> {
                         .iter()
                         .map(|desc| {
                             if desc.in_stack {
-                                let index = frame.bottom + 1 + desc.index as usize;
+                                let index = frame.base + desc.index as usize;
                                 *self
                                     .open_upvalues
                                     .entry(index)
