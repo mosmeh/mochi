@@ -17,9 +17,7 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
             if stack[1].as_boolean() {
-                for (to, from) in (1..stack.len()).enumerate() {
-                    stack[to] = stack[from];
-                }
+                stack.copy_within(1..stack.len(), 0);
                 Ok(stack.len() - 1)
             } else if stack.len() > 2 {
                 Err(error_obj_to_error_kind(stack[2]))
