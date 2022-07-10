@@ -19,7 +19,9 @@ impl<'a> Vm<'a> {
 
         let saved_stack_top = self.stack.len();
         let new_stack_len = frame.base + closure.proto.max_stack_size as usize;
-        self.stack.resize(new_stack_len, Value::Nil);
+        if self.stack.len() < new_stack_len {
+            self.stack.resize(new_stack_len, Value::Nil);
+        }
 
         let (lower_stack, stack) = self.stack.split_at_mut(frame.base);
         let mut state = State {
