@@ -8,13 +8,12 @@ use crate::{
     types::{LuaString, NativeClosure, Number, StackKey, Table, Type, Value},
     vm::{ErrorKind, Vm},
 };
-use rustc_hash::FxHashMap;
 use std::{borrow::Cow, io::Write};
 
 pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
-    let mut env = FxHashMap::default();
-    env.insert(
-        heap.allocate(LuaString::from("assert")).into(),
+    let mut table = Table::new();
+    table.set(
+        heap.allocate(LuaString::from("assert")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
             if stack[1].as_boolean() {
@@ -27,19 +26,17 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             } else {
                 Err(ErrorKind::ExplicitError("assertion failed!".to_owned()))
             }
-        }))
-        .into(),
+        })),
     );
-    env.insert(
-        heap.allocate(LuaString::from("error")).into(),
+    table.set(
+        heap.allocate(LuaString::from("error")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let error_obj = vm.local_stack(key)[1];
             Err(error_obj_to_error_kind(error_obj))
-        }))
-        .into(),
+        })),
     );
-    env.insert(
-        heap.allocate(LuaString::from("print")).into(),
+    table.set(
+        heap.allocate(LuaString::from("print")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack(key);
             let mut stdout = std::io::stdout().lock();
@@ -52,20 +49,18 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
                 writeln!(stdout)?;
             }
             Ok(0)
-        }))
-        .into(),
+        })),
     );
-    env.insert(
-        heap.allocate(LuaString::from("rawequal")).into(),
+    table.set(
+        heap.allocate(LuaString::from("rawequal")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = (stack[1] == stack[2]).into();
             Ok(1)
-        }))
-        .into(),
+        })),
     );
-    env.insert(
-        heap.allocate(LuaString::from("tonumber")).into(),
+    table.set(
+        heap.allocate(LuaString::from("tonumber")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = match stack[1] {
@@ -80,36 +75,33 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
                 _ => Value::Nil,
             };
             Ok(1)
-        }))
-        .into(),
+        })),
     );
-    env.insert(
-        heap.allocate(LuaString::from("tostring")).into(),
+    table.set(
+        heap.allocate(LuaString::from("tostring")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = heap.allocate(LuaString::from(stack[1].to_string())).into();
             Ok(1)
-        }))
-        .into(),
+        })),
     );
-    env.insert(
-        heap.allocate(LuaString::from("type")).into(),
+    table.set(
+        heap.allocate(LuaString::from("type")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = heap
                 .allocate(LuaString::from(stack[1].ty().to_string()))
                 .into();
             Ok(1)
-        }))
-        .into(),
+        })),
     );
-    env.insert(
-        heap.allocate(LuaString::from("_VERSION")).into(),
-        heap.allocate(LuaString::from("Lua 5.4")).into(),
+    table.set(
+        heap.allocate(LuaString::from("_VERSION")),
+        heap.allocate(LuaString::from("Lua 5.4")),
     );
 
-    env.insert(
-        heap.allocate(LuaString::from("require")).into(),
+    table.set(
+        heap.allocate(LuaString::from("require")),
         heap.allocate(NativeClosure::new(move |heap, vm, key| {
             let package_str = Value::from(heap.allocate(LuaString::from("package")));
             let package_table = vm.global_table().borrow().get(package_str);
@@ -141,37 +133,36 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             stack[0] = loaded_value;
             stack[1] = heap.allocate(LuaString::from(filename)).into();
             Ok(2)
-        }))
-        .into(),
+        })),
     );
-    let mut package = FxHashMap::default();
-    package.insert(
-        heap.allocate(LuaString::from("loaded")).into(),
-        heap.allocate_cell(Table::new()).into(),
+    let mut package = Table::new();
+    package.set(
+        heap.allocate(LuaString::from("loaded")),
+        heap.allocate_cell(Table::new()),
     );
-    env.insert(
-        heap.allocate(LuaString::from("package")).into(),
-        heap.allocate_cell(package.into()).into(),
-    );
-
-    env.insert(
-        heap.allocate(LuaString::from("string")).into(),
-        heap.allocate_cell(string::create_table(heap)).into(),
-    );
-    env.insert(
-        heap.allocate(LuaString::from("math")).into(),
-        heap.allocate_cell(math::create_table(heap)).into(),
-    );
-    env.insert(
-        heap.allocate(LuaString::from("io")).into(),
-        heap.allocate_cell(io::create_table(heap)).into(),
-    );
-    env.insert(
-        heap.allocate(LuaString::from("os")).into(),
-        heap.allocate_cell(os::create_table(heap)).into(),
+    table.set(
+        heap.allocate(LuaString::from("package")),
+        heap.allocate_cell(package),
     );
 
-    let global = heap.allocate_cell(Table::from(env));
+    table.set(
+        heap.allocate(LuaString::from("string")),
+        heap.allocate_cell(string::create_table(heap)),
+    );
+    table.set(
+        heap.allocate(LuaString::from("math")),
+        heap.allocate_cell(math::create_table(heap)),
+    );
+    table.set(
+        heap.allocate(LuaString::from("io")),
+        heap.allocate_cell(io::create_table(heap)),
+    );
+    table.set(
+        heap.allocate(LuaString::from("os")),
+        heap.allocate_cell(os::create_table(heap)),
+    );
+
+    let global = heap.allocate_cell(table);
     global
         .borrow_mut(heap)
         .set(heap.allocate(LuaString::from("_G")), global);

@@ -2,14 +2,13 @@ use crate::{
     gc::GcHeap,
     types::{LuaString, NativeClosure, Table},
 };
-use rustc_hash::FxHashMap;
 use std::io::Write;
 
 pub fn create_table(heap: &GcHeap) -> Table {
-    let mut table = FxHashMap::default();
+    let mut table = Table::new();
 
-    table.insert(
-        heap.allocate(LuaString::from("write")).into(),
+    table.set(
+        heap.allocate(LuaString::from("write")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack(key);
             let mut stdout = std::io::stdout().lock();
@@ -17,9 +16,8 @@ pub fn create_table(heap: &GcHeap) -> Table {
                 write!(stdout, "{}", x)?;
             }
             Ok(0)
-        }))
-        .into(),
+        })),
     );
 
-    table.into()
+    table
 }
