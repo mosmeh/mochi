@@ -523,8 +523,63 @@ impl<'a> Vm<'a> {
                         .collect();
                     state.stack[insn.a()] = heap.allocate(LuaClosure { proto, upvalues }).into();
                 }
-                OpCode::VarArg => unimplemented!("VARARG"),
-                OpCode::VarArgPrep => (),
+                OpCode::VarArg => {
+                    let n = insn.c();
+                    let num_wanted = if n > 0 {
+                        n as usize - 1
+                    } else {
+                        frame.num_extra_args
+                    };
+                    if num_wanted > 0 {
+                        self.frames.last_mut().unwrap().pc = state.pc;
+
+                        let a = insn.a();
+
+                        let new_stack_len = frame.base + a + num_wanted;
+                        if self.stack.len() < new_stack_len {
+                            self.stack.resize(new_stack_len, Value::Nil);
+                        }
+                        let extra_args_bottom = frame.base - 1 - frame.num_extra_args;
+                        let num_copied = num_wanted.min(frame.num_extra_args);
+                        self.stack.copy_within(
+                            extra_args_bottom..extra_args_bottom + num_copied,
+                            frame.base + a,
+                        );
+
+                        if num_wanted > frame.num_extra_args {
+                            self.stack[frame.base + a + frame.num_extra_args
+                                ..frame.base + a + num_wanted]
+                                .fill(Value::Nil);
+                        }
+
+                        return Ok(());
+                    }
+                }
+                OpCode::VarArgPrep => {
+                    let num_fixed_args = insn.a();
+                    let num_extra_args = saved_stack_top - frame.bottom - 1 - num_fixed_args;
+                    if num_extra_args > 0 {
+                        let new_base = saved_stack_top + 1;
+                        let frame = self.frames.last_mut().unwrap();
+                        frame.pc = state.pc;
+                        frame.base = new_base;
+                        frame.num_extra_args = num_extra_args;
+
+                        let new_stack_len = new_base + closure.proto.max_stack_size as usize;
+                        if self.stack.len() < new_stack_len {
+                            self.stack.resize(new_stack_len, Value::Nil);
+                        }
+
+                        self.stack.copy_within(
+                            frame.bottom..frame.bottom + num_fixed_args + 1,
+                            saved_stack_top,
+                        );
+                        self.stack[frame.bottom + 1..frame.bottom + num_fixed_args + 1]
+                            .fill(Value::Nil);
+
+                        return Ok(());
+                    }
+                }
                 OpCode::ExtraArg => unreachable!(),
             }
 

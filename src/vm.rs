@@ -20,6 +20,7 @@ struct Frame {
     bottom: usize,
     base: usize,
     pc: usize,
+    num_extra_args: usize,
 }
 
 impl Frame {
@@ -28,6 +29,7 @@ impl Frame {
             bottom,
             base: bottom + 1,
             pc: 0,
+            num_extra_args: 0,
         }
     }
 }
