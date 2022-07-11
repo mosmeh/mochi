@@ -95,7 +95,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn eval<'a>(heap: &'a GcHeap, vm: &mut Vm<'a>, line: &str) -> Result<()> {
+fn eval<'gc>(heap: &'gc GcHeap, vm: &mut Vm<'gc>, line: &str) -> Result<()> {
     const SOURCE: &str = "stdin";
     let closure = if let Ok(closure) = mochi::load(heap, format!("print({})", line), SOURCE) {
         closure

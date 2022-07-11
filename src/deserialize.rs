@@ -41,10 +41,10 @@ const LUA_VERSION_MINOR: u8 = 4;
 const LUAC_VERSION: u8 = LUA_VERSION_MAJOR * 16 + LUA_VERSION_MINOR;
 const LUAC_FORMAT: u8 = 0;
 
-pub fn load<'a, R: Read>(
-    heap: &'a GcHeap,
+pub fn load<'gc, R: Read>(
+    heap: &'gc GcHeap,
     reader: &mut R,
-) -> Result<LuaClosure<'a>, DeserializeError> {
+) -> Result<LuaClosure<'gc>, DeserializeError> {
     if reader.read_u32::<NativeEndian>()? != u32::from_ne_bytes(*b"\x1bLua") {
         return Err(DeserializeError::BadMagic);
     }
@@ -89,11 +89,11 @@ pub fn load<'a, R: Read>(
     })
 }
 
-fn load_function<'a, R: Read>(
-    heap: &'a GcHeap,
+fn load_function<'gc, R: Read>(
+    heap: &'gc GcHeap,
     reader: &mut R,
-    parent_source: Gc<'a, LuaString>,
-) -> Result<LuaClosureProto<'a>, DeserializeError> {
+    parent_source: Gc<'gc, LuaString>,
+) -> Result<LuaClosureProto<'gc>, DeserializeError> {
     let source = load_nullable_str(reader)?
         .map(|s| heap.allocate(s))
         .unwrap_or(parent_source);
@@ -151,11 +151,11 @@ fn load_function<'a, R: Read>(
     })
 }
 
-fn load_protos<'a, T: Read>(
-    heap: &'a GcHeap,
+fn load_protos<'gc, T: Read>(
+    heap: &'gc GcHeap,
     reader: &mut T,
-    parent_source: Gc<'a, LuaString>,
-) -> Result<Vec<LuaClosureProto<'a>>, DeserializeError> {
+    parent_source: Gc<'gc, LuaString>,
+) -> Result<Vec<LuaClosureProto<'gc>>, DeserializeError> {
     let n = load_int(reader)?;
     let mut p = Vec::with_capacity(n as usize);
     for _ in 0..n {
@@ -229,10 +229,10 @@ const LUA_VNUMFLT: u8 = LUA_TNUMBER | (1 << 4);
 const LUA_VSHRSHR: u8 = LUA_TSTRING;
 const LUA_VLNGSHR: u8 = LUA_TSTRING | (1 << 4);
 
-fn load_constants<'a, R: Read>(
-    heap: &'a GcHeap,
+fn load_constants<'gc, R: Read>(
+    heap: &'gc GcHeap,
     reader: &mut R,
-) -> Result<Vec<Value<'a>>, DeserializeError> {
+) -> Result<Vec<Value<'gc>>, DeserializeError> {
     let n = load_int(reader)?;
     let mut constants = Vec::with_capacity(n as usize);
     for _ in 0..n {

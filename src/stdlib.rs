@@ -167,11 +167,11 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     global
 }
 
-fn get_string_arg<'a>(
-    vm: &'a Vm,
+fn get_string_arg<'gc>(
+    vm: &'gc Vm,
     key: StackKey,
     nth: usize,
-) -> Result<Cow<'a, LuaString>, ErrorKind> {
+) -> Result<Cow<'gc, LuaString>, ErrorKind> {
     let arg = &vm.local_stack(key)[nth];
     arg.as_lua_string()
         .ok_or_else(|| ErrorKind::ArgumentTypeError {

@@ -1,12 +1,12 @@
 use super::{Instruction, State};
 use crate::types::{Integer, LuaClosureProto, Number, Value};
 
-fn calc_arithmetic_result<'a, I, F>(
-    a: Value<'a>,
-    b: Value<'a>,
+fn calc_arithmetic_result<'gc, I, F>(
+    a: Value<'gc>,
+    b: Value<'gc>,
     int_op: I,
     float_op: F,
-) -> Option<Value<'a>>
+) -> Option<Value<'gc>>
 where
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
@@ -37,9 +37,9 @@ where
     };
 }
 
-pub(crate) fn do_arithmetic_with_constant<'a, I, F>(
-    state: &mut State<'a, '_>,
-    proto: &LuaClosureProto<'a>,
+pub(crate) fn do_arithmetic_with_constant<'gc, I, F>(
+    state: &mut State<'gc, '_>,
+    proto: &LuaClosureProto<'gc>,
     insn: Instruction,
     int_op: I,
     float_op: F,
@@ -85,7 +85,11 @@ pub(crate) fn do_arithmetic_with_immediate<I, F>(
     };
 }
 
-fn calc_float_arithmetic_result<'a, F>(a: Value<'a>, b: Value<'a>, float_op: F) -> Option<Value<'a>>
+fn calc_float_arithmetic_result<'gc, F>(
+    a: Value<'gc>,
+    b: Value<'gc>,
+    float_op: F,
+) -> Option<Value<'gc>>
 where
     F: Fn(Number, Number) -> Number,
 {
@@ -132,7 +136,7 @@ pub(crate) fn do_float_arithmetic_with_constant<F>(
     };
 }
 
-fn calc_bitwise_op_result<'a, I>(a: Value<'a>, b: Value<'a>, int_op: I) -> Option<Value<'a>>
+fn calc_bitwise_op_result<'gc, I>(a: Value<'gc>, b: Value<'gc>, int_op: I) -> Option<Value<'gc>>
 where
     I: Fn(Integer, Integer) -> Integer,
 {
@@ -159,9 +163,9 @@ where
     };
 }
 
-pub(crate) fn do_bitwise_op_with_constant<'a, I>(
-    state: &mut State<'a, '_>,
-    proto: &LuaClosureProto<'a>,
+pub(crate) fn do_bitwise_op_with_constant<'gc, I>(
+    state: &mut State<'gc, '_>,
+    proto: &LuaClosureProto<'gc>,
     insn: Instruction,
     int_op: I,
 ) where

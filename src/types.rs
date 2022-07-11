@@ -42,15 +42,15 @@ pub type Integer = i64;
 pub type Number = f64;
 
 #[derive(Debug, Clone, Copy)]
-pub enum Value<'a> {
+pub enum Value<'gc> {
     Nil,
     Boolean(bool),
     Integer(Integer),
     Number(Number),
-    String(Gc<'a, LuaString>),
-    Table(GcCell<'a, Table<'a>>),
-    LuaClosure(Gc<'a, LuaClosure<'a>>),
-    NativeClosure(Gc<'a, NativeClosure>),
+    String(Gc<'gc, LuaString>),
+    Table(GcCell<'gc, Table<'gc>>),
+    LuaClosure(Gc<'gc, LuaClosure<'gc>>),
+    NativeClosure(Gc<'gc, NativeClosure>),
 }
 
 impl Default for Value<'_> {
@@ -77,26 +77,26 @@ impl From<Number> for Value<'_> {
     }
 }
 
-impl<'a> From<Gc<'a, LuaString>> for Value<'a> {
-    fn from(x: Gc<'a, LuaString>) -> Self {
+impl<'gc> From<Gc<'gc, LuaString>> for Value<'gc> {
+    fn from(x: Gc<'gc, LuaString>) -> Self {
         Self::String(x)
     }
 }
 
-impl<'a> From<GcCell<'a, Table<'a>>> for Value<'a> {
-    fn from(x: GcCell<'a, Table<'a>>) -> Self {
+impl<'gc> From<GcCell<'gc, Table<'gc>>> for Value<'gc> {
+    fn from(x: GcCell<'gc, Table<'gc>>) -> Self {
         Self::Table(x)
     }
 }
 
-impl<'a> From<Gc<'a, LuaClosure<'a>>> for Value<'a> {
-    fn from(x: Gc<'a, LuaClosure<'a>>) -> Self {
+impl<'gc> From<Gc<'gc, LuaClosure<'gc>>> for Value<'gc> {
+    fn from(x: Gc<'gc, LuaClosure<'gc>>) -> Self {
         Self::LuaClosure(x)
     }
 }
 
-impl<'a> From<Gc<'a, NativeClosure>> for Value<'a> {
-    fn from(x: Gc<'a, NativeClosure>) -> Self {
+impl<'gc> From<Gc<'gc, NativeClosure>> for Value<'gc> {
+    fn from(x: Gc<'gc, NativeClosure>) -> Self {
         Self::NativeClosure(x)
     }
 }
@@ -143,7 +143,7 @@ impl Display for Value<'_> {
             Self::Nil => f.write_str("nil"),
             Self::Boolean(x) => write!(f, "{}", x),
             Self::Integer(x) => write!(f, "{}", x),
-            Self::Number(x) => write!(f, "{:<14}", x),
+            Self::Number(x) => write!(f, "{}", x),
             Self::String(x) => f.write_str(&String::from_utf8_lossy(x)),
             Self::Table(x) => write!(f, "table: {:?}", x.as_ptr()),
             Self::LuaClosure(x) => {
@@ -168,7 +168,7 @@ unsafe impl Trace for Value<'_> {
     }
 }
 
-impl<'a> Value<'a> {
+impl<'gc> Value<'gc> {
     pub fn as_boolean(&self) -> bool {
         !matches!(self, Value::Nil | Value::Boolean(false))
     }
@@ -207,7 +207,7 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn as_table(&self) -> Option<Ref<Table<'a>>> {
+    pub fn as_table(&self) -> Option<Ref<Table<'gc>>> {
         if let Self::Table(x) = self {
             Some(x.borrow())
         } else {
@@ -215,7 +215,7 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn as_table_mut(&self, heap: &GcHeap) -> Option<RefMut<Table<'a>>> {
+    pub fn as_table_mut(&self, heap: &GcHeap) -> Option<RefMut<Table<'gc>>> {
         if let Self::Table(x) = self {
             Some(x.borrow_mut(heap))
         } else {
@@ -223,7 +223,7 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn as_lua_closure(&self) -> Option<&LuaClosure<'a>> {
+    pub fn as_lua_closure(&self) -> Option<&LuaClosure<'gc>> {
         if let Self::LuaClosure(x) = self {
             Some(x.as_ref())
         } else {

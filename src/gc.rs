@@ -287,9 +287,9 @@ struct GcBox<T: ?Sized + Trace> {
     value: T,
 }
 
-pub struct Gc<'a, T: ?Sized + Trace + 'a> {
+pub struct Gc<'gc, T: ?Sized + Trace + 'gc> {
     ptr: NonNull<GcBox<T>>,
-    phantom: PhantomData<&'a GcHeap>,
+    phantom: PhantomData<&'gc GcHeap>,
 }
 
 impl<T: Trace> Clone for Gc<'_, T> {
@@ -366,7 +366,7 @@ impl<T: Trace> Gc<'_, T> {
     }
 }
 
-pub struct GcCell<'a, T: Trace + 'a>(Gc<'a, RefCell<T>>);
+pub struct GcCell<'gc, T: Trace + 'gc>(Gc<'gc, RefCell<T>>);
 
 impl<T: Trace> Clone for GcCell<'_, T> {
     fn clone(&self) -> Self {

@@ -6,14 +6,14 @@ use crate::{
 use std::ops::Range;
 
 #[derive(Debug, Clone)]
-pub struct LuaClosureProto<'a> {
+pub struct LuaClosureProto<'gc> {
     pub max_stack_size: u8,
     pub lines_defined: LineRange,
-    pub constants: Vec<Value<'a>>,
+    pub constants: Vec<Value<'gc>>,
     pub code: Vec<Instruction>,
-    pub protos: Vec<Gc<'a, LuaClosureProto<'a>>>,
+    pub protos: Vec<Gc<'gc, LuaClosureProto<'gc>>>,
     pub upvalues: Vec<UpvalueDescription>,
-    pub source: Gc<'a, LuaString>,
+    pub source: Gc<'gc, LuaString>,
 }
 
 unsafe impl Trace for LuaClosureProto<'_> {
@@ -31,9 +31,9 @@ pub enum LineRange {
 }
 
 #[derive(Debug, Clone)]
-pub struct LuaClosure<'a> {
-    pub proto: Gc<'a, LuaClosureProto<'a>>,
-    pub upvalues: Vec<GcCell<'a, Upvalue<'a>>>,
+pub struct LuaClosure<'gc> {
+    pub proto: Gc<'gc, LuaClosureProto<'gc>>,
+    pub upvalues: Vec<GcCell<'gc, Upvalue<'gc>>>,
 }
 
 unsafe impl Trace for LuaClosure<'_> {
@@ -47,7 +47,7 @@ unsafe impl Trace for LuaClosure<'_> {
 pub struct StackKey(pub(crate) Range<usize>);
 
 pub type NativeClosureFn =
-    dyn for<'a> Fn(&'a GcHeap, &mut Vm<'a>, StackKey) -> Result<usize, ErrorKind>;
+    dyn for<'gc> Fn(&'gc GcHeap, &mut Vm<'gc>, StackKey) -> Result<usize, ErrorKind>;
 
 pub struct NativeClosure(pub Box<NativeClosureFn>);
 
@@ -66,20 +66,20 @@ unsafe impl Trace for NativeClosure {
 impl NativeClosure {
     pub fn new<T>(func: T) -> Self
     where
-        T: 'static + for<'a> Fn(&'a GcHeap, &mut Vm<'a>, StackKey) -> Result<usize, ErrorKind>,
+        T: 'static + for<'gc> Fn(&'gc GcHeap, &mut Vm<'gc>, StackKey) -> Result<usize, ErrorKind>,
     {
         Self(Box::new(func))
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Upvalue<'a> {
+pub enum Upvalue<'gc> {
     Open(usize),
-    Closed(Value<'a>),
+    Closed(Value<'gc>),
 }
 
-impl<'a> From<Value<'a>> for Upvalue<'a> {
-    fn from(x: Value<'a>) -> Self {
+impl<'gc> From<Value<'gc>> for Upvalue<'gc> {
+    fn from(x: Value<'gc>) -> Self {
         Self::Closed(x)
     }
 }

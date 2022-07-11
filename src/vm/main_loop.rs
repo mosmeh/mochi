@@ -10,8 +10,8 @@ use std::{
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub},
 };
 
-impl<'a> Vm<'a> {
-    pub(super) fn execute_frame(&mut self, heap: &'a GcHeap) -> Result<(), ErrorKind> {
+impl<'gc> Vm<'gc> {
+    pub(super) fn execute_frame(&mut self, heap: &'gc GcHeap) -> Result<(), ErrorKind> {
         let frame = self.frames.last().unwrap().clone();
 
         let bottom_value = self.stack[frame.bottom];
@@ -591,12 +591,12 @@ impl<'a> Vm<'a> {
                 OpCode::ExtraArg => unreachable!(),
             }
 
-            struct Root<'a, 'b> {
-                state: &'b State<'a, 'b>,
-                global_table: GcCell<'a, Table<'a>>,
-                open_upvalues: &'b BTreeMap<usize, GcCell<'a, Upvalue<'a>>>,
+            struct Root<'gc, 'vm, 'stack> {
+                state: &'stack State<'gc, 'stack>,
+                global_table: GcCell<'gc, Table<'gc>>,
+                open_upvalues: &'vm BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
             }
-            unsafe impl Trace for Root<'_, '_> {
+            unsafe impl Trace for Root<'_, '_, '_> {
                 fn trace(&self, tracer: &mut Tracer) {
                     self.state.trace(tracer);
                     self.global_table.trace(tracer);

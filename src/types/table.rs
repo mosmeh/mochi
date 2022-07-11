@@ -3,13 +3,13 @@ use crate::gc::{Trace, Tracer};
 use rustc_hash::FxHashMap;
 
 #[derive(Debug, Clone, Default)]
-pub struct Table<'a> {
-    map: FxHashMap<Value<'a>, Value<'a>>,
-    array: Vec<Value<'a>>,
+pub struct Table<'gc> {
+    map: FxHashMap<Value<'gc>, Value<'gc>>,
+    array: Vec<Value<'gc>>,
 }
 
-impl<'a> From<Vec<Value<'a>>> for Table<'a> {
-    fn from(array: Vec<Value<'a>>) -> Self {
+impl<'gc> From<Vec<Value<'gc>>> for Table<'gc> {
+    fn from(array: Vec<Value<'gc>>) -> Self {
         Self {
             map: Default::default(),
             array,
@@ -24,14 +24,14 @@ unsafe impl Trace for Table<'_> {
     }
 }
 
-impl<'a> Table<'a> {
+impl<'gc> Table<'gc> {
     pub fn new() -> Self {
         Default::default()
     }
 
-    pub fn get<K>(&self, key: K) -> Value<'a>
+    pub fn get<K>(&self, key: K) -> Value<'gc>
     where
-        K: Into<Value<'a>>,
+        K: Into<Value<'gc>>,
     {
         let key = key.into();
         let key = if let Some(i) = key.as_integer() {
@@ -49,8 +49,8 @@ impl<'a> Table<'a> {
 
     pub fn set<K, V>(&mut self, key: K, value: V)
     where
-        K: Into<Value<'a>>,
-        V: Into<Value<'a>>,
+        K: Into<Value<'gc>>,
+        V: Into<Value<'gc>>,
     {
         let key = key.into();
         let value = value.into();
@@ -89,7 +89,7 @@ impl<'a> Table<'a> {
         self.map.insert(key, value);
     }
 
-    fn resize_array(&mut self, new_key: Value<'a>) {
+    fn resize_array(&mut self, new_key: Value<'gc>) {
         // create histogram of non negative integer keys
 
         const NUM_BINS: usize = usize::BITS as usize;

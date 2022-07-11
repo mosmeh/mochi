@@ -35,11 +35,11 @@ impl Frame {
 }
 
 #[derive(Debug)]
-pub(crate) struct State<'a, 'b> {
+pub(crate) struct State<'gc, 'stack> {
     base: usize,
     pc: usize,
-    stack: &'b mut [Value<'a>],
-    lower_stack: &'b [Value<'a>],
+    stack: &'stack mut [Value<'gc>],
+    lower_stack: &'stack mut [Value<'gc>],
 }
 
 unsafe impl Trace for State<'_, '_> {
@@ -49,8 +49,8 @@ unsafe impl Trace for State<'_, '_> {
     }
 }
 
-impl<'a, 'b> State<'a, 'b> {
-    fn resolve_upvalue(&'b self, upvalue: &'b Upvalue<'a>) -> &'b Value<'a> {
+impl<'gc, 'stack> State<'gc, 'stack> {
+    fn resolve_upvalue<'a>(&'a self, upvalue: &'a Upvalue<'gc>) -> &'a Value<'gc> {
         match upvalue {
             Upvalue::Open(i) => {
                 if *i < self.base {
@@ -65,11 +65,11 @@ impl<'a, 'b> State<'a, 'b> {
 }
 
 #[derive(Debug)]
-pub struct Vm<'a> {
-    stack: Vec<Value<'a>>,
+pub struct Vm<'gc> {
+    stack: Vec<Value<'gc>>,
     frames: Vec<Frame>,
-    global_table: GcCell<'a, Table<'a>>,
-    open_upvalues: BTreeMap<usize, GcCell<'a, Upvalue<'a>>>,
+    global_table: GcCell<'gc, Table<'gc>>,
+    open_upvalues: BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
 }
 
 unsafe impl Trace for Vm<'_> {
@@ -80,8 +80,8 @@ unsafe impl Trace for Vm<'_> {
     }
 }
 
-impl<'a> Vm<'a> {
-    pub fn new(global_table: GcCell<'a, Table<'a>>) -> Self {
+impl<'gc> Vm<'gc> {
+    pub fn new(global_table: GcCell<'gc, Table<'gc>>) -> Self {
         Self {
             stack: Vec::new(),
             frames: Vec::new(),
@@ -90,23 +90,23 @@ impl<'a> Vm<'a> {
         }
     }
 
-    pub fn global_table(&self) -> GcCell<'a, Table<'a>> {
+    pub fn global_table(&self) -> GcCell<'gc, Table<'gc>> {
         self.global_table
     }
 
-    pub fn local_stack(&self, key: StackKey) -> &[Value<'a>] {
+    pub fn local_stack(&self, key: StackKey) -> &[Value<'gc>] {
         &self.stack[key.0]
     }
 
-    pub fn local_stack_mut(&mut self, key: StackKey) -> &mut [Value<'a>] {
+    pub fn local_stack_mut(&mut self, key: StackKey) -> &mut [Value<'gc>] {
         &mut self.stack[key.0]
     }
 
     pub fn execute(
         &mut self,
-        heap: &'a GcHeap,
-        mut closure: LuaClosure<'a>,
-    ) -> Result<Value<'a>, RuntimeError> {
+        heap: &'gc GcHeap,
+        mut closure: LuaClosure<'gc>,
+    ) -> Result<Value<'gc>, RuntimeError> {
         assert!(closure.upvalues.is_empty());
         closure
             .upvalues
@@ -146,8 +146,8 @@ impl<'a> Vm<'a> {
 
     fn call_closure(
         &mut self,
-        heap: &'a GcHeap,
-        callee: Value<'a>,
+        heap: &'gc GcHeap,
+        callee: Value<'gc>,
         stack_range: Range<usize>,
         insn: Instruction,
     ) -> Result<(), ErrorKind> {
