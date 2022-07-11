@@ -403,7 +403,17 @@ impl<'gc> Vm<'gc> {
                     let cond = state.stack[insn.a()].as_boolean();
                     ops::do_conditional_jump(&mut state, &closure.proto, insn, cond);
                 }
-                OpCode::TestSet => unimplemented!("TESTSET"),
+                OpCode::TestSet => {
+                    let rb = state.stack[insn.b()];
+                    let cond = !rb.as_boolean();
+                    if cond == insn.k() {
+                        state.pc += 1;
+                    } else {
+                        state.stack[insn.a()] = rb;
+                        let next_insn = closure.proto.code[state.pc];
+                        state.pc = (state.pc as isize + next_insn.sj() as isize + 1) as usize;
+                    }
+                }
                 OpCode::Call => {
                     self.frames.last_mut().unwrap().pc = state.pc;
                     let a = insn.a();
