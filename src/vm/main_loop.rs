@@ -1,12 +1,11 @@
-use super::{ops, ErrorKind, OpCode, Operation, State, Vm};
+use super::{ops, ErrorKind, OpCode, Operation, Root, State, Vm};
 use crate::{
-    gc::{GcCell, GcHeap, Trace, Tracer},
+    gc::GcHeap,
     types::{Integer, LuaString, Number, Table, Upvalue, Value},
     LuaClosure,
 };
 use std::{
     cmp::PartialOrd,
-    collections::BTreeMap,
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub},
 };
 
@@ -591,18 +590,6 @@ impl<'gc> Vm<'gc> {
                 OpCode::ExtraArg => unreachable!(),
             }
 
-            struct Root<'gc, 'vm, 'stack> {
-                state: &'stack State<'gc, 'stack>,
-                global_table: GcCell<'gc, Table<'gc>>,
-                open_upvalues: &'vm BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
-            }
-            unsafe impl Trace for Root<'_, '_, '_> {
-                fn trace(&self, tracer: &mut Tracer) {
-                    self.state.trace(tracer);
-                    self.global_table.trace(tracer);
-                    self.open_upvalues.trace(tracer);
-                }
-            }
             let root = Root {
                 state: &state,
                 global_table: self.global_table,

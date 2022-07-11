@@ -64,6 +64,20 @@ impl<'gc, 'stack> State<'gc, 'stack> {
     }
 }
 
+struct Root<'gc, 'vm, 'stack> {
+    state: &'stack State<'gc, 'stack>,
+    global_table: GcCell<'gc, Table<'gc>>,
+    open_upvalues: &'vm BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
+}
+
+unsafe impl Trace for Root<'_, '_, '_> {
+    fn trace(&self, tracer: &mut Tracer) {
+        self.state.trace(tracer);
+        self.global_table.trace(tracer);
+        self.open_upvalues.trace(tracer);
+    }
+}
+
 #[derive(Debug)]
 pub struct Vm<'gc> {
     stack: Vec<Value<'gc>>,
