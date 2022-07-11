@@ -414,7 +414,11 @@ impl<'a> Vm<'a> {
                     if insn.k() {
                         self.close_upvalues(heap, frame.bottom);
                     }
-                    let num_results = if b > 0 { b - 1 } else { self.stack.len() - a };
+                    let num_results = if b > 0 {
+                        b - 1
+                    } else {
+                        saved_stack_top - a - frame.base
+                    };
                     self.stack.copy_within(
                         frame.base + a..frame.base + a + num_results + 1,
                         frame.bottom,
@@ -430,7 +434,11 @@ impl<'a> Vm<'a> {
                     }
                     let a = insn.a();
                     let b = insn.b();
-                    let num_results = if b > 0 { b - 1 } else { self.stack.len() - a };
+                    let num_results = if b > 0 {
+                        b - 1
+                    } else {
+                        saved_stack_top - a - frame.base
+                    };
                     self.stack
                         .copy_within(frame.base + a..frame.base + a + num_results, frame.bottom);
                     self.stack.truncate(frame.bottom + num_results);
