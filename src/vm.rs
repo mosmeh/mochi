@@ -62,6 +62,19 @@ impl<'gc, 'stack> State<'gc, 'stack> {
             Upvalue::Closed(x) => x,
         }
     }
+
+    fn resolve_upvalue_mut<'a>(&'a mut self, upvalue: &'a mut Upvalue<'gc>) -> &'a mut Value<'gc> {
+        match upvalue {
+            Upvalue::Open(i) => {
+                if *i < self.base {
+                    &mut self.lower_stack[*i]
+                } else {
+                    &mut self.stack[*i - self.base]
+                }
+            }
+            Upvalue::Closed(x) => x,
+        }
+    }
 }
 
 struct Root<'gc, 'vm, 'stack> {

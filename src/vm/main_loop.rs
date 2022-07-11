@@ -59,7 +59,11 @@ impl<'gc> Vm<'gc> {
                     let value = state.resolve_upvalue(&upvalue);
                     state.stack[insn.a()] = *value;
                 }
-                OpCode::SetUpval => unimplemented!("SETUPVAL"),
+                OpCode::SetUpval => {
+                    let value = state.stack[insn.a()];
+                    let mut upvalue = closure.upvalues[insn.b()].borrow_mut(heap);
+                    *state.resolve_upvalue_mut(&mut upvalue) = value;
+                }
                 OpCode::GetTabUp => {
                     state.stack[insn.a()] = {
                         let upvalue = closure.upvalues[insn.b()].borrow();
