@@ -43,7 +43,7 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::LoadKX => {
                     let next_insn = closure.proto.code[state.pc];
-                    let rb = state.stack[next_insn.ax()];
+                    let rb = closure.proto.constants[next_insn.ax()];
                     state.stack[insn.a()] = rb;
                     state.pc += 1;
                 }
