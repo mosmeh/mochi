@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bstr::ByteVec;
 use clap::Parser;
 use mochi::{
     gc::GcHeap,
@@ -42,15 +43,7 @@ fn main() -> Result<()> {
 
     let mut arg = Table::new();
     if let Some(script) = &args.script {
-        let script = {
-            #[cfg(unix)]
-            {
-                use std::os::unix::ffi::OsStrExt;
-                script.as_os_str().as_bytes()
-            }
-            #[cfg(not(unix))]
-            script.to_string_lossy()
-        };
+        let script = Vec::from_path_lossy(script);
         arg.set(0, heap.0.allocate(LuaString::from(script)));
     }
     for (i, x) in args.args.into_iter().enumerate() {

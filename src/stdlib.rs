@@ -8,6 +8,7 @@ use crate::{
     types::{LuaString, NativeClosure, Number, StackKey, Table, Type, Value},
     vm::{ErrorKind, Vm},
 };
+use bstr::ByteSlice;
 use std::{borrow::Cow, io::Write};
 
 pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
@@ -114,7 +115,7 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             };
 
             let name = get_string_arg(vm, key.clone(), 1)?;
-            let filename = format!("./{}.lua", name.as_str()?);
+            let filename = format!("./{}.lua", name.as_bstr());
             let loaded_value = if maybe_loaded_value == Value::Nil {
                 let closure = crate::load_file(heap, &filename).unwrap();
                 let value = vm.execute(heap, closure).unwrap();

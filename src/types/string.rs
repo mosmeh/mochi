@@ -1,7 +1,10 @@
 use crate::gc::Trace;
+use bstr::ByteVec;
 use std::{
     borrow::Cow,
+    ffi::OsString,
     ops::{Deref, DerefMut},
+    path::PathBuf,
     str::Utf8Error,
 };
 
@@ -40,6 +43,12 @@ impl From<String> for LuaString {
     }
 }
 
+impl From<Cow<'_, [u8]>> for LuaString {
+    fn from(x: Cow<'_, [u8]>) -> Self {
+        x.to_vec().into()
+    }
+}
+
 impl From<Cow<'_, str>> for LuaString {
     fn from(x: Cow<'_, str>) -> Self {
         x.to_owned().into()
@@ -49,6 +58,30 @@ impl From<Cow<'_, str>> for LuaString {
 impl From<Cow<'_, LuaString>> for LuaString {
     fn from(x: Cow<LuaString>) -> Self {
         x.into()
+    }
+}
+
+impl TryFrom<OsString> for LuaString {
+    type Error = &'static str;
+
+    fn try_from(x: OsString) -> Result<Self, Self::Error> {
+        if let Ok(vec) = Vec::from_os_string(x) {
+            Ok(vec.into())
+        } else {
+            Err("Invalid UTF-8")
+        }
+    }
+}
+
+impl TryFrom<PathBuf> for LuaString {
+    type Error = &'static str;
+
+    fn try_from(x: PathBuf) -> Result<Self, Self::Error> {
+        if let Ok(vec) = Vec::from_path_buf(x) {
+            Ok(vec.into())
+        } else {
+            Err("Invalid UTF-8")
+        }
     }
 }
 

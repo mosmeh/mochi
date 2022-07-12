@@ -7,6 +7,7 @@ mod stdlib;
 
 pub use stdlib::create_global_table;
 
+use bstr::ByteVec;
 use gc::GcHeap;
 use std::{
     fmt::Debug,
@@ -50,10 +51,6 @@ pub fn load_file<P: AsRef<Path>>(heap: &GcHeap, path: P) -> Result<LuaClosure, E
     let mut reader = BufReader::new(File::open(&path)?);
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes)?;
-    let source = path.as_ref().as_os_str();
-    #[cfg(unix)]
-    use std::os::unix::ffi::OsStrExt;
-    #[cfg(not(unix))]
-    let source = source.to_string_lossy();
-    load(heap, bytes, source.as_bytes())
+    let source = Vec::from_path_lossy(path.as_ref());
+    load(heap, bytes, source)
 }

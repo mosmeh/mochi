@@ -2,6 +2,7 @@ mod closure;
 mod string;
 mod table;
 
+use bstr::ByteSlice;
 pub use closure::{
     LineRange, LuaClosure, LuaClosureProto, NativeClosure, StackKey, Upvalue, UpvalueDescription,
 };
@@ -144,7 +145,7 @@ impl Display for Value<'_> {
             Self::Boolean(x) => write!(f, "{}", x),
             Self::Integer(x) => write!(f, "{}", x),
             Self::Number(x) => write!(f, "{}", x),
-            Self::String(x) => f.write_str(&String::from_utf8_lossy(x)),
+            Self::String(x) => write!(f, "{}", x.as_bstr()),
             Self::Table(x) => write!(f, "table: {:?}", x.as_ptr()),
             Self::LuaClosure(x) => {
                 write!(f, "function: {:?}", x.as_ptr())
