@@ -65,21 +65,21 @@ impl<'gc> Vm<'gc> {
                     *state.resolve_upvalue_mut(&mut upvalue) = value;
                 }
                 OpCode::GetTabUp => {
+                    let upvalue = closure.upvalues[insn.b()].borrow();
+                    let value = state.resolve_upvalue(&upvalue);
+                    let rc = closure.proto.constants[insn.c() as usize];
                     state.stack[insn.a()] = {
-                        let upvalue = closure.upvalues[insn.b()].borrow();
-                        let value = state.resolve_upvalue(&upvalue);
                         let table = value.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: value.ty(),
                         })?;
-                        let rc = closure.proto.constants[insn.c() as usize];
                         table.get(rc)
                     };
                 }
                 OpCode::GetTable => {
+                    let rb = state.stack[insn.b()];
+                    let rc = state.stack[insn.c() as usize];
                     state.stack[insn.a()] = {
-                        let rb = state.stack[insn.b()];
-                        let rc = state.stack[insn.c() as usize];
                         let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
@@ -88,24 +88,24 @@ impl<'gc> Vm<'gc> {
                     };
                 }
                 OpCode::GetI => {
+                    let rb = state.stack[insn.b()];
+                    let c = insn.c() as Integer;
                     state.stack[insn.a()] = {
-                        let rb = state.stack[insn.b()];
                         let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
                         })?;
-                        let c = insn.c() as Integer;
                         table.get(c)
                     };
                 }
                 OpCode::GetField => {
+                    let rb = state.stack[insn.b()];
+                    let rc = closure.proto.constants[insn.c() as usize];
                     state.stack[insn.a()] = {
-                        let rb = state.stack[insn.b()];
                         let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
                         })?;
-                        let rc = closure.proto.constants[insn.c() as usize];
                         table.get(rc)
                     };
                 }
@@ -276,43 +276,35 @@ impl<'gc> Vm<'gc> {
                 OpCode::MmBinI => unimplemented!("MMBINI"),
                 OpCode::MmBinK => unimplemented!("MMBINK"),
                 OpCode::Unm => {
-                    state.stack[insn.a()] = {
-                        let rb = state.stack[insn.b()];
-                        if let Some(x) = rb.as_integer() {
-                            Value::Integer(-x)
-                        } else if let Some(x) = rb.as_number() {
-                            Value::Number(-x)
-                        } else {
-                            unimplemented!("UNM")
-                        }
+                    let rb = state.stack[insn.b()];
+                    state.stack[insn.a()] = if let Some(x) = rb.as_integer() {
+                        Value::Integer(-x)
+                    } else if let Some(x) = rb.as_number() {
+                        Value::Number(-x)
+                    } else {
+                        unimplemented!("UNM")
                     };
                 }
                 OpCode::BNot => {
-                    state.stack[insn.a()] = {
-                        let rb = state.stack[insn.b()];
-                        if let Some(x) = rb.as_integer() {
-                            Value::Integer(!x)
-                        } else {
-                            unimplemented!("BNOT")
-                        }
+                    let rb = state.stack[insn.b()];
+                    state.stack[insn.a()] = if let Some(x) = rb.as_integer() {
+                        Value::Integer(!x)
+                    } else {
+                        unimplemented!("BNOT")
                     }
                 }
                 OpCode::Not => {
-                    state.stack[insn.a()] = {
-                        let rb = state.stack[insn.b()];
-                        Value::Boolean(!rb.as_boolean())
-                    }
+                    let rb = state.stack[insn.b()];
+                    state.stack[insn.a()] = Value::Boolean(!rb.as_boolean())
                 }
                 OpCode::Len => {
-                    state.stack[insn.a()] = {
-                        let rb = state.stack[insn.b()];
-                        let len = match rb {
-                            Value::String(s) => s.len() as Integer,
-                            Value::Table(t) => t.borrow().lua_len(),
-                            _ => unimplemented!("LEN"),
-                        };
-                        len.into()
+                    let rb = state.stack[insn.b()];
+                    let len = match rb {
+                        Value::String(s) => s.len() as Integer,
+                        Value::Table(t) => t.borrow().lua_len(),
+                        _ => unimplemented!("LEN"),
                     };
+                    state.stack[insn.a()] = len.into();
                 }
                 OpCode::Concat => {
                     let a = insn.a();

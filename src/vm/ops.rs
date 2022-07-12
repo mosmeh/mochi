@@ -20,24 +20,20 @@ where
     None
 }
 
-pub(crate) fn do_arithmetic<I, F>(state: &mut State, insn: Instruction, int_op: I, float_op: F)
+pub(super) fn do_arithmetic<I, F>(state: &mut State, insn: Instruction, int_op: I, float_op: F)
 where
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
 {
-    state.stack[insn.a()] = {
-        let rb = state.stack[insn.b()];
-        let rc = state.stack[insn.c() as usize];
-        if let Some(result) = calc_arithmetic_result(rb, rc, int_op, float_op) {
-            state.pc += 1;
-            result
-        } else {
-            return;
-        }
-    };
+    let rb = state.stack[insn.b()];
+    let rc = state.stack[insn.c() as usize];
+    if let Some(result) = calc_arithmetic_result(rb, rc, int_op, float_op) {
+        state.stack[insn.a()] = result;
+        state.pc += 1;
+    }
 }
 
-pub(crate) fn do_arithmetic_with_constant<'gc, I, F>(
+pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
     state: &mut State<'gc, '_>,
     proto: &LuaClosureProto<'gc>,
     insn: Instruction,
@@ -47,19 +43,15 @@ pub(crate) fn do_arithmetic_with_constant<'gc, I, F>(
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
 {
-    state.stack[insn.a()] = {
-        let rb = state.stack[insn.b()];
-        let kc = proto.constants[insn.c() as usize];
-        if let Some(result) = calc_arithmetic_result(rb, kc, int_op, float_op) {
-            state.pc += 1;
-            result
-        } else {
-            return;
-        }
-    };
+    let rb = state.stack[insn.b()];
+    let kc = proto.constants[insn.c() as usize];
+    if let Some(result) = calc_arithmetic_result(rb, kc, int_op, float_op) {
+        state.stack[insn.a()] = result;
+        state.pc += 1;
+    }
 }
 
-pub(crate) fn do_arithmetic_with_immediate<I, F>(
+pub(super) fn do_arithmetic_with_immediate<I, F>(
     state: &mut State,
     insn: Instruction,
     int_op: I,
@@ -68,21 +60,20 @@ pub(crate) fn do_arithmetic_with_immediate<I, F>(
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
 {
-    state.stack[insn.a()] = {
-        let rb = state.stack[insn.b()];
-        let imm = insn.sc();
-        match rb {
-            Value::Integer(b) => {
-                state.pc += 1;
-                Value::Integer(int_op(b, imm as Integer))
-            }
-            Value::Number(b) => {
-                state.pc += 1;
-                Value::Number(float_op(b, imm as Number))
-            }
-            _ => return,
+    let rb = state.stack[insn.b()];
+    let imm = insn.sc();
+    let result = match rb {
+        Value::Integer(b) => {
+            state.pc += 1;
+            Value::Integer(int_op(b, imm as Integer))
         }
+        Value::Number(b) => {
+            state.pc += 1;
+            Value::Number(float_op(b, imm as Number))
+        }
+        _ => return,
     };
+    state.stack[insn.a()] = result;
 }
 
 fn calc_float_arithmetic_result<'gc, F>(
@@ -100,23 +91,19 @@ where
     }
 }
 
-pub(crate) fn do_float_arithmetic<F>(state: &mut State, insn: Instruction, float_op: F)
+pub(super) fn do_float_arithmetic<F>(state: &mut State, insn: Instruction, float_op: F)
 where
     F: Fn(Number, Number) -> Number,
 {
-    state.stack[insn.a()] = {
-        let rb = state.stack[insn.b()];
-        let rc = state.stack[insn.c() as usize];
-        if let Some(result) = calc_float_arithmetic_result(rb, rc, float_op) {
-            state.pc += 1;
-            result
-        } else {
-            return;
-        }
-    };
+    let rb = state.stack[insn.b()];
+    let rc = state.stack[insn.c() as usize];
+    if let Some(result) = calc_float_arithmetic_result(rb, rc, float_op) {
+        state.stack[insn.a()] = result;
+        state.pc += 1;
+    }
 }
 
-pub(crate) fn do_float_arithmetic_with_constant<F>(
+pub(super) fn do_float_arithmetic_with_constant<F>(
     state: &mut State,
     proto: &LuaClosureProto,
     insn: Instruction,
@@ -124,16 +111,12 @@ pub(crate) fn do_float_arithmetic_with_constant<F>(
 ) where
     F: Fn(Number, Number) -> Number,
 {
-    state.stack[insn.a()] = {
-        let rb = state.stack[insn.b()];
-        let kc = proto.constants[insn.c() as usize];
-        if let (Some(b), Some(c)) = (rb.as_number(), kc.as_number()) {
-            state.pc += 1;
-            Value::Number(float_op(b, c))
-        } else {
-            return;
-        }
-    };
+    let rb = state.stack[insn.b()];
+    let kc = proto.constants[insn.c() as usize];
+    if let (Some(b), Some(c)) = (rb.as_number(), kc.as_number()) {
+        state.stack[insn.a()] = Value::Number(float_op(b, c));
+        state.pc += 1;
+    }
 }
 
 fn calc_bitwise_op_result<'gc, I>(a: Value<'gc>, b: Value<'gc>, int_op: I) -> Option<Value<'gc>>
@@ -147,23 +130,19 @@ where
     }
 }
 
-pub(crate) fn do_bitwise_op<I>(state: &mut State, insn: Instruction, int_op: I)
+pub(super) fn do_bitwise_op<I>(state: &mut State, insn: Instruction, int_op: I)
 where
     I: Fn(Integer, Integer) -> Integer,
 {
-    state.stack[insn.a()] = {
-        let rb = state.stack[insn.b()];
-        let rc = state.stack[insn.c() as usize];
-        if let Some(result) = calc_bitwise_op_result(rb, rc, int_op) {
-            state.pc += 1;
-            result
-        } else {
-            return;
-        }
-    };
+    let rb = state.stack[insn.b()];
+    let rc = state.stack[insn.c() as usize];
+    if let Some(result) = calc_bitwise_op_result(rb, rc, int_op) {
+        state.stack[insn.a()] = result;
+        state.pc += 1;
+    }
 }
 
-pub(crate) fn do_bitwise_op_with_constant<'gc, I>(
+pub(super) fn do_bitwise_op_with_constant<'gc, I>(
     state: &mut State<'gc, '_>,
     proto: &LuaClosureProto<'gc>,
     insn: Instruction,
@@ -171,20 +150,16 @@ pub(crate) fn do_bitwise_op_with_constant<'gc, I>(
 ) where
     I: Fn(Integer, Integer) -> Integer,
 {
-    state.stack[insn.a()] = {
-        let rb = state.stack[insn.b()];
-        let kc = proto.constants[insn.c() as usize];
-        debug_assert!(matches!(kc, Value::Integer(_)));
-        if let Some(result) = calc_bitwise_op_result(rb, kc, int_op) {
-            state.pc += 1;
-            result
-        } else {
-            return;
-        }
+    let rb = state.stack[insn.b()];
+    let kc = proto.constants[insn.c() as usize];
+    debug_assert!(matches!(kc, Value::Integer(_)));
+    if let Some(result) = calc_bitwise_op_result(rb, kc, int_op) {
+        state.stack[insn.a()] = result;
+        state.pc += 1;
     }
 }
 
-pub(crate) fn do_conditional_jump(
+pub(super) fn do_conditional_jump(
     state: &mut State,
     proto: &LuaClosureProto,
     insn: Instruction,
@@ -198,7 +173,7 @@ pub(crate) fn do_conditional_jump(
     }
 }
 
-pub(crate) fn do_comparison<I, F, S>(
+pub(super) fn do_comparison<I, F, S>(
     state: &mut State,
     proto: &LuaClosureProto,
     insn: Instruction,
@@ -226,7 +201,7 @@ pub(crate) fn do_comparison<I, F, S>(
     do_conditional_jump(state, proto, insn, cond);
 }
 
-pub(crate) fn do_comparison_with_immediate<I, F>(
+pub(super) fn do_comparison_with_immediate<I, F>(
     state: &mut State,
     proto: &LuaClosureProto,
     insn: Instruction,

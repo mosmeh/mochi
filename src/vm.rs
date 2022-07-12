@@ -35,7 +35,7 @@ impl Frame {
 }
 
 #[derive(Debug)]
-pub(crate) struct State<'gc, 'stack> {
+struct State<'gc, 'stack> {
     base: usize,
     pc: usize,
     stack: &'stack mut [Value<'gc>],
