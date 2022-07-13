@@ -1,7 +1,7 @@
 use super::{ops, ErrorKind, OpCode, Operation, Root, State, Vm};
 use crate::{
     gc::GcHeap,
-    types::{Integer, LuaString, Number, Table, Upvalue, Value},
+    types::{Integer, Number, Table, Upvalue, Value},
     LuaClosure,
 };
 use std::{
@@ -312,7 +312,7 @@ impl<'gc> Vm<'gc> {
                     let b = insn.b();
                     let mut strings = Vec::with_capacity(b);
                     for value in state.stack[a..].iter().take(b) {
-                        if let Some(string) = value.as_lua_string() {
+                        if let Some(string) = value.as_lua_string(heap) {
                             strings.push(string);
                         } else {
                             return Err(ErrorKind::TypeError {
@@ -322,7 +322,7 @@ impl<'gc> Vm<'gc> {
                         }
                     }
                     let strings: Vec<_> = strings.iter().map(|x| x.as_bytes()).collect();
-                    state.stack[a] = heap.allocate(LuaString::from(strings.concat())).into();
+                    state.stack[a] = heap.allocate_string(strings.concat()).into();
                 }
                 OpCode::Close => unimplemented!("CLOSE"),
                 OpCode::Tbc => unimplemented!("TBC"),

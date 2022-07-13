@@ -1,11 +1,12 @@
 use crate::{
-    gc::{Gc, GcHeap},
+    gc::GcHeap,
     types::{
         Integer, LineRange, LuaClosure, LuaClosureProto, LuaString, Number, UpvalueDescription,
         Value,
     },
     vm::Instruction,
 };
+use bstr::B;
 use byteorder::{NativeEndian, ReadBytesExt};
 use std::{io::Read, mem::size_of};
 
@@ -79,7 +80,7 @@ pub fn load<'gc, R: Read>(
     }
 
     let num_upvalues = reader.read_u8()?;
-    let default_source = heap.allocate("?".into());
+    let default_source = heap.allocate_string(B("?"));
     let proto = load_function(heap, reader, default_source)?;
     assert_eq!(num_upvalues as usize, proto.upvalues.len());
 
@@ -92,11 +93,9 @@ pub fn load<'gc, R: Read>(
 fn load_function<'gc, R: Read>(
     heap: &'gc GcHeap,
     reader: &mut R,
-    parent_source: Gc<'gc, LuaString>,
+    parent_source: LuaString<'gc>,
 ) -> Result<LuaClosureProto<'gc>, DeserializeError> {
-    let source = load_nullable_str(reader)?
-        .map(|s| heap.allocate(s))
-        .unwrap_or(parent_source);
+    let source = load_nullable_str(heap, reader)?.unwrap_or(parent_source);
     let line_defined = load_int(reader)?;
     let last_line_defined = load_int(reader)?;
     reader.read_u8()?; // numparams
@@ -122,7 +121,7 @@ fn load_function<'gc, R: Read>(
     // LocVar
     let n = load_int(reader)?;
     for _ in 0..n {
-        load_nullable_str(reader)?; // varname
+        load_nullable_str(heap, reader)?; // varname
         load_int(reader)?; // startpc
         load_int(reader)?; // endpc
     }
@@ -130,7 +129,7 @@ fn load_function<'gc, R: Read>(
     // Upvalue
     let n = load_int(reader)?;
     for _ in 0..n {
-        load_nullable_str(reader)?; // name
+        load_nullable_str(heap, reader)?; // name
     }
 
     Ok(LuaClosureProto {
@@ -154,7 +153,7 @@ fn load_function<'gc, R: Read>(
 fn load_protos<'gc, T: Read>(
     heap: &'gc GcHeap,
     reader: &mut T,
-    parent_source: Gc<'gc, LuaString>,
+    parent_source: LuaString<'gc>,
 ) -> Result<Vec<LuaClosureProto<'gc>>, DeserializeError> {
     let n = load_int(reader)?;
     let mut p = Vec::with_capacity(n as usize);
@@ -183,18 +182,24 @@ fn load_size<R: Read>(reader: &mut R) -> Result<usize, DeserializeError> {
     load_unsigned(reader, !0)
 }
 
-fn load_nullable_str<R: Read>(reader: &mut R) -> Result<Option<LuaString>, DeserializeError> {
+fn load_nullable_str<'gc, R: Read>(
+    heap: &'gc GcHeap,
+    reader: &mut R,
+) -> Result<Option<LuaString<'gc>>, DeserializeError> {
     let size = load_size(reader)?;
     if size == 0 {
         return Ok(None);
     }
     let mut buf = vec![0u8; size - 1];
     reader.read_exact(&mut buf)?;
-    Ok(Some(buf.into()))
+    Ok(Some(heap.allocate_string(buf)))
 }
 
-fn load_str<R: Read>(reader: &mut R) -> Result<LuaString, DeserializeError> {
-    match load_nullable_str(reader) {
+fn load_str<'gc, R: Read>(
+    heap: &'gc GcHeap,
+    reader: &mut R,
+) -> Result<LuaString<'gc>, DeserializeError> {
+    match load_nullable_str(heap, reader) {
         Ok(Some(s)) => Ok(s),
         Ok(None) => Err(DeserializeError::BadStringConstant),
         Err(e) => Err(e),
@@ -243,7 +248,7 @@ fn load_constants<'gc, R: Read>(
             LUA_VTRUE => Value::Boolean(true),
             LUA_VNUMFLT => Value::Number(reader.read_f64::<NativeEndian>()?),
             LUA_VNUMINT => Value::Integer(reader.read_i64::<NativeEndian>()?),
-            LUA_VSHRSHR | LUA_VLNGSHR => Value::String(heap.allocate(load_str(reader)?)),
+            LUA_VSHRSHR | LUA_VLNGSHR => Value::String(load_str(heap, reader)?),
             _ => unreachable!(),
         };
         constants.push(value);

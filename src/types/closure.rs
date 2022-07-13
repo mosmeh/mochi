@@ -13,7 +13,7 @@ pub struct LuaClosureProto<'gc> {
     pub code: Vec<Instruction>,
     pub protos: Vec<Gc<'gc, LuaClosureProto<'gc>>>,
     pub upvalues: Vec<UpvalueDescription>,
-    pub source: Gc<'gc, LuaString>,
+    pub source: LuaString<'gc>,
 }
 
 unsafe impl GarbageCollect for LuaClosureProto<'_> {

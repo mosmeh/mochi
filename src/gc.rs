@@ -1,9 +1,14 @@
+mod string;
 mod traits;
 
-pub use traits::{GarbageCollect, Tracer};
+pub(crate) use string::BoxedString;
+pub use traits::{Finalizer, GarbageCollect, Tracer};
 
-use crate::types::Value;
+use self::string::StringPool;
+use crate::types::{LuaString, Value};
+use hashbrown::hash_map::RawEntryMut;
 use std::{
+    borrow::Cow,
     cell::{Cell, Ref, RefCell, RefMut},
     fmt::Debug,
     hash::Hash,
@@ -44,6 +49,7 @@ pub struct GcHeap {
     prev_sweep: Cell<Option<GcPtr<dyn GarbageCollect>>>,
     gray: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
     gray_again: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
+    string_pool: RefCell<StringPool>,
 }
 
 impl Default for GcHeap {
@@ -62,6 +68,7 @@ impl Default for GcHeap {
             prev_sweep: Default::default(),
             gray: Default::default(),
             gray_again: Default::default(),
+            string_pool: Default::default(),
         }
     }
 }
@@ -94,14 +101,36 @@ impl GcHeap {
         self.all.set(Some(into_ptr_to_static(ptr)));
         self.debt
             .set(self.debt.get() + std::mem::size_of::<GcBox<T>>() as isize);
-        Gc {
-            ptr,
-            phantom: PhantomData,
-        }
+        Gc::new(ptr)
     }
 
     pub fn allocate_cell<T: GarbageCollect>(&self, value: T) -> GcCell<T> {
         GcCell(self.allocate(RefCell::new(value)))
+    }
+
+    pub fn allocate_string<'a, T>(&self, string: T) -> LuaString
+    where
+        T: Into<Cow<'a, [u8]>>,
+    {
+        let string = string.into();
+        let hash = string::calc_str_hash(&string);
+        let mut pool = self.string_pool.borrow_mut();
+        let entry = pool.raw_entry_mut().from_hash(hash, |k| {
+            let gc_box = unsafe { k.as_ref() };
+            gc_box.value.as_bytes() == string.as_ref()
+        });
+        let interned = match entry {
+            RawEntryMut::Occupied(entry) => *entry.key(),
+            RawEntryMut::Vacant(entry) => {
+                let gc = self.allocate(BoxedString(string.into()));
+                entry.insert_with_hasher(hash, gc.ptr, (), |k| {
+                    let gc_box = unsafe { k.as_ref() };
+                    string::calc_str_hash(&gc_box.value)
+                });
+                gc.ptr
+            }
+        };
+        LuaString(Gc::new(interned))
     }
 
     /// # Safety
@@ -243,6 +272,10 @@ impl GcHeap {
         let current_white = Color::White(self.current_white.get());
         let other_white = Color::White(!self.current_white.get());
 
+        let mut finalizer = Finalizer {
+            string_pool: &mut self.string_pool.borrow_mut(),
+        };
+
         while let Some(ptr) = self.sweep.get() {
             let gc_box = unsafe { ptr.as_ref() };
             work += std::mem::size_of_val(gc_box);
@@ -255,6 +288,8 @@ impl GcHeap {
                 }
                 self.sweep.set(gc_box.next);
                 debt -= std::mem::size_of_val(gc_box) as isize;
+
+                gc_box.value.finalize(&mut finalizer);
                 unsafe { Box::from_raw(ptr.as_ptr()) };
             } else {
                 gc_box.color.set(current_white);
@@ -322,6 +357,8 @@ impl<T: GarbageCollect + PartialEq> PartialEq for Gc<'_, T> {
     }
 }
 
+impl<T: GarbageCollect + Eq> Eq for Gc<'_, T> {}
+
 impl<T: GarbageCollect + PartialOrd> PartialOrd for Gc<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.deref().partial_cmp(other.deref())
@@ -356,6 +393,13 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Gc<'_, T> {
 }
 
 impl<T: GarbageCollect> Gc<'_, T> {
+    fn new(ptr: GcPtr<T>) -> Self {
+        Self {
+            ptr,
+            phantom: PhantomData,
+        }
+    }
+
     pub fn ptr_eq(&self, other: &Self) -> bool {
         self.ptr.as_ptr() == other.ptr.as_ptr()
     }

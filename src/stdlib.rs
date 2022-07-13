@@ -8,34 +8,34 @@ use crate::{
     types::{LuaString, NativeClosure, Number, StackKey, Table, Type, Value},
     vm::{ErrorKind, Vm},
 };
-use bstr::ByteSlice;
-use std::{borrow::Cow, io::Write};
+use bstr::{ByteSlice, B};
+use std::io::Write;
 
 pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     let mut table = Table::new();
     table.set(
-        heap.allocate(LuaString::from("assert")),
-        heap.allocate(NativeClosure::new(|_, vm, key| {
+        heap.allocate_string(B("assert")),
+        heap.allocate(NativeClosure::new(|heap, vm, key| {
             let stack = vm.local_stack_mut(key);
             if stack[1].as_boolean() {
                 stack.copy_within(1..stack.len(), 0);
                 Ok(stack.len() - 1)
             } else if stack.len() > 2 {
-                Err(error_obj_to_error_kind(stack[2]))
+                Err(error_obj_to_error_kind(heap, stack[2]))
             } else {
                 Err(ErrorKind::ExplicitError("assertion failed!".to_owned()))
             }
         })),
     );
     table.set(
-        heap.allocate(LuaString::from("error")),
-        heap.allocate(NativeClosure::new(|_, vm, key| {
+        heap.allocate_string(B("error")),
+        heap.allocate(NativeClosure::new(|heap, vm, key| {
             let error_obj = vm.local_stack(key)[1];
-            Err(error_obj_to_error_kind(error_obj))
+            Err(error_obj_to_error_kind(heap, error_obj))
         })),
     );
     table.set(
-        heap.allocate(LuaString::from("print")),
+        heap.allocate_string(B("print")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack(key);
             let mut stdout = std::io::stdout().lock();
@@ -51,7 +51,7 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         })),
     );
     table.set(
-        heap.allocate(LuaString::from("rawequal")),
+        heap.allocate_string(B("rawequal")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = (stack[1] == stack[2]).into();
@@ -59,7 +59,7 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         })),
     );
     table.set(
-        heap.allocate(LuaString::from("tonumber")),
+        heap.allocate_string(B("tonumber")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = match stack[1] {
@@ -84,36 +84,38 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         })),
     );
     table.set(
-        heap.allocate(LuaString::from("tostring")),
-        heap.allocate(NativeClosure::new(|heap, vm, key| {
-            let stack = vm.local_stack_mut(key);
-            stack[0] = heap.allocate(LuaString::from(stack[1].to_string())).into();
-            Ok(1)
-        })),
-    );
-    table.set(
-        heap.allocate(LuaString::from("type")),
+        heap.allocate_string(B("tostring")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = heap
-                .allocate(LuaString::from(stack[1].ty().to_string()))
+                .allocate_string(stack[1].to_string().into_bytes())
                 .into();
             Ok(1)
         })),
     );
     table.set(
-        heap.allocate(LuaString::from("_VERSION")),
-        heap.allocate(LuaString::from("Lua 5.4")),
+        heap.allocate_string(B("type")),
+        heap.allocate(NativeClosure::new(|heap, vm, key| {
+            let stack = vm.local_stack_mut(key);
+            stack[0] = heap
+                .allocate_string(stack[1].ty().to_string().into_bytes())
+                .into();
+            Ok(1)
+        })),
+    );
+    table.set(
+        heap.allocate_string(B("_VERSION")),
+        heap.allocate_string(B("Lua 5.4")),
     );
 
     table.set(
-        heap.allocate(LuaString::from("require")),
+        heap.allocate_string(B("require")),
         heap.allocate(NativeClosure::new(move |heap, vm, key| {
-            let package_str = Value::from(heap.allocate(LuaString::from("package")));
+            let package_str = heap.allocate_string(B("package"));
             let package_table = vm.global_table().borrow().get(package_str);
             let package_table = package_table.as_table().unwrap();
 
-            let loaded_str = Value::from(heap.allocate(LuaString::from("loaded")));
+            let loaded_str = heap.allocate_string(B("loaded"));
             let maybe_loaded_value = {
                 let loaded_table = package_table.get(loaded_str);
                 let loaded_table = loaded_table.as_table().unwrap();
@@ -121,7 +123,7 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
                 loaded_table.get(name)
             };
 
-            let name = get_string_arg(vm, key.clone(), 1)?;
+            let name = get_string_arg(heap, vm, key.clone(), 1)?;
             let filename = format!("./{}.lua", name.as_bstr());
             let loaded_value = if maybe_loaded_value == Value::Nil {
                 let closure = crate::load_file(heap, &filename).unwrap();
@@ -137,51 +139,52 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
 
             let stack = vm.local_stack_mut(key);
             stack[0] = loaded_value;
-            stack[1] = heap.allocate(LuaString::from(filename)).into();
+            stack[1] = heap.allocate_string(filename.into_bytes()).into();
             Ok(2)
         })),
     );
     let mut package = Table::new();
     package.set(
-        heap.allocate(LuaString::from("loaded")),
+        heap.allocate_string(B("loaded")),
         heap.allocate_cell(Table::new()),
     );
     table.set(
-        heap.allocate(LuaString::from("package")),
+        heap.allocate_string(B("package")),
         heap.allocate_cell(package),
     );
 
     table.set(
-        heap.allocate(LuaString::from("string")),
+        heap.allocate_string(B("string")),
         heap.allocate_cell(string::create_table(heap)),
     );
     table.set(
-        heap.allocate(LuaString::from("math")),
+        heap.allocate_string(B("math")),
         heap.allocate_cell(math::create_table(heap)),
     );
     table.set(
-        heap.allocate(LuaString::from("io")),
+        heap.allocate_string(B("io")),
         heap.allocate_cell(io::create_table(heap)),
     );
     table.set(
-        heap.allocate(LuaString::from("os")),
+        heap.allocate_string(B("os")),
         heap.allocate_cell(os::create_table(heap)),
     );
 
     let global = heap.allocate_cell(table);
     global
         .borrow_mut(heap)
-        .set(heap.allocate(LuaString::from("_G")), global);
+        .set(heap.allocate_string(B("_G")), global);
     global
 }
 
-fn get_string_arg<'gc>(
-    vm: &'gc Vm,
+fn get_string_arg<'a, 'gc: 'a>(
+    heap: &'gc GcHeap,
+    vm: &'a Vm<'gc>,
     key: StackKey,
     nth: usize,
-) -> Result<Cow<'gc, LuaString>, ErrorKind> {
+) -> Result<LuaString<'gc>, ErrorKind> {
     let arg = &vm.local_stack(key)[nth];
-    arg.as_lua_string()
+    arg.as_lua_string(heap)
         .ok_or_else(|| ErrorKind::ArgumentTypeError {
             nth,
             expected_type: Type::String,
@@ -198,8 +201,8 @@ fn get_number_arg(vm: &Vm, key: StackKey, nth: usize) -> Result<Number, ErrorKin
     })
 }
 
-fn error_obj_to_error_kind(error_obj: Value) -> ErrorKind {
-    let msg = if let Some(lua_str) = error_obj.as_lua_string() {
+fn error_obj_to_error_kind<'gc>(heap: &'gc GcHeap, error_obj: Value<'gc>) -> ErrorKind {
+    let msg = if let Some(lua_str) = error_obj.as_lua_string(heap) {
         String::from_utf8_lossy(&lua_str).to_string()
     } else {
         format!("(error object is a {} value)", error_obj.ty())

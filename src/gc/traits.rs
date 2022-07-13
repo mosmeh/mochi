@@ -1,4 +1,4 @@
-use super::GcPtr;
+use super::{GcPtr, StringPool};
 use std::{
     cell::RefCell,
     collections::{BTreeMap, HashMap},
@@ -8,6 +8,10 @@ use std::{
 
 pub struct Tracer<'a> {
     pub(super) gray: &'a mut Vec<GcPtr<dyn GarbageCollect>>,
+}
+
+pub struct Finalizer<'a> {
+    pub(super) string_pool: &'a mut StringPool,
 }
 
 /// # Safety
@@ -21,6 +25,8 @@ pub unsafe trait GarbageCollect {
     }
 
     fn trace(&self, _: &mut Tracer) {}
+
+    fn finalize(&self, _: &mut Finalizer) {}
 }
 
 unsafe impl GarbageCollect for u8 {

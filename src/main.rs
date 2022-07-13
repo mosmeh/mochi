@@ -1,9 +1,9 @@
 use anyhow::Result;
-use bstr::ByteVec;
+use bstr::{ByteVec, B};
 use clap::Parser;
 use mochi::{
     gc::GcHeap,
-    types::{Integer, LuaString, Table},
+    types::{Integer, Table},
     vm::Vm,
 };
 use rustyline::{error::ReadlineError, Editor};
@@ -44,22 +44,19 @@ fn main() -> Result<()> {
     let mut arg = Table::new();
     if let Some(script) = &args.script {
         let script = Vec::from_path_lossy(script);
-        arg.set(0, heap.0.allocate(LuaString::from(script)));
+        arg.set(0, heap.0.allocate_string(script));
     }
     for (i, x) in args.args.into_iter().enumerate() {
         let key = (i + 1) as Integer;
-        let value = LuaString::from(x);
-        arg.set(key, heap.0.allocate(value));
+        let value = heap.0.allocate_string(x.into_bytes());
+        arg.set(key, value);
     }
 
     let global_table = mochi::create_global_table(&heap.0);
     {
         let mut table = global_table.borrow_mut(&heap.0);
-        table.set(heap.0.allocate(LuaString::from("_ENV")), global_table);
-        table.set(
-            heap.0.allocate(LuaString::from("arg")),
-            heap.0.allocate_cell(arg),
-        );
+        table.set(heap.0.allocate_string(B("_ENV")), global_table);
+        table.set(heap.0.allocate_string(B("arg")), heap.0.allocate_cell(arg));
     }
 
     let mut vm = Vm::new(global_table);

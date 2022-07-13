@@ -1,14 +1,15 @@
 use super::get_number_arg;
 use crate::{
     gc::GcHeap,
-    types::{LuaString, NativeClosure, Table},
+    types::{NativeClosure, Table},
 };
+use bstr::B;
 
 pub fn create_table(heap: &GcHeap) -> Table {
     let mut table = Table::new();
 
     table.set(
-        heap.allocate(LuaString::from("clock")),
+        heap.allocate_string(B("clock")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = cpu_time::ProcessTime::now()
                 .as_duration()
@@ -19,7 +20,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("difftime")),
+        heap.allocate_string(B("difftime")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] =
                 (get_number_arg(vm, key.clone(), 1)? - get_number_arg(vm, key.clone(), 2)?).into();

@@ -2,7 +2,6 @@ mod closure;
 mod string;
 mod table;
 
-use bstr::ByteSlice;
 pub use closure::{
     LineRange, LuaClosure, LuaClosureProto, NativeClosure, StackKey, Upvalue, UpvalueDescription,
 };
@@ -10,8 +9,8 @@ pub use string::LuaString;
 pub use table::Table;
 
 use crate::gc::{GarbageCollect, Gc, GcCell, GcHeap, Tracer};
+use bstr::ByteSlice;
 use std::{
-    borrow::Cow,
     cell::{Ref, RefMut},
     fmt::Display,
 };
@@ -48,7 +47,7 @@ pub enum Value<'gc> {
     Boolean(bool),
     Integer(Integer),
     Number(Number),
-    String(Gc<'gc, LuaString>),
+    String(LuaString<'gc>),
     Table(GcCell<'gc, Table<'gc>>),
     LuaClosure(Gc<'gc, LuaClosure<'gc>>),
     NativeClosure(Gc<'gc, NativeClosure>),
@@ -78,8 +77,8 @@ impl From<Number> for Value<'_> {
     }
 }
 
-impl<'gc> From<Gc<'gc, LuaString>> for Value<'gc> {
-    fn from(x: Gc<'gc, LuaString>) -> Self {
+impl<'gc> From<LuaString<'gc>> for Value<'gc> {
+    fn from(x: LuaString<'gc>) -> Self {
         Self::String(x)
     }
 }
@@ -222,11 +221,11 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_lua_string(&self) -> Option<Cow<LuaString>> {
+    pub fn as_lua_string(&self, heap: &'gc GcHeap) -> Option<LuaString<'gc>> {
         match self {
-            Self::String(x) => Some(Cow::Borrowed(x)),
-            Self::Integer(x) => Some(Cow::Owned(x.to_string().into())),
-            Self::Number(x) => Some(Cow::Owned(x.to_string().into())),
+            Self::String(x) => Some(*x),
+            Self::Integer(x) => Some(heap.allocate_string(x.to_string().into_bytes())),
+            Self::Number(x) => Some(heap.allocate_string(x.to_string().into_bytes())),
             _ => None,
         }
     }

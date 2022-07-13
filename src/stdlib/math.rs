@@ -1,16 +1,17 @@
 use super::get_number_arg;
 use crate::{
     gc::GcHeap,
-    types::{Integer, LuaString, NativeClosure, Number, Table, Type, Value},
+    types::{Integer, NativeClosure, Number, Table, Type, Value},
     vm::ErrorKind,
 };
+use bstr::B;
 use rand::Rng;
 
 pub fn create_table(heap: &GcHeap) -> Table {
     let mut table = Table::new();
 
     table.set(
-        heap.allocate(LuaString::from("abs")),
+        heap.allocate_string(B("abs")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = match stack[1] {
@@ -29,7 +30,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("acos")),
+        heap.allocate_string(B("acos")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.acos().into();
             Ok(1)
@@ -37,7 +38,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("asin")),
+        heap.allocate_string(B("asin")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.asin().into();
             Ok(1)
@@ -45,7 +46,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("floor")),
+        heap.allocate_string(B("floor")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = match stack[1] {
@@ -72,7 +73,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("cos")),
+        heap.allocate_string(B("cos")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.cos().into();
             Ok(1)
@@ -80,7 +81,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("deg")),
+        heap.allocate_string(B("deg")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.to_degrees().into();
             Ok(1)
@@ -88,17 +89,17 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("exp")),
+        heap.allocate_string(B("exp")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.exp().into();
             Ok(1)
         })),
     );
 
-    table.set(heap.allocate(LuaString::from("huge")), Number::INFINITY);
+    table.set(heap.allocate_string(B("huge")), Number::INFINITY);
 
     table.set(
-        heap.allocate(LuaString::from("log")),
+        heap.allocate_string(B("log")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let x = get_number_arg(vm, key.clone(), 1)?;
             let result = if vm.local_stack(key.clone()).len() > 2 {
@@ -111,16 +112,16 @@ pub fn create_table(heap: &GcHeap) -> Table {
         })),
     );
 
-    table.set(heap.allocate(LuaString::from("maxinteger")), Integer::MAX);
-    table.set(heap.allocate(LuaString::from("mininteger")), Integer::MIN);
+    table.set(heap.allocate_string(B("maxinteger")), Integer::MAX);
+    table.set(heap.allocate_string(B("mininteger")), Integer::MIN);
 
     table.set(
-        heap.allocate(LuaString::from("pi")),
+        heap.allocate_string(B("pi")),
         std::f64::consts::PI as Number,
     );
 
     table.set(
-        heap.allocate(LuaString::from("rad")),
+        heap.allocate_string(B("rad")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.to_radians().into();
             Ok(1)
@@ -128,7 +129,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("random")),
+        heap.allocate_string(B("random")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let mut rng = rand::thread_rng();
             let stack = vm.local_stack_mut(key);
@@ -166,7 +167,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("sin")),
+        heap.allocate_string(B("sin")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.sin().into();
             Ok(1)
@@ -174,7 +175,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("sqrt")),
+        heap.allocate_string(B("sqrt")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.sqrt().into();
             Ok(1)
@@ -182,7 +183,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("tan")),
+        heap.allocate_string(B("tan")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = get_number_arg(vm, key.clone(), 1)?.tan().into();
             Ok(1)
@@ -190,12 +191,12 @@ pub fn create_table(heap: &GcHeap) -> Table {
     );
 
     table.set(
-        heap.allocate(LuaString::from("type")),
+        heap.allocate_string(B("type")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = match stack[1] {
-                Value::Integer(_) => heap.allocate(LuaString::from("integer")).into(),
-                Value::Number(_) => heap.allocate(LuaString::from("float")).into(),
+                Value::Integer(_) => heap.allocate_string(B("integer")).into(),
+                Value::Number(_) => heap.allocate_string(B("float")).into(),
                 _ => Value::Nil,
             };
             Ok(1)
