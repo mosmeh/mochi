@@ -14,7 +14,10 @@ where
     if let (Value::Integer(a), Value::Integer(b)) = (a, b) {
         return Some(Value::Integer(int_op(a, b)));
     }
-    if let (Some(a), Some(b)) = (a.as_number(), b.as_number()) {
+    if let (Some(a), Some(b)) = (
+        a.as_number_without_string_coercion(),
+        b.as_number_without_string_coercion(),
+    ) {
         return Some(Value::Number(float_op(a, b)));
     }
     None
@@ -84,7 +87,10 @@ fn calc_float_arithmetic_result<'gc, F>(
 where
     F: Fn(Number, Number) -> Number,
 {
-    if let (Some(a), Some(b)) = (a.as_number(), b.as_number()) {
+    if let (Some(a), Some(b)) = (
+        a.as_number_without_string_coercion(),
+        b.as_number_without_string_coercion(),
+    ) {
         Some(Value::Number(float_op(a, b)))
     } else {
         None
@@ -113,7 +119,10 @@ pub(super) fn do_float_arithmetic_with_constant<F>(
 {
     let rb = state.stack[insn.b()];
     let kc = proto.constants[insn.c() as usize];
-    if let (Some(b), Some(c)) = (rb.as_number(), kc.as_number()) {
+    if let (Some(b), Some(c)) = (
+        rb.as_number_without_string_coercion(),
+        kc.as_number_without_string_coercion(),
+    ) {
         state.stack[insn.a()] = Value::Number(float_op(b, c));
         state.pc += 1;
     }
@@ -123,7 +132,10 @@ fn calc_bitwise_op_result<'gc, I>(a: Value<'gc>, b: Value<'gc>, int_op: I) -> Op
 where
     I: Fn(Integer, Integer) -> Integer,
 {
-    if let (Some(a), Some(b)) = (a.as_integer(), b.as_integer()) {
+    if let (Some(a), Some(b)) = (
+        a.as_integer_without_string_coercion(),
+        b.as_integer_without_string_coercion(),
+    ) {
         Some(Value::Integer(int_op(a, b)))
     } else {
         None
@@ -191,7 +203,10 @@ pub(super) fn do_comparison<I, F, S>(
         (Value::Integer(a), Value::Integer(b)) => int_op(&a, &b),
         (Value::String(ref a), Value::String(ref b)) => str_op(a, b),
         _ => {
-            if let (Some(a), Some(b)) = (ra.as_number(), rb.as_number()) {
+            if let (Some(a), Some(b)) = (
+                ra.as_number_without_string_coercion(),
+                rb.as_number_without_string_coercion(),
+            ) {
                 float_op(&a, &b)
             } else {
                 unimplemented!("order")

@@ -183,6 +183,14 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    pub fn as_number_without_string_coercion(&self) -> Option<Number> {
+        match self {
+            Self::Number(x) => Some(*x),
+            Self::Integer(x) => Some(*x as Number),
+            _ => None,
+        }
+    }
+
     pub fn as_integer(&self) -> Option<Integer> {
         match self {
             Self::Number(x) => {
@@ -195,6 +203,21 @@ impl<'gc> Value<'gc> {
             }
             Self::Integer(x) => Some(*x),
             Self::String(x) => x.as_str().ok().and_then(|s| s.parse().ok()),
+            _ => None,
+        }
+    }
+
+    pub fn as_integer_without_string_coercion(&self) -> Option<Integer> {
+        match self {
+            Self::Number(x) => {
+                let y = x.floor() as Integer;
+                if *x == y as Number {
+                    Some(y)
+                } else {
+                    None
+                }
+            }
+            Self::Integer(x) => Some(*x),
             _ => None,
         }
     }

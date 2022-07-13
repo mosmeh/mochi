@@ -277,9 +277,9 @@ impl<'gc> Vm<'gc> {
                 OpCode::MmBinK => unimplemented!("MMBINK"),
                 OpCode::Unm => {
                     let rb = state.stack[insn.b()];
-                    state.stack[insn.a()] = if let Some(x) = rb.as_integer() {
+                    state.stack[insn.a()] = if let Value::Integer(x) = rb {
                         Value::Integer(-x)
-                    } else if let Some(x) = rb.as_number() {
+                    } else if let Some(x) = rb.as_number_without_string_coercion() {
                         Value::Number(-x)
                     } else {
                         unimplemented!("UNM")
@@ -287,7 +287,8 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::BNot => {
                     let rb = state.stack[insn.b()];
-                    state.stack[insn.a()] = if let Some(x) = rb.as_integer() {
+                    state.stack[insn.a()] = if let Some(x) = rb.as_integer_without_string_coercion()
+                    {
                         Value::Integer(!x)
                     } else {
                         unimplemented!("BNOT")
