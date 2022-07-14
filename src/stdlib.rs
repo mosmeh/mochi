@@ -68,8 +68,15 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
                 Value::String(x) => x
                     .as_str()
                     .ok()
-                    .and_then(|s| s.parse().ok())
-                    .map(Value::Number)
+                    .map(|s| {
+                        if let Ok(i) = s.parse() {
+                            Value::Integer(i)
+                        } else if let Ok(f) = s.parse() {
+                            Value::Number(f)
+                        } else {
+                            Value::Nil
+                        }
+                    })
                     .unwrap_or(Value::Nil),
                 _ => Value::Nil,
             };
