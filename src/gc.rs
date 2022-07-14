@@ -1,6 +1,6 @@
-mod trace;
+mod traits;
 
-pub use trace::{Trace, Tracer};
+pub use traits::{GarbageCollect, Tracer};
 
 use crate::types::Value;
 use std::{
@@ -18,7 +18,7 @@ const WORK2MEM: usize = std::mem::size_of::<GcBox<Value>>();
 
 type GcPtr<T> = NonNull<GcBox<T>>;
 
-fn into_ptr_to_static<'a>(ptr: GcPtr<dyn Trace + 'a>) -> GcPtr<dyn Trace> {
+fn into_ptr_to_static<'a>(ptr: GcPtr<dyn GarbageCollect + 'a>) -> GcPtr<dyn GarbageCollect> {
     unsafe { std::mem::transmute(ptr) }
 }
 
@@ -39,11 +39,11 @@ pub struct GcHeap {
     total_bytes: Cell<usize>,
     debt: Cell<isize>,
     estimate: Cell<usize>,
-    all: Cell<Option<GcPtr<dyn Trace>>>,
-    sweep: Cell<Option<GcPtr<dyn Trace>>>,
-    prev_sweep: Cell<Option<GcPtr<dyn Trace>>>,
-    gray: RefCell<Vec<GcPtr<dyn Trace>>>,
-    gray_again: RefCell<Vec<GcPtr<dyn Trace>>>,
+    all: Cell<Option<GcPtr<dyn GarbageCollect>>>,
+    sweep: Cell<Option<GcPtr<dyn GarbageCollect>>>,
+    prev_sweep: Cell<Option<GcPtr<dyn GarbageCollect>>>,
+    gray: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
+    gray_again: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
 }
 
 impl Default for GcHeap {
@@ -82,7 +82,7 @@ impl GcHeap {
         Default::default()
     }
 
-    pub fn allocate<T: Trace>(&self, value: T) -> Gc<T> {
+    pub fn allocate<T: GarbageCollect>(&self, value: T) -> Gc<T> {
         let color = Color::White(self.current_white.get());
         let gc_box = Box::new(GcBox {
             color: Cell::new(color),
@@ -100,14 +100,14 @@ impl GcHeap {
         }
     }
 
-    pub fn allocate_cell<T: Trace>(&self, value: T) -> GcCell<T> {
+    pub fn allocate_cell<T: GarbageCollect>(&self, value: T) -> GcCell<T> {
         GcCell(self.allocate(RefCell::new(value)))
     }
 
     /// # Safety
     /// Only `Gc` and `GcCell` traced from `root`, including those on stack,
     /// should be dereferenced after calling this function.
-    pub unsafe fn step<T: Trace>(&self, root: &T) {
+    pub unsafe fn step<T: GarbageCollect>(&self, root: &T) {
         let mut debt = self.debt.get();
         if debt <= 0 {
             return;
@@ -146,7 +146,7 @@ impl GcHeap {
         self.gray_again.borrow_mut().clear();
     }
 
-    fn write_barrier<T: Trace>(&self, ptr: GcPtr<T>) {
+    fn write_barrier<T: GarbageCollect>(&self, ptr: GcPtr<T>) {
         if self.phase.get() != Phase::Propagate {
             return;
         }
@@ -158,7 +158,7 @@ impl GcHeap {
         }
     }
 
-    fn do_single_step<T: Trace>(&self, root: &T) -> usize {
+    fn do_single_step<T: GarbageCollect>(&self, root: &T) -> usize {
         match self.phase.get() {
             Phase::Pause => {
                 self.do_pause(root);
@@ -191,7 +191,7 @@ impl GcHeap {
         }
     }
 
-    fn do_pause<T: Trace>(&self, root: &T) {
+    fn do_pause<T: GarbageCollect>(&self, root: &T) {
         let mut gray = self.gray.borrow_mut();
         gray.clear();
         self.gray_again.borrow_mut().clear();
@@ -210,7 +210,7 @@ impl GcHeap {
         }
     }
 
-    fn do_atomic<T: Trace>(&self, root: &T) -> usize {
+    fn do_atomic<T: GarbageCollect>(&self, root: &T) -> usize {
         let mut gray = self.gray.borrow_mut();
         root.trace(&mut Tracer { gray: &mut gray });
 
@@ -281,26 +281,26 @@ enum Color {
     Gray,
 }
 
-struct GcBox<T: ?Sized + Trace> {
+struct GcBox<T: ?Sized + GarbageCollect> {
     color: Cell<Color>,
-    next: Option<GcPtr<dyn Trace>>,
+    next: Option<GcPtr<dyn GarbageCollect>>,
     value: T,
 }
 
-pub struct Gc<'gc, T: ?Sized + Trace + 'gc> {
+pub struct Gc<'gc, T: ?Sized + GarbageCollect + 'gc> {
     ptr: NonNull<GcBox<T>>,
     phantom: PhantomData<&'gc GcHeap>,
 }
 
-impl<T: Trace> Clone for Gc<'_, T> {
+impl<T: GarbageCollect> Clone for Gc<'_, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: Trace> Copy for Gc<'_, T> {}
+impl<T: GarbageCollect> Copy for Gc<'_, T> {}
 
-impl<T: Trace> Deref for Gc<'_, T> {
+impl<T: GarbageCollect> Deref for Gc<'_, T> {
     type Target = T;
 
     #[inline]
@@ -310,37 +310,37 @@ impl<T: Trace> Deref for Gc<'_, T> {
     }
 }
 
-impl<T: Trace + Debug> Debug for Gc<'_, T> {
+impl<T: GarbageCollect + Debug> Debug for Gc<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_tuple("Gc").field(self.deref()).finish()
     }
 }
 
-impl<T: Trace + PartialEq> PartialEq for Gc<'_, T> {
+impl<T: GarbageCollect + PartialEq> PartialEq for Gc<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         **self == **other
     }
 }
 
-impl<T: Trace + PartialOrd> PartialOrd for Gc<'_, T> {
+impl<T: GarbageCollect + PartialOrd> PartialOrd for Gc<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.deref().partial_cmp(other.deref())
     }
 }
 
-impl<T: Trace + Hash> Hash for Gc<'_, T> {
+impl<T: GarbageCollect + Hash> Hash for Gc<'_, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.deref().hash(state);
     }
 }
 
-impl<T: Trace> AsRef<T> for Gc<'_, T> {
+impl<T: GarbageCollect> AsRef<T> for Gc<'_, T> {
     fn as_ref(&self) -> &T {
         self.deref()
     }
 }
 
-unsafe impl<T: Trace> Trace for Gc<'_, T> {
+unsafe impl<T: GarbageCollect> GarbageCollect for Gc<'_, T> {
     fn trace(&self, tracer: &mut Tracer) {
         let gc_box = unsafe { self.ptr.as_ref() };
         let color = &gc_box.color;
@@ -355,7 +355,7 @@ unsafe impl<T: Trace> Trace for Gc<'_, T> {
     }
 }
 
-impl<T: Trace> Gc<'_, T> {
+impl<T: GarbageCollect> Gc<'_, T> {
     pub fn ptr_eq(&self, other: &Self) -> bool {
         self.ptr.as_ptr() == other.ptr.as_ptr()
     }
@@ -366,29 +366,29 @@ impl<T: Trace> Gc<'_, T> {
     }
 }
 
-pub struct GcCell<'gc, T: Trace + 'gc>(Gc<'gc, RefCell<T>>);
+pub struct GcCell<'gc, T: GarbageCollect + 'gc>(Gc<'gc, RefCell<T>>);
 
-impl<T: Trace> Clone for GcCell<'_, T> {
+impl<T: GarbageCollect> Clone for GcCell<'_, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: Trace> Copy for GcCell<'_, T> {}
+impl<T: GarbageCollect> Copy for GcCell<'_, T> {}
 
-impl<T: Trace + Debug> Debug for GcCell<'_, T> {
+impl<T: GarbageCollect + Debug> Debug for GcCell<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_tuple("GcCell").field(&*self.0).finish()
     }
 }
 
-unsafe impl<T: Trace> Trace for GcCell<'_, T> {
+unsafe impl<T: GarbageCollect> GarbageCollect for GcCell<'_, T> {
     fn trace(&self, tracer: &mut Tracer) {
         self.0.trace(tracer);
     }
 }
 
-impl<T: Trace> GcCell<'_, T> {
+impl<T: GarbageCollect> GcCell<'_, T> {
     pub fn ptr_eq(&self, other: &Self) -> bool {
         self.0.ptr_eq(&other.0)
     }

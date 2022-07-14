@@ -1,4 +1,4 @@
-use crate::gc::Trace;
+use crate::gc::GarbageCollect;
 use bstr::ByteVec;
 use std::{
     borrow::Cow,
@@ -117,7 +117,7 @@ impl<T: AsRef<[u8]>> PartialOrd<T> for LuaString {
     }
 }
 
-unsafe impl Trace for LuaString {
+unsafe impl GarbageCollect for LuaString {
     fn needs_trace() -> bool {
         false
     }

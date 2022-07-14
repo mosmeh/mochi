@@ -1,5 +1,5 @@
 use crate::{
-    gc::{Gc, GcCell, GcHeap, Trace, Tracer},
+    gc::{GarbageCollect, Gc, GcCell, GcHeap, Tracer},
     types::{LuaString, Value},
     vm::{ErrorKind, Instruction, Vm},
 };
@@ -16,7 +16,7 @@ pub struct LuaClosureProto<'gc> {
     pub source: Gc<'gc, LuaString>,
 }
 
-unsafe impl Trace for LuaClosureProto<'_> {
+unsafe impl GarbageCollect for LuaClosureProto<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.constants.trace(tracer);
         self.protos.trace(tracer);
@@ -36,7 +36,7 @@ pub struct LuaClosure<'gc> {
     pub upvalues: Vec<GcCell<'gc, Upvalue<'gc>>>,
 }
 
-unsafe impl Trace for LuaClosure<'_> {
+unsafe impl GarbageCollect for LuaClosure<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.proto.trace(tracer);
         self.upvalues.trace(tracer);
@@ -57,7 +57,7 @@ impl std::fmt::Debug for NativeClosure {
     }
 }
 
-unsafe impl Trace for NativeClosure {
+unsafe impl GarbageCollect for NativeClosure {
     fn needs_trace() -> bool {
         false
     }
@@ -84,7 +84,7 @@ impl<'gc> From<Value<'gc>> for Upvalue<'gc> {
     }
 }
 
-unsafe impl Trace for Upvalue<'_> {
+unsafe impl GarbageCollect for Upvalue<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         if let Self::Closed(x) = self {
             x.trace(tracer);

@@ -1,5 +1,5 @@
 use super::{Integer, Value};
-use crate::gc::{Trace, Tracer};
+use crate::gc::{GarbageCollect, Tracer};
 use rustc_hash::FxHashMap;
 
 #[derive(Debug, Clone, Default)]
@@ -17,7 +17,7 @@ impl<'gc> From<Vec<Value<'gc>>> for Table<'gc> {
     }
 }
 
-unsafe impl Trace for Table<'_> {
+unsafe impl GarbageCollect for Table<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.map.trace(tracer);
         self.array.trace(tracer);

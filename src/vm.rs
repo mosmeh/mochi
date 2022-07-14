@@ -9,7 +9,7 @@ pub use instruction::Instruction;
 pub use opcode::OpCode;
 
 use crate::{
-    gc::{GcCell, GcHeap, Trace, Tracer},
+    gc::{GarbageCollect, GcCell, GcHeap, Tracer},
     types::{StackKey, Table, Upvalue, Value},
     LuaClosure,
 };
@@ -42,7 +42,7 @@ struct State<'gc, 'stack> {
     lower_stack: &'stack mut [Value<'gc>],
 }
 
-unsafe impl Trace for State<'_, '_> {
+unsafe impl GarbageCollect for State<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.stack.trace(tracer);
         self.lower_stack.trace(tracer);
@@ -83,7 +83,7 @@ struct Root<'gc, 'vm, 'stack> {
     open_upvalues: &'vm BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
 }
 
-unsafe impl Trace for Root<'_, '_, '_> {
+unsafe impl GarbageCollect for Root<'_, '_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.state.trace(tracer);
         self.global_table.trace(tracer);
@@ -99,7 +99,7 @@ pub struct Vm<'gc> {
     open_upvalues: BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
 }
 
-unsafe impl Trace for Vm<'_> {
+unsafe impl GarbageCollect for Vm<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.stack.trace(tracer);
         self.global_table.trace(tracer);

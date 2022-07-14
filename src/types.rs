@@ -9,7 +9,7 @@ pub use closure::{
 pub use string::LuaString;
 pub use table::Table;
 
-use crate::gc::{Gc, GcCell, GcHeap, Trace, Tracer};
+use crate::gc::{GarbageCollect, Gc, GcCell, GcHeap, Tracer};
 use std::{
     borrow::Cow,
     cell::{Ref, RefMut},
@@ -157,7 +157,7 @@ impl Display for Value<'_> {
     }
 }
 
-unsafe impl Trace for Value<'_> {
+unsafe impl GarbageCollect for Value<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         match self {
             Value::String(x) => x.trace(tracer),
