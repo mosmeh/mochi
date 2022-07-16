@@ -8,7 +8,7 @@ use std::io::Write;
 pub fn create_table(heap: &GcHeap) -> Table {
     let mut table = Table::new();
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("write")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack(key);

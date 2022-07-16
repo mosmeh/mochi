@@ -67,13 +67,17 @@ impl<'gc> Vm<'gc> {
                 OpCode::GetTabUp => {
                     let upvalue = closure.upvalues[insn.b()].borrow();
                     let value = state.resolve_upvalue(&upvalue);
-                    let rc = closure.proto.constants[insn.c() as usize];
+                    let rc = if let Value::String(s) = closure.proto.constants[insn.c() as usize] {
+                        s
+                    } else {
+                        unreachable!();
+                    };
                     state.stack[insn.a()] = {
                         let table = value.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: value.ty(),
                         })?;
-                        table.get(rc)
+                        table.get_field(rc)
                     };
                 }
                 OpCode::GetTable => {
@@ -100,17 +104,25 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::GetField => {
                     let rb = state.stack[insn.b()];
-                    let rc = closure.proto.constants[insn.c() as usize];
+                    let rc = if let Value::String(s) = closure.proto.constants[insn.c() as usize] {
+                        s
+                    } else {
+                        unreachable!();
+                    };
                     state.stack[insn.a()] = {
                         let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
                         })?;
-                        table.get(rc)
+                        table.get_field(rc)
                     };
                 }
                 OpCode::SetTabUp => {
-                    let kb = closure.proto.constants[insn.b()];
+                    let kb = if let Value::String(s) = closure.proto.constants[insn.b()] {
+                        s
+                    } else {
+                        unreachable!();
+                    };
                     let upvalue = closure.upvalues[insn.a()].borrow();
                     let table_value = state.resolve_upvalue(&upvalue);
                     let mut table =
@@ -126,7 +138,7 @@ impl<'gc> Vm<'gc> {
                     } else {
                         state.stack[c]
                     };
-                    table.set(kb, rkc);
+                    table.set_field(kb, rkc);
                 }
                 OpCode::SetTable => {
                     let ra = state.stack[insn.a()];
@@ -164,14 +176,18 @@ impl<'gc> Vm<'gc> {
                         operation: Operation::Index,
                         ty: ra.ty(),
                     })?;
-                    let kb = closure.proto.constants[insn.b()];
+                    let kb = if let Value::String(s) = closure.proto.constants[insn.b()] {
+                        s
+                    } else {
+                        unreachable!();
+                    };
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
                         closure.proto.constants[c]
                     } else {
                         state.stack[c]
                     };
-                    table.set(kb, rkc);
+                    table.set_field(kb, rkc);
                 }
                 OpCode::NewTable => {
                     state.stack[insn.a()] = heap.allocate_cell(Table::new()).into();
@@ -191,7 +207,12 @@ impl<'gc> Vm<'gc> {
                     } else {
                         state.stack[c]
                     };
-                    state.stack[a] = table.get(rkc);
+                    let rkc = if let Value::String(s) = rkc {
+                        s
+                    } else {
+                        unreachable!();
+                    };
+                    state.stack[a] = table.get_field(rkc);
                 }
                 OpCode::AddI => ops::do_arithmetic_with_immediate(
                     &mut state,

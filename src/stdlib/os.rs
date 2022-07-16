@@ -8,7 +8,7 @@ use bstr::B;
 pub fn create_table(heap: &GcHeap) -> Table {
     let mut table = Table::new();
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("clock")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] = cpu_time::ProcessTime::now()
@@ -19,7 +19,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
         })),
     );
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("difftime")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             vm.local_stack_mut(key)[0] =

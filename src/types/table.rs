@@ -1,4 +1,4 @@
-use super::{Integer, Value};
+use super::{Integer, LuaString, Value};
 use crate::gc::{GarbageCollect, Tracer};
 use hashbrown::HashMap;
 use rustc_hash::FxHasher;
@@ -55,6 +55,13 @@ impl<'gc> Table<'gc> {
         self.map.get(&key).copied().unwrap_or_default()
     }
 
+    pub fn get_field(&self, field: LuaString<'gc>) -> Value<'gc> {
+        self.map
+            .get(&Value::String(field))
+            .copied()
+            .unwrap_or_default()
+    }
+
     pub fn set<K, V>(&mut self, key: K, value: V)
     where
         K: Into<Value<'gc>>,
@@ -90,6 +97,25 @@ impl<'gc> Table<'gc> {
                 }
             }
         }
+        self.map
+            .raw_table()
+            .insert(hash, (key, value), |(k, _)| calc_hash(*k));
+    }
+
+    pub fn set_field<V>(&mut self, field: LuaString<'gc>, value: V)
+    where
+        V: Into<Value<'gc>>,
+    {
+        let key = Value::String(field);
+        let value = value.into();
+
+        let hash = match self.try_set_no_grow(key, value) {
+            Ok(_) => return,
+            Err(hash) => hash,
+        };
+
+        self.resize_array(key);
+
         self.map
             .raw_table()
             .insert(hash, (key, value), |(k, _)| calc_hash(*k));

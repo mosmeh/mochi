@@ -9,7 +9,7 @@ use bstr::B;
 pub fn create_table(heap: &GcHeap) -> Table {
     let mut table = Table::new();
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("char")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let mut bytes = Vec::with_capacity(key.0.len() - 1);
@@ -34,7 +34,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
         })),
     );
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("len")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let string = get_string_arg(heap, vm, key.clone(), 1)?;
@@ -44,7 +44,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
         })),
     );
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("lower")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let string = get_string_arg(heap, vm, key.clone(), 1)?;
@@ -54,7 +54,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
         })),
     );
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("reverse")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let mut string = get_string_arg(heap, vm, key.clone(), 1)?.to_vec();
@@ -64,7 +64,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
         })),
     );
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("upper")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let string = get_string_arg(heap, vm, key.clone(), 1)?;

@@ -13,7 +13,8 @@ use std::io::Write;
 
 pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     let mut table = Table::new();
-    table.set(
+
+    table.set_field(
         heap.allocate_string(B("assert")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let stack = vm.local_stack_mut(key);
@@ -27,14 +28,16 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             }
         })),
     );
-    table.set(
+
+    table.set_field(
         heap.allocate_string(B("error")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let error_obj = vm.local_stack(key)[1];
             Err(error_obj_to_error_kind(heap, error_obj))
         })),
     );
-    table.set(
+
+    table.set_field(
         heap.allocate_string(B("print")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack(key);
@@ -50,7 +53,8 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             Ok(0)
         })),
     );
-    table.set(
+
+    table.set_field(
         heap.allocate_string(B("rawequal")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
@@ -58,7 +62,8 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             Ok(1)
         })),
     );
-    table.set(
+
+    table.set_field(
         heap.allocate_string(B("tonumber")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
@@ -83,7 +88,8 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             Ok(1)
         })),
     );
-    table.set(
+
+    table.set_field(
         heap.allocate_string(B("tostring")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let stack = vm.local_stack_mut(key);
@@ -93,7 +99,8 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             Ok(1)
         })),
     );
-    table.set(
+
+    table.set_field(
         heap.allocate_string(B("type")),
         heap.allocate(NativeClosure::new(|heap, vm, key| {
             let stack = vm.local_stack_mut(key);
@@ -103,12 +110,13 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             Ok(1)
         })),
     );
-    table.set(
+
+    table.set_field(
         heap.allocate_string(B("_VERSION")),
         heap.allocate_string(B("Lua 5.4")),
     );
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("require")),
         heap.allocate(NativeClosure::new(move |heap, vm, key| {
             let package_str = heap.allocate_string(B("package"));
@@ -119,8 +127,8 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             let maybe_loaded_value = {
                 let loaded_table = package_table.get(loaded_str);
                 let loaded_table = loaded_table.as_table().unwrap();
-                let name = vm.local_stack(key.clone())[1];
-                loaded_table.get(name)
+                let name = get_string_arg(heap, vm, key.clone(), 1)?;
+                loaded_table.get_field(name)
             };
 
             let name = get_string_arg(heap, vm, key.clone(), 1)?;
@@ -130,8 +138,8 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
                 let value = vm.execute(heap, closure).unwrap();
                 let loaded_table = package_table.get(loaded_str);
                 let mut loaded_table = loaded_table.as_table_mut(heap).unwrap();
-                let name = vm.local_stack(key.clone())[1];
-                loaded_table.set(name, value);
+                let name = get_string_arg(heap, vm, key.clone(), 1)?;
+                loaded_table.set_field(name, value);
                 value
             } else {
                 maybe_loaded_value
@@ -144,28 +152,28 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         })),
     );
     let mut package = Table::new();
-    package.set(
+    package.set_field(
         heap.allocate_string(B("loaded")),
         heap.allocate_cell(Table::new()),
     );
-    table.set(
+    table.set_field(
         heap.allocate_string(B("package")),
         heap.allocate_cell(package),
     );
 
-    table.set(
+    table.set_field(
         heap.allocate_string(B("string")),
         heap.allocate_cell(string::create_table(heap)),
     );
-    table.set(
+    table.set_field(
         heap.allocate_string(B("math")),
         heap.allocate_cell(math::create_table(heap)),
     );
-    table.set(
+    table.set_field(
         heap.allocate_string(B("io")),
         heap.allocate_cell(io::create_table(heap)),
     );
-    table.set(
+    table.set_field(
         heap.allocate_string(B("os")),
         heap.allocate_cell(os::create_table(heap)),
     );
@@ -173,7 +181,7 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     let global = heap.allocate_cell(table);
     global
         .borrow_mut(heap)
-        .set(heap.allocate_string(B("_G")), global);
+        .set_field(heap.allocate_string(B("_G")), global);
     global
 }
 
