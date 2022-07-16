@@ -1,10 +1,18 @@
 use super::{Integer, Value};
 use crate::gc::{GarbageCollect, Tracer};
-use rustc_hash::FxHashMap;
+use hashbrown::HashMap;
+use rustc_hash::FxHasher;
+use std::hash::{BuildHasherDefault, Hash, Hasher};
+
+fn calc_hash(value: Value) -> u64 {
+    let mut state = FxHasher::default();
+    value.hash(&mut state);
+    state.finish()
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Table<'gc> {
-    map: FxHashMap<Value<'gc>, Value<'gc>>,
+    map: HashMap<Value<'gc>, Value<'gc>, BuildHasherDefault<FxHasher>>,
     array: Vec<Value<'gc>>,
 }
 
@@ -67,14 +75,10 @@ impl<'gc> Table<'gc> {
             key
         };
 
-        if value == Value::Nil {
-            self.map.remove(&key);
-            return;
-        }
-        if self.map.len() < self.map.capacity() {
-            self.map.insert(key, value);
-            return;
-        }
+        let hash = match self.try_set_no_grow(key, value) {
+            Ok(_) => return,
+            Err(hash) => hash,
+        };
 
         self.resize_array(key);
 
@@ -86,7 +90,30 @@ impl<'gc> Table<'gc> {
                 }
             }
         }
-        self.map.insert(key, value);
+        self.map
+            .raw_table()
+            .insert(hash, (key, value), |(k, _)| calc_hash(*k));
+    }
+
+    fn try_set_no_grow(&mut self, key: Value<'gc>, value: Value<'gc>) -> Result<(), u64> {
+        let hash = calc_hash(key);
+        let table = self.map.raw_table();
+        if let Some(bucket) = table.find(hash, |(k, _)| *k == key) {
+            if value == Value::Nil {
+                unsafe { table.remove(bucket) };
+            } else {
+                unsafe { bucket.write((key, value)) };
+            }
+            return Ok(());
+        }
+        if value == Value::Nil {
+            return Ok(());
+        }
+        if table.try_insert_no_grow(hash, (key, value)).is_ok() {
+            Ok(())
+        } else {
+            Err(hash)
+        }
     }
 
     fn resize_array(&mut self, new_key: Value<'gc>) {

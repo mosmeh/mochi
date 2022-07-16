@@ -1,10 +1,5 @@
 use super::{GcPtr, StringPool};
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, HashMap},
-    hash::BuildHasher,
-    ops::Deref,
-};
+use std::{cell::RefCell, collections::BTreeMap, hash::BuildHasher, ops::Deref};
 
 pub struct Tracer<'a> {
     pub(super) gray: &'a mut Vec<GcPtr<dyn GarbageCollect>>,
@@ -122,7 +117,22 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Vec<T> {
 }
 
 unsafe impl<K: GarbageCollect, V: GarbageCollect, S: BuildHasher> GarbageCollect
-    for HashMap<K, V, S>
+    for std::collections::HashMap<K, V, S>
+{
+    fn needs_trace() -> bool {
+        K::needs_trace() || V::needs_trace()
+    }
+
+    fn trace(&self, tracer: &mut Tracer) {
+        for (k, v) in self {
+            k.trace(tracer);
+            v.trace(tracer);
+        }
+    }
+}
+
+unsafe impl<K: GarbageCollect, V: GarbageCollect, S: BuildHasher> GarbageCollect
+    for hashbrown::HashMap<K, V, S>
 {
     fn needs_trace() -> bool {
         K::needs_trace() || V::needs_trace()
