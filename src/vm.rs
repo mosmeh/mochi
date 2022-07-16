@@ -94,8 +94,8 @@ unsafe impl GarbageCollect for Root<'_, '_, '_> {
     }
 }
 
-#[derive(Debug)]
 pub struct Vm<'gc> {
+    heap: &'gc GcHeap,
     stack: Vec<Value<'gc>>,
     frames: Vec<Frame>,
     global_table: GcCell<'gc, Table<'gc>>,
@@ -114,12 +114,17 @@ unsafe impl GarbageCollect for Vm<'_> {
 impl<'gc> Vm<'gc> {
     pub fn new(heap: &'gc GcHeap, global_table: GcCell<'gc, Table<'gc>>) -> Self {
         Self {
+            heap,
             stack: Vec::new(),
             frames: Vec::new(),
             global_table,
             open_upvalues: BTreeMap::new(),
             tag_method_names: tag_method::allocate_tag_method_names(heap),
         }
+    }
+
+    pub fn heap(&self) -> &'gc GcHeap {
+        self.heap
     }
 
     pub fn global_table(&self) -> GcCell<'gc, Table<'gc>> {
@@ -134,23 +139,20 @@ impl<'gc> Vm<'gc> {
         &mut self.stack[key.0]
     }
 
-    pub fn execute(
-        &mut self,
-        heap: &'gc GcHeap,
-        mut closure: LuaClosure<'gc>,
-    ) -> Result<Value<'gc>, RuntimeError> {
+    pub fn execute(&mut self, mut closure: LuaClosure<'gc>) -> Result<Value<'gc>, RuntimeError> {
         assert!(self.stack.is_empty());
         assert!(self.frames.is_empty());
         assert!(self.open_upvalues.is_empty());
 
         if closure.upvalues.is_empty() {
-            closure
-                .upvalues
-                .push(heap.allocate_cell(Value::Table(self.global_table).into()));
+            closure.upvalues.push(
+                self.heap
+                    .allocate_cell(Value::Table(self.global_table).into()),
+            );
         }
 
-        let callee = heap.allocate(closure).into();
-        match self.execute_inner(heap, callee, &[]) {
+        let callee = self.heap.allocate(closure).into();
+        match self.execute_inner(callee, &[]) {
             Ok(result) => Ok(result),
             Err(source) => {
                 let traceback = self
@@ -175,7 +177,6 @@ impl<'gc> Vm<'gc> {
 
     pub(crate) fn execute_inner(
         &mut self,
-        heap: &'gc GcHeap,
         callee: Value<'gc>,
         args: &[Value<'gc>],
     ) -> Result<Value<'gc>, ErrorKind> {
@@ -188,11 +189,11 @@ impl<'gc> Vm<'gc> {
         self.frames.push(Frame::new(bottom));
 
         while self.frames.len() > frame_level {
-            self.execute_frame(heap)?;
+            self.execute_frame()?;
         }
 
         self.stack.truncate(bottom + 1);
-        unsafe { heap.step(self) };
+        unsafe { self.heap.step(self) };
 
         let result = self.stack.drain(bottom..).next().unwrap_or_default();
         Ok(result)
@@ -200,7 +201,6 @@ impl<'gc> Vm<'gc> {
 
     fn call_closure(
         &mut self,
-        heap: &'gc GcHeap,
         callee: Value<'gc>,
         stack_range: Range<usize>,
         num_args: Option<NonZeroUsize>,
@@ -216,7 +216,7 @@ impl<'gc> Vm<'gc> {
                 } else {
                     stack_range.clone() // variable number of args
                 };
-                let num_results = (closure.0)(heap, self, StackKey(range))?;
+                let num_results = (closure.0)(self, StackKey(range))?;
                 self.stack.truncate(stack_range.start + num_results);
                 Ok(())
             }
@@ -227,9 +227,9 @@ impl<'gc> Vm<'gc> {
         }
     }
 
-    fn close_upvalues(&mut self, heap: &GcHeap, boundary: usize) {
+    fn close_upvalues(&mut self, boundary: usize) {
         for (_, upvalue) in self.open_upvalues.split_off(&boundary) {
-            let mut upvalue = upvalue.borrow_mut(heap);
+            let mut upvalue = upvalue.borrow_mut(self.heap);
             if let Upvalue::Open(i) = *upvalue {
                 *upvalue = Upvalue::Closed(self.stack[i]);
             }

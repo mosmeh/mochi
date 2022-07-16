@@ -10,7 +10,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
 
     table.set_field(
         heap.allocate_string(B("write")),
-        heap.allocate(NativeClosure::new(|_, vm, key| {
+        heap.allocate(NativeClosure::new(|vm, key| {
             let stack = vm.local_stack(key);
             let mut stdout = std::io::stdout().lock();
             for x in &stack[1..] {

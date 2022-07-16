@@ -71,7 +71,7 @@ fn main() -> Result<()> {
 
     if let Some(script) = args.script {
         let closure = mochi::load_file(&heap, script)?;
-        vm.execute(&heap, closure)?;
+        vm.execute(closure)?;
 
         if !args.interactive {
             return Ok(());
@@ -83,7 +83,7 @@ fn main() -> Result<()> {
         match rl.readline("> ") {
             Ok(line) => {
                 rl.add_history_entry(&line);
-                if let Err(err) = eval(&heap, &mut vm, &line) {
+                if let Err(err) = eval(&mut vm, &line) {
                     eprintln!("{}", err);
                 }
             }
@@ -93,13 +93,14 @@ fn main() -> Result<()> {
     }
 }
 
-fn eval<'gc>(heap: &'gc GcHeap, vm: &mut Vm<'gc>, line: &str) -> Result<()> {
+fn eval(vm: &mut Vm, line: &str) -> Result<()> {
     const SOURCE: &str = "stdin";
+    let heap = vm.heap();
     let closure = if let Ok(closure) = mochi::load(heap, format!("print({})", line), SOURCE) {
         closure
     } else {
         mochi::load(heap, &line, SOURCE)?
     };
-    vm.execute(heap, closure)?;
+    vm.execute(closure)?;
     Ok(())
 }

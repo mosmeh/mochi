@@ -10,7 +10,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
 
     table.set_field(
         heap.allocate_string(B("clock")),
-        heap.allocate(NativeClosure::new(|_, vm, key| {
+        heap.allocate(NativeClosure::new(|vm, key| {
             vm.local_stack_mut(key)[0] = cpu_time::ProcessTime::now()
                 .as_duration()
                 .as_secs_f64()
@@ -21,7 +21,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
 
     table.set_field(
         heap.allocate_string(B("difftime")),
-        heap.allocate(NativeClosure::new(|_, vm, key| {
+        heap.allocate(NativeClosure::new(|vm, key| {
             vm.local_stack_mut(key)[0] =
                 (get_number_arg(vm, key.clone(), 1)? - get_number_arg(vm, key.clone(), 2)?).into();
             Ok(1)

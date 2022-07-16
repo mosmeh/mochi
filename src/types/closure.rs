@@ -1,5 +1,5 @@
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell, GcHeap, Tracer},
+    gc::{GarbageCollect, Gc, GcCell, Tracer},
     types::{LuaString, Value},
     vm::{ErrorKind, Instruction, Vm},
 };
@@ -46,8 +46,7 @@ unsafe impl GarbageCollect for LuaClosure<'_> {
 #[derive(Clone)]
 pub struct StackKey(pub(crate) Range<usize>);
 
-pub type NativeClosureFn =
-    dyn for<'gc> Fn(&'gc GcHeap, &mut Vm<'gc>, StackKey) -> Result<usize, ErrorKind>;
+pub type NativeClosureFn = dyn Fn(&mut Vm, StackKey) -> Result<usize, ErrorKind>;
 
 pub struct NativeClosure(pub Box<NativeClosureFn>);
 
@@ -66,7 +65,7 @@ unsafe impl GarbageCollect for NativeClosure {
 impl NativeClosure {
     pub fn new<T>(func: T) -> Self
     where
-        T: 'static + for<'gc> Fn(&'gc GcHeap, &mut Vm<'gc>, StackKey) -> Result<usize, ErrorKind>,
+        T: 'static + Fn(&mut Vm, StackKey) -> Result<usize, ErrorKind>,
     {
         Self(Box::new(func))
     }

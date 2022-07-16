@@ -1,6 +1,5 @@
 use super::{ops, ErrorKind, OpCode, Operation, Root, State, Vm};
 use crate::{
-    gc::GcHeap,
     types::{Integer, Number, Table, Upvalue, Value},
     LuaClosure,
 };
@@ -11,7 +10,7 @@ use std::{
 };
 
 impl<'gc> Vm<'gc> {
-    pub(super) fn execute_frame(&mut self, heap: &'gc GcHeap) -> Result<(), ErrorKind> {
+    pub(super) fn execute_frame(&mut self) -> Result<(), ErrorKind> {
         let frame = self.frames.last().unwrap().clone();
 
         let bottom_value = self.stack[frame.bottom];
@@ -62,7 +61,7 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetUpval => {
                     let value = state.stack[insn.a()];
-                    let mut upvalue = closure.upvalues[insn.b()].borrow_mut(heap);
+                    let mut upvalue = closure.upvalues[insn.b()].borrow_mut(self.heap);
                     *state.resolve_upvalue_mut(&mut upvalue) = value;
                 }
                 OpCode::GetTabUp => {
@@ -126,13 +125,12 @@ impl<'gc> Vm<'gc> {
                     };
                     let upvalue = closure.upvalues[insn.a()].borrow();
                     let table_value = state.resolve_upvalue(&upvalue);
-                    let mut table =
-                        table_value
-                            .as_table_mut(heap)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: table_value.ty(),
-                            })?;
+                    let mut table = table_value.as_table_mut(self.heap).ok_or_else(|| {
+                        ErrorKind::TypeError {
+                            operation: Operation::Index,
+                            ty: table_value.ty(),
+                        }
+                    })?;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
                         closure.proto.constants[c]
@@ -143,10 +141,12 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetTable => {
                     let ra = state.stack[insn.a()];
-                    let mut table = ra.as_table_mut(heap).ok_or_else(|| ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: ra.ty(),
-                    })?;
+                    let mut table =
+                        ra.as_table_mut(self.heap)
+                            .ok_or_else(|| ErrorKind::TypeError {
+                                operation: Operation::Index,
+                                ty: ra.ty(),
+                            })?;
                     let rb = state.stack[insn.b()];
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
@@ -158,10 +158,12 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetI => {
                     let ra = state.stack[insn.a()];
-                    let mut table = ra.as_table_mut(heap).ok_or_else(|| ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: ra.ty(),
-                    })?;
+                    let mut table =
+                        ra.as_table_mut(self.heap)
+                            .ok_or_else(|| ErrorKind::TypeError {
+                                operation: Operation::Index,
+                                ty: ra.ty(),
+                            })?;
                     let b = insn.b() as Integer;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
@@ -173,10 +175,12 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetField => {
                     let ra = state.stack[insn.a()];
-                    let mut table = ra.as_table_mut(heap).ok_or_else(|| ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: ra.ty(),
-                    })?;
+                    let mut table =
+                        ra.as_table_mut(self.heap)
+                            .ok_or_else(|| ErrorKind::TypeError {
+                                operation: Operation::Index,
+                                ty: ra.ty(),
+                            })?;
                     let kb = if let Value::String(s) = closure.proto.constants[insn.b()] {
                         s
                     } else {
@@ -201,7 +205,7 @@ impl<'gc> Vm<'gc> {
                         c += next_insn.ax() * (u8::MAX as usize + 1);
                     }
                     let table = Table::with_capacity_and_len(b, c);
-                    state.stack[insn.a()] = heap.allocate_cell(table).into();
+                    state.stack[insn.a()] = self.heap.allocate_cell(table).into();
                     state.pc += 1;
                 }
                 OpCode::Self_ => {
@@ -321,7 +325,7 @@ impl<'gc> Vm<'gc> {
                     let tag_method_name = self.tag_method_names[insn.c() as usize];
                     let tag_method_value = metatable.borrow().get_field(tag_method_name);
 
-                    let result = self.execute_inner(heap, tag_method_value, &[ra, rb])?;
+                    let result = self.execute_inner(tag_method_value, &[ra, rb])?;
                     self.stack[frame.base + prev_insn.a()] = result;
                     return Ok(());
                 }
@@ -364,7 +368,7 @@ impl<'gc> Vm<'gc> {
                     let b = insn.b();
                     let mut strings = Vec::with_capacity(b);
                     for value in state.stack[a..].iter().take(b) {
-                        if let Some(string) = value.as_lua_string(heap) {
+                        if let Some(string) = value.as_lua_string(self.heap) {
                             strings.push(string);
                         } else {
                             return Err(ErrorKind::TypeError {
@@ -374,7 +378,7 @@ impl<'gc> Vm<'gc> {
                         }
                     }
                     let strings: Vec<_> = strings.iter().map(|x| x.as_bytes()).collect();
-                    state.stack[a] = heap.allocate_string(strings.concat()).into();
+                    state.stack[a] = self.heap.allocate_string(strings.concat()).into();
                 }
                 OpCode::Close => unimplemented!("CLOSE"),
                 OpCode::Tbc => unimplemented!("TBC"),
@@ -464,7 +468,6 @@ impl<'gc> Vm<'gc> {
                     let a = insn.a();
                     let callee = state.stack[a];
                     return self.call_closure(
-                        heap,
                         callee,
                         frame.base + a..saved_stack_top,
                         NonZeroUsize::new(insn.b()),
@@ -475,7 +478,7 @@ impl<'gc> Vm<'gc> {
                     let b = insn.b();
                     let callee = state.stack[a];
                     if insn.k() {
-                        self.close_upvalues(heap, frame.bottom);
+                        self.close_upvalues(frame.bottom);
                     }
                     let num_results = if b > 0 {
                         b - 1
@@ -490,7 +493,6 @@ impl<'gc> Vm<'gc> {
                     self.stack.truncate(new_stack_len);
                     self.frames.pop().unwrap();
                     return self.call_closure(
-                        heap,
                         callee,
                         frame.bottom..new_stack_len,
                         NonZeroUsize::new(insn.b()),
@@ -498,7 +500,7 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::Return => {
                     if insn.k() {
-                        self.close_upvalues(heap, frame.bottom);
+                        self.close_upvalues(frame.bottom);
                     }
                     let a = insn.a();
                     let b = insn.b();
@@ -572,10 +574,12 @@ impl<'gc> Vm<'gc> {
                     let b = insn.b();
                     let c = insn.c() as usize;
                     let ra = state.stack[a];
-                    let mut table = ra.as_table_mut(heap).ok_or_else(|| ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: ra.ty(),
-                    })?;
+                    let mut table =
+                        ra.as_table_mut(self.heap)
+                            .ok_or_else(|| ErrorKind::TypeError {
+                                operation: Operation::Index,
+                                ty: ra.ty(),
+                            })?;
                     for (i, x) in state.stack[a + 1..=a + b].iter().cloned().enumerate() {
                         table.set((c + i + 1) as Integer, x);
                     }
@@ -588,16 +592,16 @@ impl<'gc> Vm<'gc> {
                         .map(|desc| {
                             if desc.in_stack {
                                 let index = frame.base + desc.index as usize;
-                                *self
-                                    .open_upvalues
-                                    .entry(index)
-                                    .or_insert_with(|| heap.allocate_cell(Upvalue::Open(index)))
+                                *self.open_upvalues.entry(index).or_insert_with(|| {
+                                    self.heap.allocate_cell(Upvalue::Open(index))
+                                })
                             } else {
                                 closure.upvalues[desc.index as usize]
                             }
                         })
                         .collect();
-                    state.stack[insn.a()] = heap.allocate(LuaClosure { proto, upvalues }).into();
+                    state.stack[insn.a()] =
+                        self.heap.allocate(LuaClosure { proto, upvalues }).into();
                 }
                 OpCode::VarArg => {
                     let n = insn.c();
@@ -665,7 +669,7 @@ impl<'gc> Vm<'gc> {
                 open_upvalues: &self.open_upvalues,
                 tag_method_names: &self.tag_method_names,
             };
-            unsafe { heap.step(&root) };
+            unsafe { self.heap.step(&root) };
         }
     }
 }
