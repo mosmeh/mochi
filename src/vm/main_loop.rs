@@ -6,6 +6,7 @@ use crate::{
 };
 use std::{
     cmp::PartialOrd,
+    num::NonZeroUsize,
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub},
 };
 
@@ -442,7 +443,12 @@ impl<'gc> Vm<'gc> {
                     self.frames.last_mut().unwrap().pc = state.pc;
                     let a = insn.a();
                     let callee = state.stack[a];
-                    return self.call_closure(heap, callee, frame.base + a..saved_stack_top, insn);
+                    return self.call_closure(
+                        heap,
+                        callee,
+                        frame.base + a..saved_stack_top,
+                        NonZeroUsize::new(insn.b()),
+                    );
                 }
                 OpCode::TailCall => {
                     let a = insn.a();
@@ -463,7 +469,12 @@ impl<'gc> Vm<'gc> {
                     let new_stack_len = frame.bottom + num_results + 1;
                     self.stack.truncate(new_stack_len);
                     self.frames.pop().unwrap();
-                    return self.call_closure(heap, callee, frame.bottom..new_stack_len, insn);
+                    return self.call_closure(
+                        heap,
+                        callee,
+                        frame.bottom..new_stack_len,
+                        NonZeroUsize::new(insn.b()),
+                    );
                 }
                 OpCode::Return => {
                     if insn.k() {

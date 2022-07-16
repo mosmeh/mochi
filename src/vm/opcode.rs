@@ -1,16 +1,15 @@
-macro_rules! impl_try_from_insn {
+macro_rules! impl_from_u8 {
     ($(#[$meta:meta])* $vis:vis enum $name:ident {
-        $($(#[$vmeta:meta])* $vname:ident $(= $val:expr)?,)*
+        $($variant:ident,)*
     }) => {
-        $(#[$meta])*
-        $vis enum $name {
-            $($(#[$vmeta])* $vname $(= $val)?,)*
+        $(#[$meta])* $vis enum $name {
+            $($variant,)*
         }
 
-        impl $name {
-            pub fn new(v: u8) -> Self {
+        impl From<u8> for $name {
+            fn from(v: u8) -> Self {
                 match v {
-                    $(x if x == $name::$vname as u8 => $name::$vname,)*
+                    $(x if x == $name::$variant as u8 => $name::$variant,)*
                     _ => unimplemented!()
                 }
             }
@@ -18,7 +17,7 @@ macro_rules! impl_try_from_insn {
     }
 }
 
-impl_try_from_insn! {
+impl_from_u8! {
 #[derive(Debug, Clone, Copy)]
 pub enum OpCode {
     Move,

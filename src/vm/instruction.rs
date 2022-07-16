@@ -12,7 +12,7 @@ impl std::fmt::Debug for Instruction {
 impl Instruction {
     pub fn opcode(&self) -> OpCode {
         let value = (self.0 & 0x7f) as u8;
-        OpCode::new(value)
+        OpCode::from(value)
     }
 
     pub fn a(&self) -> usize {

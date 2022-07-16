@@ -198,7 +198,7 @@ impl<'gc> Vm<'gc> {
         heap: &'gc GcHeap,
         callee: Value<'gc>,
         stack_range: Range<usize>,
-        insn: Instruction,
+        num_args: Option<NonZeroUsize>,
     ) -> Result<(), ErrorKind> {
         match callee {
             Value::LuaClosure(_) => {
@@ -206,9 +206,8 @@ impl<'gc> Vm<'gc> {
                 Ok(())
             }
             Value::NativeClosure(closure) => {
-                let b = insn.b();
-                let range = if b > 0 {
-                    stack_range.start..stack_range.start + b // fixed number of args
+                let range = if let Some(num_args) = num_args {
+                    stack_range.start..stack_range.start + num_args.get() // fixed number of args
                 } else {
                     stack_range.clone() // variable number of args
                 };
