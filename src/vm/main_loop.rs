@@ -190,7 +190,17 @@ impl<'gc> Vm<'gc> {
                     table.set_field(kb, rkc);
                 }
                 OpCode::NewTable => {
-                    state.stack[insn.a()] = heap.allocate_cell(Table::new()).into();
+                    let mut b = insn.b();
+                    if b > 0 {
+                        b = 1 << (b - 1);
+                    }
+                    let mut c = insn.c() as usize;
+                    if insn.k() {
+                        let next_insn = closure.proto.code[state.pc];
+                        c += next_insn.ax() * (u8::MAX as usize + 1);
+                    }
+                    let table = Table::with_capacity_and_len(b, c);
+                    state.stack[insn.a()] = heap.allocate_cell(table).into();
                     state.pc += 1;
                 }
                 OpCode::Self_ => {

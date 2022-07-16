@@ -37,6 +37,13 @@ impl<'gc> Table<'gc> {
         Default::default()
     }
 
+    pub fn with_capacity_and_len(map_capacity: usize, array_len: usize) -> Self {
+        Self {
+            map: HashMap::with_capacity_and_hasher(map_capacity, BuildHasherDefault::default()),
+            array: vec![Value::Nil; array_len],
+        }
+    }
+
     pub fn get<K>(&self, key: K) -> Value<'gc>
     where
         K: Into<Value<'gc>>,
