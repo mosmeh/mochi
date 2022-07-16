@@ -134,22 +134,23 @@ impl<'gc> Vm<'gc> {
         heap: &'gc GcHeap,
         mut closure: LuaClosure<'gc>,
     ) -> Result<Value<'gc>, RuntimeError> {
-        assert!(closure.upvalues.is_empty());
-        closure
-            .upvalues
-            .push(heap.allocate_cell(Value::from(self.global_table).into()));
+        assert!(self.stack.is_empty());
+        assert!(self.frames.is_empty());
+        assert!(self.open_upvalues.is_empty());
 
-        let bottom = self.stack.len();
-        self.stack.push(heap.allocate(closure).into());
+        if closure.upvalues.is_empty() {
+            closure
+                .upvalues
+                .push(heap.allocate_cell(Value::Table(self.global_table).into()));
+        }
 
-        let frame_level = self.frames.len();
-        self.frames.push(Frame::new(bottom));
-
-        while self.frames.len() > frame_level {
-            if let Err(source) = self.execute_frame(heap) {
+        let callee = heap.allocate(closure).into();
+        match self.execute_inner(heap, callee, &[]) {
+            Ok(result) => Ok(result),
+            Err(source) => {
                 let traceback = self
                     .frames
-                    .iter()
+                    .drain(..)
                     .rev()
                     .map(|frame| {
                         let value = self.stack[frame.bottom];
@@ -160,14 +161,35 @@ impl<'gc> Vm<'gc> {
                         }
                     })
                     .collect();
-                self.stack.truncate(bottom);
-                self.frames.truncate(frame_level);
-                return Err(RuntimeError { source, traceback });
+                self.stack.clear();
+                self.open_upvalues.clear();
+                Err(RuntimeError { source, traceback })
             }
         }
+    }
+
+    pub(crate) fn execute_inner(
+        &mut self,
+        heap: &'gc GcHeap,
+        callee: Value<'gc>,
+        args: &[Value<'gc>],
+    ) -> Result<Value<'gc>, ErrorKind> {
+        let bottom = self.stack.len();
+        self.stack.reserve(args.len() + 1);
+        self.stack.push(callee);
+        self.stack.extend_from_slice(args);
+
+        let frame_level = self.frames.len();
+        self.frames.push(Frame::new(bottom));
+
+        while self.frames.len() > frame_level {
+            self.execute_frame(heap)?;
+        }
+
+        self.stack.truncate(bottom + 1);
+        unsafe { heap.step(self) };
 
         let result = self.stack.drain(bottom..).next().unwrap_or_default();
-        unsafe { heap.step(self) };
         Ok(result)
     }
 

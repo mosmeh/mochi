@@ -127,19 +127,30 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
             let maybe_loaded_value = {
                 let loaded_table = package_table.get(loaded_str);
                 let loaded_table = loaded_table.as_table().unwrap();
-                let name = get_string_arg(heap, vm, key.clone(), 1)?;
-                loaded_table.get_field(name)
+                let module_name = get_string_arg(heap, vm, key.clone(), 1)?;
+                loaded_table.get_field(module_name)
             };
 
-            let name = get_string_arg(heap, vm, key.clone(), 1)?;
-            let filename = format!("./{}.lua", name.as_bstr());
+            let module_name = get_string_arg(heap, vm, key.clone(), 1)?;
+            let filename = format!("./{}.lua", module_name.as_bstr());
+            let filename_value = heap.allocate_string(filename.clone().into_bytes()).into();
+
             let loaded_value = if maybe_loaded_value == Value::Nil {
-                let closure = crate::load_file(heap, &filename).unwrap();
-                let value = vm.execute(heap, closure).unwrap();
+                let mut closure = crate::load_file(heap, &filename).unwrap();
+                assert!(closure.upvalues.is_empty());
+                closure
+                    .upvalues
+                    .push(heap.allocate_cell(Value::Table(vm.global_table()).into()));
+
+                let callee = heap.allocate(closure).into();
+                let module_name = get_string_arg(heap, vm, key.clone(), 1)?;
+                let value =
+                    vm.execute_inner(heap, callee, &[module_name.into(), filename_value])?;
+
                 let loaded_table = package_table.get(loaded_str);
                 let mut loaded_table = loaded_table.as_table_mut(heap).unwrap();
-                let name = get_string_arg(heap, vm, key.clone(), 1)?;
-                loaded_table.set_field(name, value);
+                loaded_table.set_field(module_name, value);
+
                 value
             } else {
                 maybe_loaded_value
@@ -147,7 +158,7 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
 
             let stack = vm.local_stack_mut(key);
             stack[0] = loaded_value;
-            stack[1] = heap.allocate_string(filename.into_bytes()).into();
+            stack[1] = filename_value;
             Ok(2)
         })),
     );
