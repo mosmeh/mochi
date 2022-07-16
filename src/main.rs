@@ -7,7 +7,7 @@ use mochi::{
     vm::Vm,
 };
 use rustyline::{error::ReadlineError, Editor};
-use std::path::PathBuf;
+use std::{ops::Deref, path::PathBuf};
 
 #[cfg(all(feature = "jemalloc", not(target_env = "msvc")))]
 #[global_allocator]
@@ -36,6 +36,14 @@ impl Drop for LeakingGcHeap {
     }
 }
 
+impl Deref for LeakingGcHeap {
+    type Target = GcHeap;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -44,26 +52,26 @@ fn main() -> Result<()> {
     let mut arg = Table::new();
     if let Some(script) = &args.script {
         let script = Vec::from_path_lossy(script);
-        arg.set(0, heap.0.allocate_string(script));
+        arg.set(0, heap.allocate_string(script));
     }
     for (i, x) in args.args.into_iter().enumerate() {
         let key = (i + 1) as Integer;
-        let value = heap.0.allocate_string(x.into_bytes());
+        let value = heap.allocate_string(x.into_bytes());
         arg.set(key, value);
     }
 
-    let global_table = mochi::create_global_table(&heap.0);
+    let global_table = mochi::create_global_table(&heap);
     {
-        let mut table = global_table.borrow_mut(&heap.0);
-        table.set_field(heap.0.allocate_string(B("_ENV")), global_table);
-        table.set_field(heap.0.allocate_string(B("arg")), heap.0.allocate_cell(arg));
+        let mut table = global_table.borrow_mut(&heap);
+        table.set_field(heap.allocate_string(B("_ENV")), global_table);
+        table.set_field(heap.allocate_string(B("arg")), heap.allocate_cell(arg));
     }
 
     let mut vm = Vm::new(global_table);
 
     if let Some(script) = args.script {
-        let closure = mochi::load_file(&heap.0, script)?;
-        vm.execute(&heap.0, closure)?;
+        let closure = mochi::load_file(&heap, script)?;
+        vm.execute(&heap, closure)?;
 
         if !args.interactive {
             return Ok(());
@@ -75,7 +83,7 @@ fn main() -> Result<()> {
         match rl.readline("> ") {
             Ok(line) => {
                 rl.add_history_entry(&line);
-                if let Err(err) = eval(&heap.0, &mut vm, &line) {
+                if let Err(err) = eval(&heap, &mut vm, &line) {
                     eprintln!("{}", err);
                 }
             }
