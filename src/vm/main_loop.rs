@@ -304,7 +304,27 @@ impl<'gc> Vm<'gc> {
                 OpCode::BXor => ops::do_bitwise_op(&mut state, insn, Integer::bitxor),
                 OpCode::Shr => ops::do_bitwise_op(&mut state, insn, Integer::shr),
                 OpCode::Shl => ops::do_bitwise_op(&mut state, insn, Integer::shl),
-                OpCode::MmBin => unimplemented!("MMBIN"),
+                OpCode::MmBin => {
+                    self.frames.last_mut().unwrap().pc = state.pc;
+
+                    let ra = state.stack[insn.a()];
+                    let rb = state.stack[insn.b()];
+                    let prev_insn = closure.proto.code[state.pc - 2];
+
+                    let metatable = ra.metatable().or_else(|| rb.metatable()).ok_or_else(|| {
+                        ErrorKind::TypeError {
+                            operation: Operation::Arithmetic,
+                            ty: rb.ty(),
+                        }
+                    })?;
+
+                    let tag_method_name = self.tag_method_names[insn.c() as usize];
+                    let tag_method_value = metatable.borrow().get_field(tag_method_name);
+
+                    let result = self.execute_inner(heap, tag_method_value, &[ra, rb])?;
+                    self.stack[frame.base + prev_insn.a()] = result;
+                    return Ok(());
+                }
                 OpCode::MmBinI => unimplemented!("MMBINI"),
                 OpCode::MmBinK => unimplemented!("MMBINK"),
                 OpCode::Unm => {
@@ -643,6 +663,7 @@ impl<'gc> Vm<'gc> {
                 state: &state,
                 global_table: self.global_table,
                 open_upvalues: &self.open_upvalues,
+                tag_method_names: &self.tag_method_names,
             };
             unsafe { heap.step(&root) };
         }

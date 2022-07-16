@@ -3,6 +3,7 @@ mod instruction;
 mod main_loop;
 mod opcode;
 mod ops;
+mod tag_method;
 
 pub use error::{ErrorKind, Operation, RuntimeError, TracebackFrame};
 pub use instruction::Instruction;
@@ -10,10 +11,10 @@ pub use opcode::OpCode;
 
 use crate::{
     gc::{GarbageCollect, GcCell, GcHeap, Tracer},
-    types::{StackKey, Table, Upvalue, Value},
+    types::{LuaString, StackKey, Table, Upvalue, Value},
     LuaClosure,
 };
-use std::{collections::BTreeMap, ops::Range};
+use std::{collections::BTreeMap, num::NonZeroUsize, ops::Range};
 
 #[derive(Debug, Clone)]
 struct Frame {
@@ -81,6 +82,7 @@ struct Root<'gc, 'vm, 'stack> {
     state: &'stack State<'gc, 'stack>,
     global_table: GcCell<'gc, Table<'gc>>,
     open_upvalues: &'vm BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
+    tag_method_names: &'vm [LuaString<'gc>; tag_method::COUNT],
 }
 
 unsafe impl GarbageCollect for Root<'_, '_, '_> {
@@ -88,6 +90,7 @@ unsafe impl GarbageCollect for Root<'_, '_, '_> {
         self.state.trace(tracer);
         self.global_table.trace(tracer);
         self.open_upvalues.trace(tracer);
+        self.tag_method_names.as_ref().trace(tracer);
     }
 }
 
@@ -97,6 +100,7 @@ pub struct Vm<'gc> {
     frames: Vec<Frame>,
     global_table: GcCell<'gc, Table<'gc>>,
     open_upvalues: BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
+    tag_method_names: [LuaString<'gc>; tag_method::COUNT],
 }
 
 unsafe impl GarbageCollect for Vm<'_> {
@@ -108,12 +112,13 @@ unsafe impl GarbageCollect for Vm<'_> {
 }
 
 impl<'gc> Vm<'gc> {
-    pub fn new(global_table: GcCell<'gc, Table<'gc>>) -> Self {
+    pub fn new(heap: &'gc GcHeap, global_table: GcCell<'gc, Table<'gc>>) -> Self {
         Self {
             stack: Vec::new(),
             frames: Vec::new(),
             global_table,
             open_upvalues: BTreeMap::new(),
+            tag_method_names: tag_method::allocate_tag_method_names(heap),
         }
     }
 

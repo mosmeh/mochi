@@ -38,6 +38,19 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     );
 
     table.set_field(
+        heap.allocate_string(B("getmetatable")),
+        heap.allocate(NativeClosure::new(|_, vm, key| {
+            let stack = vm.local_stack_mut(key);
+            stack[0] = stack[1]
+                .as_table()
+                .and_then(|table| table.metatable())
+                .map(Value::from)
+                .unwrap_or_default();
+            Ok(1)
+        })),
+    );
+
+    table.set_field(
         heap.allocate_string(B("print")),
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack(key);
@@ -59,6 +72,37 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         heap.allocate(NativeClosure::new(|_, vm, key| {
             let stack = vm.local_stack_mut(key);
             stack[0] = (stack[1] == stack[2]).into();
+            Ok(1)
+        })),
+    );
+
+    table.set_field(
+        heap.allocate_string(B("setmetatable")),
+        heap.allocate(NativeClosure::new(|heap, vm, key| {
+            let stack = vm.local_stack_mut(key);
+            {
+                let mut table =
+                    stack[1]
+                        .as_table_mut(heap)
+                        .ok_or_else(|| ErrorKind::ArgumentTypeError {
+                            nth: 1,
+                            expected_type: Type::Table,
+                            got_type: stack[1].ty(),
+                        })?;
+                let metatable = match stack[2] {
+                    Value::Table(table) => Some(table),
+                    Value::Nil => None,
+                    _ => {
+                        return Err(ErrorKind::ArgumentTypeError {
+                            nth: 2,
+                            expected_type: Type::Table,
+                            got_type: stack[2].ty(),
+                        })
+                    }
+                };
+                table.set_metatable(metatable);
+            }
+            stack[0] = stack[1];
             Ok(1)
         })),
     );

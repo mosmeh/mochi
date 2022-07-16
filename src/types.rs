@@ -169,6 +169,17 @@ unsafe impl GarbageCollect for Value<'_> {
 }
 
 impl<'gc> Value<'gc> {
+    pub fn ty(&self) -> Type {
+        match self {
+            Value::Nil => Type::Nil,
+            Value::Boolean(_) => Type::Boolean,
+            Value::Integer(_) | Value::Number(_) => Type::Number,
+            Value::String(_) => Type::String,
+            Value::Table(_) => Type::Table,
+            Value::LuaClosure(_) | Value::NativeClosure(_) => Type::Function,
+        }
+    }
+
     pub fn as_boolean(&self) -> bool {
         !matches!(self, Value::Nil | Value::Boolean(false))
     }
@@ -254,14 +265,11 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn ty(&self) -> Type {
-        match self {
-            Value::Nil => Type::Nil,
-            Value::Boolean(_) => Type::Boolean,
-            Value::Integer(_) | Value::Number(_) => Type::Number,
-            Value::String(_) => Type::String,
-            Value::Table(_) => Type::Table,
-            Value::LuaClosure(_) | Value::NativeClosure(_) => Type::Function,
+    pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
+        if let Self::Table(table) = self {
+            table.borrow().metatable()
+        } else {
+            unimplemented!()
         }
     }
 }

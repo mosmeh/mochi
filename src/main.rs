@@ -67,7 +67,7 @@ fn main() -> Result<()> {
         table.set_field(heap.allocate_string(B("arg")), heap.allocate_cell(arg));
     }
 
-    let mut vm = Vm::new(global_table);
+    let mut vm = Vm::new(&heap, global_table);
 
     if let Some(script) = args.script {
         let closure = mochi::load_file(&heap, script)?;

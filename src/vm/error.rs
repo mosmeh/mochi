@@ -58,6 +58,7 @@ pub enum Operation {
     Index,
     Call,
     Concatenate,
+    Arithmetic,
 }
 
 impl Display for Operation {
@@ -66,6 +67,7 @@ impl Display for Operation {
             Self::Index => f.write_str("index"),
             Self::Call => f.write_str("call"),
             Self::Concatenate => f.write_str("concatenate"),
+            Self::Arithmetic => f.write_str("perform arithmetic"),
         }
     }
 }

@@ -1,5 +1,5 @@
 use super::{Integer, LuaString, Value};
-use crate::gc::{GarbageCollect, Tracer};
+use crate::gc::{GarbageCollect, GcCell, Tracer};
 use hashbrown::HashMap;
 use rustc_hash::FxHasher;
 use std::hash::{BuildHasherDefault, Hash, Hasher};
@@ -14,13 +14,14 @@ fn calc_hash(value: Value) -> u64 {
 pub struct Table<'gc> {
     map: HashMap<Value<'gc>, Value<'gc>, BuildHasherDefault<FxHasher>>,
     array: Vec<Value<'gc>>,
+    metatable: Option<GcCell<'gc, Table<'gc>>>,
 }
 
 impl<'gc> From<Vec<Value<'gc>>> for Table<'gc> {
     fn from(array: Vec<Value<'gc>>) -> Self {
         Self {
-            map: Default::default(),
             array,
+            ..Default::default()
         }
     }
 }
@@ -41,6 +42,7 @@ impl<'gc> Table<'gc> {
         Self {
             map: HashMap::with_capacity_and_hasher(map_capacity, BuildHasherDefault::default()),
             array: vec![Value::Nil; array_len],
+            ..Default::default()
         }
     }
 
@@ -126,6 +128,14 @@ impl<'gc> Table<'gc> {
         self.map
             .raw_table()
             .insert(hash, (key, value), |(k, _)| calc_hash(*k));
+    }
+
+    pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
+        self.metatable
+    }
+
+    pub fn set_metatable(&mut self, metatable: Option<GcCell<'gc, Table<'gc>>>) {
+        self.metatable = metatable;
     }
 
     fn try_set_no_grow(&mut self, key: Value<'gc>, value: Value<'gc>) -> Result<(), u64> {
