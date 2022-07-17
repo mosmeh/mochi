@@ -19,9 +19,12 @@ impl Display for RuntimeError {
                 .iter()
                 .map(|frame| {
                     match &frame.lines_defined {
-                        LineRange::File => "\tin main chunk".to_owned(),
+                        LineRange::File => format!("\t{}: in main chunk", frame.source),
                         LineRange::Lines(range) => {
-                            format!("\tin function <{}:{}>", frame.source, range.start)
+                            format!(
+                                "\t{}: in function <{}:{}>",
+                                frame.source, frame.source, range.start
+                            )
                         }
                     }
                 })
