@@ -24,6 +24,10 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         heap.allocate_string(B("getmetatable")),
         NativeFunction::new(getmetatable),
     );
+    table.set_field(
+        heap.allocate_string(B("ipairs")),
+        NativeFunction::new(ipairs),
+    );
     table.set_field(heap.allocate_string(B("print")), NativeFunction::new(print));
     table.set_field(
         heap.allocate_string(B("rawequal")),
@@ -145,6 +149,46 @@ fn getmetatable(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
         .map(Value::from)
         .unwrap_or_default();
     Ok(1)
+}
+
+fn ipairs(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    fn iterate(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+        let stack = vm.stack(window.clone());
+        let i = stack[2]
+            .as_integer()
+            .ok_or_else(|| ErrorKind::ArgumentTypeError {
+                nth: 2,
+                expected_type: Type::Number,
+                got_type: stack[2].ty(),
+            })?
+            + 1;
+        let value = {
+            let table = stack[1]
+                .as_table()
+                .ok_or_else(|| ErrorKind::ArgumentTypeError {
+                    nth: 1,
+                    expected_type: Type::Table,
+                    got_type: stack[1].ty(),
+                })?;
+            table.get(i)
+        };
+
+        let stack = vm.stack_mut(window);
+        if value == Value::Nil {
+            stack[0] = Value::Nil;
+            Ok(1)
+        } else {
+            stack[0] = i.into();
+            stack[1] = value;
+            Ok(2)
+        }
+    }
+
+    let window = vm.ensure_stack(window, 3);
+    let stack = vm.stack_mut(window);
+    stack[0] = NativeFunction::new(iterate).into();
+    stack[2] = 0.into();
+    Ok(3)
 }
 
 fn print(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {

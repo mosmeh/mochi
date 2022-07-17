@@ -139,6 +139,16 @@ impl<'gc> Vm<'gc> {
         &mut self.stack[window.0]
     }
 
+    pub fn ensure_stack(&mut self, old_window: StackWindow, len: usize) -> StackWindow {
+        if old_window.0.len() >= len {
+            old_window
+        } else {
+            let new_end = old_window.0.start + len;
+            self.stack.resize(new_end, Value::Nil);
+            StackWindow(old_window.0.start..new_end)
+        }
+    }
+
     pub fn execute(&mut self, mut closure: LuaClosure<'gc>) -> Result<Value<'gc>, RuntimeError> {
         assert!(self.stack.is_empty());
         assert!(self.frames.is_empty());
