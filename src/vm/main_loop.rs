@@ -57,7 +57,7 @@ impl<'gc> Vm<'gc> {
                 OpCode::GetUpval => {
                     let upvalue = closure.upvalues[insn.b()].borrow();
                     let value = state.resolve_upvalue(&upvalue);
-                    state.stack[insn.a()] = *value;
+                    state.stack[insn.a()] = value;
                 }
                 OpCode::SetUpval => {
                     let value = state.stack[insn.a()];

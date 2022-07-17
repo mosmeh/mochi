@@ -51,16 +51,16 @@ unsafe impl GarbageCollect for State<'_, '_> {
 }
 
 impl<'gc, 'stack> State<'gc, 'stack> {
-    fn resolve_upvalue<'a>(&'a self, upvalue: &'a Upvalue<'gc>) -> &'a Value<'gc> {
+    fn resolve_upvalue(&self, upvalue: &Upvalue<'gc>) -> Value<'gc> {
         match upvalue {
             Upvalue::Open(i) => {
                 if *i < self.base {
-                    &self.lower_stack[*i]
+                    self.lower_stack[*i]
                 } else {
-                    &self.stack[*i - self.base]
+                    self.stack[*i - self.base]
                 }
             }
-            Upvalue::Closed(x) => x,
+            Upvalue::Closed(x) => *x,
         }
     }
 
