@@ -10,9 +10,9 @@ use std::{
 };
 
 #[derive(Clone)]
-pub struct StackKey(pub(crate) Range<usize>);
+pub struct StackWindow(pub(crate) Range<usize>);
 
-pub type NativeFunctionPtr = fn(&mut Vm, StackKey) -> Result<usize, ErrorKind>;
+pub type NativeFunctionPtr = fn(&mut Vm, StackWindow) -> Result<usize, ErrorKind>;
 
 #[derive(Clone, Copy)]
 pub struct NativeFunction(pub NativeFunctionPtr);
@@ -91,7 +91,7 @@ unsafe impl GarbageCollect for LuaClosure<'_> {
     }
 }
 
-pub type NativeClosureFn = dyn Fn(&mut Vm, StackKey) -> Result<usize, ErrorKind>;
+pub type NativeClosureFn = dyn Fn(&mut Vm, StackWindow) -> Result<usize, ErrorKind>;
 
 pub struct NativeClosure(pub Box<NativeClosureFn>);
 
@@ -110,7 +110,7 @@ unsafe impl GarbageCollect for NativeClosure {
 impl NativeClosure {
     pub fn new<T>(func: T) -> Self
     where
-        T: 'static + Fn(&mut Vm, StackKey) -> Result<usize, ErrorKind>,
+        T: 'static + Fn(&mut Vm, StackWindow) -> Result<usize, ErrorKind>,
     {
         Self(Box::new(func))
     }

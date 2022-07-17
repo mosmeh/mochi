@@ -1,6 +1,6 @@
 use crate::{
     gc::GcHeap,
-    types::{NativeFunction, StackKey, Table},
+    types::{NativeFunction, StackWindow, Table},
     vm::{ErrorKind, Vm},
 };
 use bstr::B;
@@ -12,8 +12,8 @@ pub fn create_table(heap: &GcHeap) -> Table {
     table
 }
 
-fn write(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
-    let stack = vm.local_stack(key);
+fn write(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack(window);
     let mut stdout = std::io::stdout().lock();
     for x in &stack[1..] {
         write!(stdout, "{}", x)?;

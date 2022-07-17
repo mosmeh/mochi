@@ -11,7 +11,7 @@ pub use opcode::OpCode;
 
 use crate::{
     gc::{GarbageCollect, GcCell, GcHeap, Tracer},
-    types::{LuaString, StackKey, Table, Upvalue, Value},
+    types::{LuaString, StackWindow, Table, Upvalue, Value},
     LuaClosure,
 };
 use std::{collections::BTreeMap, num::NonZeroUsize, ops::Range};
@@ -131,12 +131,12 @@ impl<'gc> Vm<'gc> {
         self.global_table
     }
 
-    pub fn local_stack(&self, key: StackKey) -> &[Value<'gc>] {
-        &self.stack[key.0]
+    pub fn stack(&self, window: StackWindow) -> &[Value<'gc>] {
+        &self.stack[window.0]
     }
 
-    pub fn local_stack_mut(&mut self, key: StackKey) -> &mut [Value<'gc>] {
-        &mut self.stack[key.0]
+    pub fn stack_mut(&mut self, window: StackWindow) -> &mut [Value<'gc>] {
+        &mut self.stack[window.0]
     }
 
     pub fn execute(&mut self, mut closure: LuaClosure<'gc>) -> Result<Value<'gc>, RuntimeError> {
@@ -203,15 +203,15 @@ impl<'gc> Vm<'gc> {
         &mut self,
         callee: Value<'gc>,
         stack_range: Range<usize>,
-        num_args: Option<NonZeroUsize>,
+        window_len: Option<NonZeroUsize>,
     ) -> Result<(), ErrorKind> {
         match callee {
-            Value::NativeFunction(func) => self.call_native(func.0, stack_range, num_args),
+            Value::NativeFunction(func) => self.call_native(func.0, stack_range, window_len),
             Value::LuaClosure(_) => {
                 self.frames.push(Frame::new(stack_range.start));
                 Ok(())
             }
-            Value::NativeClosure(closure) => self.call_native(&closure.0, stack_range, num_args),
+            Value::NativeClosure(closure) => self.call_native(&closure.0, stack_range, window_len),
             value => Err(ErrorKind::TypeError {
                 operation: Operation::Call,
                 ty: value.ty(),
@@ -223,17 +223,17 @@ impl<'gc> Vm<'gc> {
         &mut self,
         callee: F,
         stack_range: Range<usize>,
-        num_args: Option<NonZeroUsize>,
+        window_len: Option<NonZeroUsize>,
     ) -> Result<(), ErrorKind>
     where
-        F: Fn(&mut Vm, StackKey) -> Result<usize, ErrorKind>,
+        F: Fn(&mut Vm, StackWindow) -> Result<usize, ErrorKind>,
     {
-        let range = if let Some(num_args) = num_args {
-            stack_range.start..stack_range.start + num_args.get() // fixed number of args
+        let range = if let Some(window_len) = window_len {
+            stack_range.start..stack_range.start + window_len.get() // fixed number of args
         } else {
             stack_range.clone() // variable number of args
         };
-        let num_results = callee(self, StackKey(range))?;
+        let num_results = callee(self, StackWindow(range))?;
         self.stack.truncate(stack_range.start + num_results);
         Ok(())
     }

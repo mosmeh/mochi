@@ -5,7 +5,7 @@ mod string;
 
 use crate::{
     gc::{GcCell, GcHeap},
-    types::{LuaString, NativeFunction, Number, StackKey, Table, Type, Value},
+    types::{LuaString, NativeFunction, Number, StackWindow, Table, Type, Value},
     vm::{ErrorKind, Vm},
 };
 use bstr::{ByteSlice, B};
@@ -89,10 +89,10 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
 
 fn get_string_arg<'a, 'gc: 'a>(
     vm: &'a Vm<'gc>,
-    key: StackKey,
+    window: StackWindow,
     nth: usize,
 ) -> Result<LuaString<'gc>, ErrorKind> {
-    let arg = &vm.local_stack(key)[nth];
+    let arg = &vm.stack(window)[nth];
     arg.as_lua_string(vm.heap())
         .ok_or_else(|| ErrorKind::ArgumentTypeError {
             nth,
@@ -101,8 +101,8 @@ fn get_string_arg<'a, 'gc: 'a>(
         })
 }
 
-fn get_number_arg(vm: &Vm, key: StackKey, nth: usize) -> Result<Number, ErrorKind> {
-    let arg = &vm.local_stack(key)[nth];
+fn get_number_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Number, ErrorKind> {
+    let arg = &vm.stack(window)[nth];
     arg.as_number().ok_or_else(|| ErrorKind::ArgumentTypeError {
         nth,
         expected_type: Type::Number,
@@ -119,10 +119,10 @@ fn error_obj_to_error_kind<'gc>(heap: &'gc GcHeap, error_obj: Value<'gc>) -> Err
     ErrorKind::ExplicitError(msg)
 }
 
-fn assert(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
-    let stack = vm.local_stack(key.clone());
+fn assert(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack(window.clone());
     if stack[1].as_boolean() {
-        let stack = vm.local_stack_mut(key);
+        let stack = vm.stack_mut(window);
         stack.copy_within(1..stack.len(), 0);
         Ok(stack.len() - 1)
     } else if stack.len() > 2 {
@@ -132,13 +132,13 @@ fn assert(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
     }
 }
 
-fn error(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
-    let error_obj = vm.local_stack(key)[1];
+fn error(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let error_obj = vm.stack(window)[1];
     Err(error_obj_to_error_kind(vm.heap(), error_obj))
 }
 
-fn getmetatable(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
-    let stack = vm.local_stack_mut(key);
+fn getmetatable(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
     stack[0] = stack[1]
         .as_table()
         .and_then(|table| table.metatable())
@@ -147,8 +147,8 @@ fn getmetatable(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn print(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
-    let stack = vm.local_stack(key);
+fn print(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack(window);
     let mut stdout = std::io::stdout().lock();
     if let Some((last, xs)) = stack[1..].split_last() {
         for x in xs {
@@ -161,15 +161,15 @@ fn print(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
     Ok(0)
 }
 
-fn rawequal(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
-    let stack = vm.local_stack_mut(key);
+fn rawequal(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
     stack[0] = (stack[1] == stack[2]).into();
     Ok(1)
 }
 
-fn setmetatable(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
+fn setmetatable(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     {
-        let stack = vm.local_stack(key.clone());
+        let stack = vm.stack(window.clone());
         let mut table =
             stack[1]
                 .as_table_mut(vm.heap())
@@ -191,13 +191,13 @@ fn setmetatable(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
         };
         table.set_metatable(metatable);
     }
-    let stack = vm.local_stack_mut(key);
+    let stack = vm.stack_mut(window);
     stack[0] = stack[1];
     Ok(1)
 }
 
-fn tonumber(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
-    let stack = vm.local_stack_mut(key);
+fn tonumber(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
     stack[0] = match stack[1] {
         Value::Integer(x) => Value::Integer(x),
         Value::Number(x) => Value::Number(x),
@@ -219,19 +219,19 @@ fn tonumber(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn tostring(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
-    let string = vm.local_stack(key.clone())[1].to_string().into_bytes();
-    vm.local_stack_mut(key)[0] = vm.heap().allocate_string(string).into();
+fn tostring(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let string = vm.stack(window.clone())[1].to_string().into_bytes();
+    vm.stack_mut(window)[0] = vm.heap().allocate_string(string).into();
     Ok(1)
 }
 
-fn ty(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
-    let string = vm.local_stack(key.clone())[1].ty().to_string().into_bytes();
-    vm.local_stack_mut(key)[0] = vm.heap().allocate_string(string).into();
+fn ty(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let string = vm.stack(window.clone())[1].ty().to_string().into_bytes();
+    vm.stack_mut(window)[0] = vm.heap().allocate_string(string).into();
     Ok(1)
 }
 
-fn require(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
+fn require(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
 
     let package_str = heap.allocate_string(B("package"));
@@ -242,11 +242,11 @@ fn require(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
     let maybe_loaded_value = {
         let loaded_table = package_table.get(loaded_str);
         let loaded_table = loaded_table.as_table().unwrap();
-        let module_name = get_string_arg(vm, key.clone(), 1)?;
+        let module_name = get_string_arg(vm, window.clone(), 1)?;
         loaded_table.get_field(module_name)
     };
 
-    let module_name = get_string_arg(vm, key.clone(), 1)?;
+    let module_name = get_string_arg(vm, window.clone(), 1)?;
     let filename = format!("./{}.lua", module_name.as_bstr());
     let filename_value = heap.allocate_string(filename.clone().into_bytes()).into();
 
@@ -258,7 +258,7 @@ fn require(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
             .push(heap.allocate_cell(Value::Table(vm.global_table()).into()));
 
         let callee = heap.allocate(closure).into();
-        let module_name = get_string_arg(vm, key.clone(), 1)?;
+        let module_name = get_string_arg(vm, window.clone(), 1)?;
         let value = vm.execute_inner(callee, &[module_name.into(), filename_value])?;
 
         let loaded_table = package_table.get(loaded_str);
@@ -270,7 +270,7 @@ fn require(vm: &mut Vm, key: StackKey) -> Result<usize, ErrorKind> {
         maybe_loaded_value
     };
 
-    let stack = vm.local_stack_mut(key);
+    let stack = vm.stack_mut(window);
     stack[0] = loaded_value;
     stack[1] = filename_value;
     Ok(2)
