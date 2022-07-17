@@ -380,7 +380,11 @@ impl<'gc> Vm<'gc> {
                     let strings: Vec<_> = strings.iter().map(|x| x.as_bytes()).collect();
                     state.stack[a] = self.heap.allocate_string(strings.concat()).into();
                 }
-                OpCode::Close => unimplemented!("CLOSE"),
+                OpCode::Close => {
+                    self.frames.last_mut().unwrap().pc = state.pc;
+                    self.close_upvalues(frame.base + insn.a());
+                    return Ok(());
+                }
                 OpCode::Tbc => unimplemented!("TBC"),
                 OpCode::Jmp => state.pc = (state.pc as isize + insn.sj() as isize) as usize,
                 OpCode::Eq => ops::do_comparison(
