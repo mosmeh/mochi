@@ -10,7 +10,6 @@ pub use string::LuaString;
 pub use table::Table;
 
 use crate::gc::{GarbageCollect, Gc, GcCell, GcHeap, Tracer};
-use bstr::ByteSlice;
 use std::{
     cell::{Ref, RefMut},
     fmt::Display,
@@ -155,7 +154,7 @@ impl Display for Value<'_> {
             Self::Integer(x) => write!(f, "{}", x),
             Self::Number(x) => write!(f, "{}", x),
             Self::NativeFunction(x) => write!(f, "{}", x),
-            Self::String(x) => write!(f, "{}", x.as_bstr()),
+            Self::String(x) => write!(f, "{}", x),
             Self::Table(x) => write!(f, "table: {:?}", x.as_ptr()),
             Self::LuaClosure(x) => {
                 write!(f, "function: {:?}", x.as_ptr())

@@ -1,5 +1,6 @@
 use crate::gc::{BoxedString, GarbageCollect, Gc, Tracer};
-use std::{cmp::Ordering, hash::Hash, ops::Deref, str::Utf8Error};
+use bstr::ByteSlice;
+use std::{cmp::Ordering, fmt::Display, hash::Hash, ops::Deref, str::Utf8Error};
 
 #[derive(Clone, Copy)]
 pub struct LuaString<'gc>(pub(crate) Gc<'gc, BoxedString>);
@@ -9,6 +10,12 @@ impl std::fmt::Debug for LuaString<'_> {
         f.debug_tuple("LuaString")
             .field(&String::from_utf8_lossy(&self.0 .0))
             .finish()
+    }
+}
+
+impl Display for LuaString<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_bstr())
     }
 }
 
