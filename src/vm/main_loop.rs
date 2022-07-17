@@ -66,41 +66,68 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::GetTabUp => {
                     let upvalue = closure.upvalues[insn.b()].borrow();
-                    let value = state.resolve_upvalue(&upvalue);
+                    let table_value = state.resolve_upvalue(&upvalue);
                     let rc = if let Value::String(s) = closure.proto.constants[insn.c() as usize] {
                         s
                     } else {
                         unreachable!();
                     };
-                    state.stack[insn.a()] = {
-                        let table = value.as_table().ok_or_else(|| ErrorKind::TypeError {
+                    if let Value::Table(table) = table_value {
+                        let raw_value = table.borrow().get_field(rc);
+                        if raw_value != Value::Nil {
+                            state.stack[insn.a()] = raw_value;
+                        } else {
+                            self.frames.last_mut().unwrap().pc = state.pc;
+                            self.stack[frame.base + insn.a()] =
+                                self.call_index_metamethod(table, rc)?;
+                            return Ok(());
+                        }
+                    } else {
+                        return Err(ErrorKind::TypeError {
                             operation: Operation::Index,
-                            ty: value.ty(),
-                        })?;
-                        table.get_field(rc)
+                            ty: table_value.ty(),
+                        });
                     };
                 }
                 OpCode::GetTable => {
                     let rb = state.stack[insn.b()];
                     let rc = state.stack[insn.c() as usize];
-                    state.stack[insn.a()] = {
-                        let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
+                    if let Value::Table(table) = rb {
+                        let raw_value = table.borrow().get(rc);
+                        if raw_value != Value::Nil {
+                            state.stack[insn.a()] = raw_value;
+                        } else {
+                            self.frames.last_mut().unwrap().pc = state.pc;
+                            self.stack[frame.base + insn.a()] =
+                                self.call_index_metamethod(table, rc)?;
+                            return Ok(());
+                        }
+                    } else {
+                        return Err(ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
-                        })?;
-                        table.get(rc)
+                        });
                     };
                 }
                 OpCode::GetI => {
                     let rb = state.stack[insn.b()];
                     let c = insn.c() as Integer;
-                    state.stack[insn.a()] = {
-                        let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
+                    if let Value::Table(table) = rb {
+                        let raw_value = table.borrow().get(c);
+                        if raw_value != Value::Nil {
+                            state.stack[insn.a()] = raw_value;
+                        } else {
+                            self.frames.last_mut().unwrap().pc = state.pc;
+                            self.stack[frame.base + insn.a()] =
+                                self.call_index_metamethod(table, c)?;
+                            return Ok(());
+                        }
+                    } else {
+                        return Err(ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
-                        })?;
-                        table.get(c)
-                    };
+                        });
+                    }
                 }
                 OpCode::GetField => {
                     let rb = state.stack[insn.b()];
@@ -109,13 +136,22 @@ impl<'gc> Vm<'gc> {
                     } else {
                         unreachable!();
                     };
-                    state.stack[insn.a()] = {
-                        let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
+                    if let Value::Table(table) = rb {
+                        let raw_value = table.borrow().get_field(rc);
+                        if raw_value != Value::Nil {
+                            state.stack[insn.a()] = raw_value;
+                        } else {
+                            self.frames.last_mut().unwrap().pc = state.pc;
+                            self.stack[frame.base + insn.a()] =
+                                self.call_index_metamethod(table, rc)?;
+                            return Ok(());
+                        }
+                    } else {
+                        return Err(ErrorKind::TypeError {
                             operation: Operation::Index,
                             ty: rb.ty(),
-                        })?;
-                        table.get_field(rc)
-                    };
+                        });
+                    }
                 }
                 OpCode::SetTabUp => {
                     let kb = if let Value::String(s) = closure.proto.constants[insn.b()] {
@@ -212,10 +248,6 @@ impl<'gc> Vm<'gc> {
                     let a = insn.a();
                     let rb = state.stack[insn.b()];
                     state.stack[a + 1] = rb;
-                    let table = rb.as_table().ok_or_else(|| ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: rb.ty(),
-                    })?;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
                         closure.proto.constants[c]
@@ -227,7 +259,22 @@ impl<'gc> Vm<'gc> {
                     } else {
                         unreachable!();
                     };
-                    state.stack[a] = table.get_field(rkc);
+                    if let Value::Table(table) = rb {
+                        let raw_value = table.borrow().get_field(rkc);
+                        if raw_value != Value::Nil {
+                            state.stack[insn.a()] = raw_value;
+                        } else {
+                            self.frames.last_mut().unwrap().pc = state.pc;
+                            self.stack[frame.base + insn.a()] =
+                                self.call_index_metamethod(table, rkc)?;
+                            return Ok(());
+                        }
+                    } else {
+                        return Err(ErrorKind::TypeError {
+                            operation: Operation::Index,
+                            ty: rb.ty(),
+                        });
+                    }
                 }
                 OpCode::AddI => ops::do_arithmetic_with_immediate(
                     &mut state,

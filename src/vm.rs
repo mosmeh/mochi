@@ -15,6 +15,7 @@ use crate::{
     LuaClosure,
 };
 use std::{collections::BTreeMap, num::NonZeroUsize, ops::Range};
+use tag_method::TagMethod;
 
 #[derive(Debug, Clone)]
 struct Frame {
@@ -82,7 +83,7 @@ struct Root<'gc, 'vm, 'stack> {
     state: &'stack State<'gc, 'stack>,
     global_table: GcCell<'gc, Table<'gc>>,
     open_upvalues: &'vm BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
-    tag_method_names: &'vm [LuaString<'gc>; tag_method::COUNT],
+    tag_method_names: &'vm [LuaString<'gc>; TagMethod::COUNT],
 }
 
 unsafe impl GarbageCollect for Root<'_, '_, '_> {
@@ -100,7 +101,7 @@ pub struct Vm<'gc> {
     frames: Vec<Frame>,
     global_table: GcCell<'gc, Table<'gc>>,
     open_upvalues: BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
-    tag_method_names: [LuaString<'gc>; tag_method::COUNT],
+    tag_method_names: [LuaString<'gc>; TagMethod::COUNT],
 }
 
 unsafe impl GarbageCollect for Vm<'_> {
@@ -119,7 +120,7 @@ impl<'gc> Vm<'gc> {
             frames: Vec::new(),
             global_table,
             open_upvalues: BTreeMap::new(),
-            tag_method_names: tag_method::allocate_tag_method_names(heap),
+            tag_method_names: TagMethod::allocate_names(heap),
         }
     }
 
@@ -253,6 +254,44 @@ impl<'gc> Vm<'gc> {
             let mut upvalue = upvalue.borrow_mut(self.heap);
             if let Upvalue::Open(i) = *upvalue {
                 *upvalue = Upvalue::Closed(self.stack[i]);
+            }
+        }
+    }
+
+    fn call_index_metamethod<K>(
+        &mut self,
+        mut table: GcCell<'gc, Table<'gc>>,
+        key: K,
+    ) -> Result<Value<'gc>, ErrorKind>
+    where
+        K: Into<Value<'gc>>,
+    {
+        let key = key.into();
+        let index_key = self.tag_method_names[TagMethod::Index as usize];
+        loop {
+            let metamethod_value = table
+                .borrow()
+                .metatable()
+                .map(|metatable| metatable.borrow().get_field(index_key))
+                .unwrap_or_default();
+            match metamethod_value {
+                Value::Nil => return Ok(Value::Nil),
+                Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
+                    return self.execute_inner(metamethod_value, &[table.into(), key])
+                }
+                Value::Table(next_table) => {
+                    let value = next_table.borrow().get(key);
+                    if value != Value::Nil {
+                        return Ok(value);
+                    }
+                    table = next_table;
+                }
+                _ => {
+                    return Err(ErrorKind::TypeError {
+                        operation: Operation::Index,
+                        ty: metamethod_value.ty(),
+                    })
+                }
             }
         }
     }

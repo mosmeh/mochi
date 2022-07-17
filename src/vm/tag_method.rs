@@ -7,41 +7,49 @@ macro_rules! count  {
 }
 
 macro_rules! tag_methods {
-    ($($name:tt,)*) => {
-        pub const COUNT: usize = count!($($name)*);
+    ($($variant:ident => $name:tt,)*) => {
+        #[allow(dead_code)]
+        #[derive(Clone, Copy)]
+        pub enum TagMethod {
+            $($variant,)*
+        }
 
-        pub fn allocate_tag_method_names(heap: &GcHeap) -> [LuaString; COUNT] {
-            [
-                $(heap.allocate_string(B($name)),)*
-            ]
+        impl TagMethod {
+            pub const COUNT: usize = count!($($variant)*);
+
+            pub fn allocate_names(heap: &GcHeap) -> [LuaString; TagMethod::COUNT] {
+                [
+                    $(heap.allocate_string(B($name)),)*
+                ]
+            }
         }
     }
 }
 
 tag_methods!(
-    "__index",
-    "__newindex",
-    "__gc",
-    "__mode",
-    "__len",
-    "__eq",
-    "__add",
-    "__sub",
-    "__mul",
-    "__mod",
-    "__pow",
-    "__div",
-    "__idiv",
-    "__band",
-    "__bor",
-    "__bxor",
-    "__shl",
-    "__shr",
-    "__unm",
-    "__bnot",
-    "__lt",
-    "__le",
-    "__concat",
-    "__call",
-    "__close",
+    Index => "__index",
+    NewIndex => "__newindex",
+    Gc => "__gc",
+    Mode => "__mode",
+    Len => "__len",
+    Eq => "__eq",
+    Add => "__add",
+    Sub => "__sub",
+    Mul => "__mul",
+    Mod => "__mod",
+    Pow => "__pow",
+    Div => "__div",
+    IDiv => "__idiv",
+    BAnd => "__band",
+    BOr => "__bor",
+    BXor => "__bxor",
+    Shl => "__shl",
+    Shr => "__shr",
+    Unm => "__unm",
+    BNot => "__bnot",
+    Lt => "__lt",
+    Le => "__le",
+    Concat => "__concat",
+    Call => "__call",
+    Close => "__close",
 );
