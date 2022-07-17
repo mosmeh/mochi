@@ -467,7 +467,7 @@ impl<'gc> Vm<'gc> {
                     self.frames.last_mut().unwrap().pc = state.pc;
                     let a = insn.a();
                     let callee = state.stack[a];
-                    return self.call_closure(
+                    return self.call_value(
                         callee,
                         frame.base + a..saved_stack_top,
                         NonZeroUsize::new(insn.b()),
@@ -492,7 +492,7 @@ impl<'gc> Vm<'gc> {
                     let new_stack_len = frame.bottom + num_results + 1;
                     self.stack.truncate(new_stack_len);
                     self.frames.pop().unwrap();
-                    return self.call_closure(
+                    return self.call_value(
                         callee,
                         frame.bottom..new_stack_len,
                         NonZeroUsize::new(insn.b()),

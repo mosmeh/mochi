@@ -199,32 +199,43 @@ impl<'gc> Vm<'gc> {
         Ok(result)
     }
 
-    fn call_closure(
+    fn call_value(
         &mut self,
         callee: Value<'gc>,
         stack_range: Range<usize>,
         num_args: Option<NonZeroUsize>,
     ) -> Result<(), ErrorKind> {
         match callee {
+            Value::NativeFunction(func) => self.call_native(func.0, stack_range, num_args),
             Value::LuaClosure(_) => {
                 self.frames.push(Frame::new(stack_range.start));
                 Ok(())
             }
-            Value::NativeClosure(closure) => {
-                let range = if let Some(num_args) = num_args {
-                    stack_range.start..stack_range.start + num_args.get() // fixed number of args
-                } else {
-                    stack_range.clone() // variable number of args
-                };
-                let num_results = (closure.0)(self, StackKey(range))?;
-                self.stack.truncate(stack_range.start + num_results);
-                Ok(())
-            }
+            Value::NativeClosure(closure) => self.call_native(&closure.0, stack_range, num_args),
             value => Err(ErrorKind::TypeError {
                 operation: Operation::Call,
                 ty: value.ty(),
             }),
         }
+    }
+
+    fn call_native<F>(
+        &mut self,
+        callee: F,
+        stack_range: Range<usize>,
+        num_args: Option<NonZeroUsize>,
+    ) -> Result<(), ErrorKind>
+    where
+        F: Fn(&mut Vm, StackKey) -> Result<usize, ErrorKind>,
+    {
+        let range = if let Some(num_args) = num_args {
+            stack_range.start..stack_range.start + num_args.get() // fixed number of args
+        } else {
+            stack_range.clone() // variable number of args
+        };
+        let num_results = callee(self, StackKey(range))?;
+        self.stack.truncate(stack_range.start + num_results);
+        Ok(())
     }
 
     fn close_upvalues(&mut self, boundary: usize) {

@@ -3,7 +3,55 @@ use crate::{
     types::{LuaString, Value},
     vm::{ErrorKind, Instruction, Vm},
 };
-use std::ops::Range;
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+    ops::Range,
+};
+
+#[derive(Clone)]
+pub struct StackKey(pub(crate) Range<usize>);
+
+pub type NativeFunctionPtr = fn(&mut Vm, StackKey) -> Result<usize, ErrorKind>;
+
+#[derive(Clone, Copy)]
+pub struct NativeFunction(pub NativeFunctionPtr);
+
+impl Debug for NativeFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("NativeFunction")
+            .field(&self.as_ptr())
+            .finish()
+    }
+}
+
+impl Display for NativeFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "function: {:?}", self.as_ptr())
+    }
+}
+
+impl PartialEq for NativeFunction {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ptr() == other.as_ptr()
+    }
+}
+
+impl Hash for NativeFunction {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_ptr().hash(state);
+    }
+}
+
+impl NativeFunction {
+    pub fn new(x: NativeFunctionPtr) -> Self {
+        Self(x)
+    }
+
+    fn as_ptr(&self) -> *const () {
+        self.0 as *const ()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct LuaClosureProto<'gc> {
@@ -42,9 +90,6 @@ unsafe impl GarbageCollect for LuaClosure<'_> {
         self.upvalues.trace(tracer);
     }
 }
-
-#[derive(Clone)]
-pub struct StackKey(pub(crate) Range<usize>);
 
 pub type NativeClosureFn = dyn Fn(&mut Vm, StackKey) -> Result<usize, ErrorKind>;
 

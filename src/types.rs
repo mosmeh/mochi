@@ -1,9 +1,10 @@
-mod closure;
+mod function;
 mod string;
 mod table;
 
-pub use closure::{
-    LineRange, LuaClosure, LuaClosureProto, NativeClosure, StackKey, Upvalue, UpvalueDescription,
+pub use function::{
+    LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeClosureFn, NativeFunction,
+    NativeFunctionPtr, StackKey, Upvalue, UpvalueDescription,
 };
 pub use string::LuaString;
 pub use table::Table;
@@ -47,6 +48,7 @@ pub enum Value<'gc> {
     Boolean(bool),
     Integer(Integer),
     Number(Number),
+    NativeFunction(NativeFunction),
     String(LuaString<'gc>),
     Table(GcCell<'gc, Table<'gc>>),
     LuaClosure(Gc<'gc, LuaClosure<'gc>>),
@@ -74,6 +76,12 @@ impl From<Integer> for Value<'_> {
 impl From<Number> for Value<'_> {
     fn from(x: Number) -> Self {
         Self::Number(x)
+    }
+}
+
+impl From<NativeFunction> for Value<'_> {
+    fn from(x: NativeFunction) -> Self {
+        Self::NativeFunction(x)
     }
 }
 
@@ -110,6 +118,7 @@ impl PartialEq for Value<'_> {
             (Self::Integer(lhs), Self::Number(rhs)) => *lhs as Number == *rhs,
             (Self::Number(lhs), Self::Number(rhs)) => lhs == rhs,
             (Self::Number(lhs), Self::Integer(rhs)) => *lhs == *rhs as Number,
+            (Self::NativeFunction(lhs), Self::NativeFunction(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
             (Self::Table(lhs), Self::Table(rhs)) => GcCell::ptr_eq(lhs, rhs),
             (Self::LuaClosure(lhs), Self::LuaClosure(rhs)) => Gc::ptr_eq(lhs, rhs),
@@ -129,6 +138,7 @@ impl std::hash::Hash for Value<'_> {
             Self::Boolean(x) => x.hash(state),
             Self::Integer(x) => x.hash(state),
             Self::Number(x) => x.to_bits().hash(state),
+            Self::NativeFunction(x) => x.hash(state),
             Self::String(x) => x.hash(state),
             Self::Table(x) => x.as_ptr().hash(state),
             Self::LuaClosure(x) => x.as_ptr().hash(state),
@@ -144,6 +154,7 @@ impl Display for Value<'_> {
             Self::Boolean(x) => write!(f, "{}", x),
             Self::Integer(x) => write!(f, "{}", x),
             Self::Number(x) => write!(f, "{}", x),
+            Self::NativeFunction(x) => write!(f, "{}", x),
             Self::String(x) => write!(f, "{}", x.as_bstr()),
             Self::Table(x) => write!(f, "table: {:?}", x.as_ptr()),
             Self::LuaClosure(x) => {
@@ -176,7 +187,9 @@ impl<'gc> Value<'gc> {
             Value::Integer(_) | Value::Number(_) => Type::Number,
             Value::String(_) => Type::String,
             Value::Table(_) => Type::Table,
-            Value::LuaClosure(_) | Value::NativeClosure(_) => Type::Function,
+            Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
+                Type::Function
+            }
         }
     }
 
