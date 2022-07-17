@@ -566,9 +566,35 @@ impl<'gc> Vm<'gc> {
                         unimplemented!("FORPREP")
                     }
                 }
-                OpCode::TForPrep => unimplemented!("TFORPREP"),
-                OpCode::TForCall => unimplemented!("TFORCALL"),
-                OpCode::TForLoop => unimplemented!("TFORLOOP"),
+                OpCode::TForPrep => state.pc += insn.bx(),
+                OpCode::TForCall => {
+                    self.frames.last_mut().unwrap().pc = state.pc;
+
+                    let a = insn.a();
+                    let callee = state.stack[a];
+
+                    let new_bottom = frame.base + a + 4;
+                    let new_stack_len = new_bottom + 3;
+                    if self.stack.len() < new_stack_len {
+                        self.stack.resize(new_stack_len, Value::Nil);
+                    }
+                    self.stack
+                        .copy_within(frame.base + a..new_bottom, new_bottom);
+
+                    return self.call_value(
+                        callee,
+                        new_bottom..new_stack_len,
+                        NonZeroUsize::new(3),
+                    );
+                }
+                OpCode::TForLoop => {
+                    let a = insn.a();
+                    let control = state.stack[a + 4];
+                    if control != Value::Nil {
+                        state.stack[a + 2] = control;
+                        state.pc -= insn.bx();
+                    }
+                }
                 OpCode::SetList => {
                     let a = insn.a();
                     let b = insn.b();
