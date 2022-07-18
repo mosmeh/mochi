@@ -295,12 +295,12 @@ fn require(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
 
     let package_str = heap.allocate_string(B("package"));
-    let package_table = vm.global_table().borrow().get(package_str);
+    let package_table = vm.global_table().borrow().get_field(package_str);
     let package_table = package_table.as_table().unwrap();
 
     let loaded_str = heap.allocate_string(B("loaded"));
     let maybe_loaded_value = {
-        let loaded_table = package_table.get(loaded_str);
+        let loaded_table = package_table.get_field(loaded_str);
         let loaded_table = loaded_table.as_table().unwrap();
         let module_name = get_string_arg(vm, window.clone(), 1)?;
         loaded_table.get_field(module_name)
@@ -321,7 +321,7 @@ fn require(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
         let module_name = get_string_arg(vm, window.clone(), 1)?;
         let value = vm.execute_inner(callee, &[module_name.into(), filename_value])?;
 
-        let loaded_table = package_table.get(loaded_str);
+        let loaded_table = package_table.get_field(loaded_str);
         let mut loaded_table = loaded_table.as_table_mut(heap).unwrap();
         loaded_table.set_field(module_name, value);
 
