@@ -2,10 +2,11 @@ mod io;
 mod math;
 mod os;
 mod string;
+mod table;
 
 use crate::{
     gc::{GcCell, GcHeap},
-    types::{LuaString, NativeFunction, Number, StackWindow, Table, Type, Value},
+    types::{Integer, LuaString, NativeFunction, Number, StackWindow, Table, Type, Value},
     vm::{ErrorKind, Vm},
 };
 use bstr::{ByteSlice, B};
@@ -76,6 +77,10 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         heap.allocate_cell(string::create_table(heap)),
     );
     table.set_field(
+        heap.allocate_string(B("table")),
+        heap.allocate_cell(table::create_table(heap)),
+    );
+    table.set_field(
         heap.allocate_string(B("math")),
         heap.allocate_cell(math::create_table(heap)),
     );
@@ -105,6 +110,16 @@ fn get_string_arg<'a, 'gc: 'a>(
         .ok_or_else(|| ErrorKind::ArgumentTypeError {
             nth,
             expected_type: Type::String,
+            got_type: arg.ty(),
+        })
+}
+
+fn get_integer_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Integer, ErrorKind> {
+    let arg = &vm.stack(window)[nth];
+    arg.as_integer()
+        .ok_or_else(|| ErrorKind::ArgumentTypeError {
+            nth,
+            expected_type: Type::Number,
             got_type: arg.ty(),
         })
 }
@@ -170,14 +185,7 @@ fn getmetatable(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 fn ipairs(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     fn iterate(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
         let stack = vm.stack(window.clone());
-        let i = stack[2]
-            .as_integer()
-            .ok_or_else(|| ErrorKind::ArgumentTypeError {
-                nth: 2,
-                expected_type: Type::Number,
-                got_type: stack[2].ty(),
-            })?
-            + 1;
+        let i = get_integer_arg(vm, window.clone(), 2)? + 1;
         let value = {
             let table = stack[1]
                 .as_table()
