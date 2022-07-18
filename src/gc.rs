@@ -89,6 +89,10 @@ impl GcHeap {
         Default::default()
     }
 
+    pub fn total_bytes(&self) -> usize {
+        (self.total_bytes.get() as isize + self.debt.get()) as usize
+    }
+
     pub fn allocate<T: GarbageCollect>(&self, value: T) -> Gc<T> {
         let color = Color::White(self.current_white.get());
         let gc_box = Box::new(GcBox {

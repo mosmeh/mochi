@@ -19,6 +19,10 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
         heap.allocate_string(B("assert")),
         NativeFunction::new(assert),
     );
+    table.set_field(
+        heap.allocate_string(B("collectgarbage")),
+        NativeFunction::new(collectgarbage),
+    );
     table.set_field(heap.allocate_string(B("error")), NativeFunction::new(error));
     table.set_field(
         heap.allocate_string(B("getmetatable")),
@@ -134,6 +138,18 @@ fn assert(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     } else {
         Err(ErrorKind::ExplicitError("assertion failed!".to_owned()))
     }
+}
+
+fn collectgarbage(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    if vm.stack(window.clone()).len() != 2 {
+        unimplemented!();
+    }
+    let opt = get_string_arg(vm, window.clone(), 1)?;
+    vm.stack_mut(window)[0] = match opt.as_ref() {
+        b"count" => ((vm.heap().total_bytes() as Number) / 1024.0).into(),
+        _ => unimplemented!(),
+    };
+    Ok(1)
 }
 
 fn error(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
