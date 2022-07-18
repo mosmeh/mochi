@@ -28,6 +28,6 @@ codegen-units = 1
 lto = true
 
 [features]
-default = ["bin"]
+default = ["bin", "jemalloc"]
 bin = ["anyhow", "clap", "rustyline"]
 jemalloc = ["jemallocator"]
