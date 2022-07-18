@@ -78,7 +78,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let mut rl = Editor::<()>::new();
+    let mut rl = Editor::<()>::new()?;
     loop {
         match rl.readline("> ") {
             Ok(line) => {

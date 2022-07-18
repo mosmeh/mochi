@@ -11,13 +11,13 @@ required-features = ["bin"]
 anyhow = { version = "1.0.58", optional = true }
 bstr = { version = "0.2.17", default-features = false }
 byteorder = "1.4.3"
-clap = { version = "3.2.8", features = ["std", "derive"], default-features = false, optional = true }
+clap = { version = "3.2.12", features = ["std", "derive"], default-features = false, optional = true }
 cpu-time = "1.0.0"
 hashbrown = { version = "0.12.2", features = ["inline-more"], default-features = false }
 rand = "0.8.5"
 rlua = { version = "0.19.2", features = ["builtin-lua54"] }
 rustc-hash = "1.1.0"
-rustyline = { version = "9.1.2", optional = true }
+rustyline = { version = "10.0.0", default-features = false, optional = true }
 thiserror = "1.0.31"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
