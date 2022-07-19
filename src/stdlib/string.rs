@@ -27,8 +27,8 @@ fn char(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
             expected_type: Type::Number,
             got_type: x.ty(),
         })?;
-        if n <= u8::MAX as Integer {
-            bytes.push(n as u8)
+        if let Ok(n) = n.try_into() {
+            bytes.push(n);
         } else {
             return Err(ErrorKind::ArgumentError {
                 nth: i + 1,
