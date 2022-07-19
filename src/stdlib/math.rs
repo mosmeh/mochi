@@ -68,7 +68,7 @@ fn floor(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
         value @ Value::Integer(_) => value,
         value => {
             let x = value
-                .as_number()
+                .to_number()
                 .ok_or_else(|| ErrorKind::ArgumentTypeError {
                     nth: 1,
                     expected_type: Type::Number,
@@ -123,7 +123,7 @@ fn random(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     stack[0] = match stack[1..] {
         [] => rng.gen::<Number>().into(),
         [m] => {
-            let upper = m.as_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
+            let upper = m.to_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
                 nth: 1,
                 expected_type: Type::Number,
                 got_type: m.ty(),
@@ -131,12 +131,12 @@ fn random(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
             rng.gen_range(1..=upper).into()
         }
         [m, n] => {
-            let lower = m.as_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
+            let lower = m.to_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
                 nth: 1,
                 expected_type: Type::Number,
                 got_type: m.ty(),
             })?;
-            let upper = n.as_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
+            let upper = n.to_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
                 nth: 2,
                 expected_type: Type::Number,
                 got_type: n.ty(),

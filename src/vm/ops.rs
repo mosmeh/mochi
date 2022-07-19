@@ -15,8 +15,8 @@ where
         return Some(Value::Integer(int_op(a, b)));
     }
     if let (Some(a), Some(b)) = (
-        a.as_number_without_string_coercion(),
-        b.as_number_without_string_coercion(),
+        a.to_number_without_string_coercion(),
+        b.to_number_without_string_coercion(),
     ) {
         return Some(Value::Number(float_op(a, b)));
     }
@@ -88,8 +88,8 @@ where
     F: Fn(Number, Number) -> Number,
 {
     if let (Some(a), Some(b)) = (
-        a.as_number_without_string_coercion(),
-        b.as_number_without_string_coercion(),
+        a.to_number_without_string_coercion(),
+        b.to_number_without_string_coercion(),
     ) {
         Some(Value::Number(float_op(a, b)))
     } else {
@@ -120,8 +120,8 @@ pub(super) fn do_float_arithmetic_with_constant<F>(
     let rb = state.stack[insn.b()];
     let kc = proto.constants[insn.c() as usize];
     if let (Some(b), Some(c)) = (
-        rb.as_number_without_string_coercion(),
-        kc.as_number_without_string_coercion(),
+        rb.to_number_without_string_coercion(),
+        kc.to_number_without_string_coercion(),
     ) {
         state.stack[insn.a()] = Value::Number(float_op(b, c));
         state.pc += 1;
@@ -133,8 +133,8 @@ where
     I: Fn(Integer, Integer) -> Integer,
 {
     if let (Some(a), Some(b)) = (
-        a.as_integer_without_string_coercion(),
-        b.as_integer_without_string_coercion(),
+        a.to_integer_without_string_coercion(),
+        b.to_integer_without_string_coercion(),
     ) {
         Some(Value::Integer(int_op(a, b)))
     } else {
@@ -204,8 +204,8 @@ pub(super) fn do_comparison<I, F, S>(
         (Value::String(ref a), Value::String(ref b)) => str_op(a, b),
         _ => {
             if let (Some(a), Some(b)) = (
-                ra.as_number_without_string_coercion(),
-                rb.as_number_without_string_coercion(),
+                ra.to_number_without_string_coercion(),
+                rb.to_number_without_string_coercion(),
             ) {
                 float_op(&a, &b)
             } else {

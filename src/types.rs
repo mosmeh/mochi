@@ -192,11 +192,11 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_boolean(&self) -> bool {
+    pub fn to_boolean(&self) -> bool {
         !matches!(self, Value::Nil | Value::Boolean(false))
     }
 
-    pub fn as_number(&self) -> Option<Number> {
+    pub fn to_number(&self) -> Option<Number> {
         match self {
             Self::Number(x) => Some(*x),
             Self::Integer(x) => Some(*x as Number),
@@ -205,7 +205,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_number_without_string_coercion(&self) -> Option<Number> {
+    pub fn to_number_without_string_coercion(&self) -> Option<Number> {
         match self {
             Self::Number(x) => Some(*x),
             Self::Integer(x) => Some(*x as Number),
@@ -213,7 +213,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_integer(&self) -> Option<Integer> {
+    pub fn to_integer(&self) -> Option<Integer> {
         match self {
             Self::Number(x) => {
                 let y = x.floor() as Integer;
@@ -229,7 +229,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_integer_without_string_coercion(&self) -> Option<Integer> {
+    pub fn to_integer_without_string_coercion(&self) -> Option<Integer> {
         match self {
             Self::Number(x) => {
                 let y = x.floor() as Integer;
@@ -244,7 +244,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_lua_string(&self, heap: &'gc GcHeap) -> Option<LuaString<'gc>> {
+    pub fn to_lua_string(&self, heap: &'gc GcHeap) -> Option<LuaString<'gc>> {
         match self {
             Self::String(x) => Some(*x),
             Self::Integer(x) => Some(heap.allocate_string(x.to_string().into_bytes())),

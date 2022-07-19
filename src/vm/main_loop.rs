@@ -382,7 +382,7 @@ impl<'gc> Vm<'gc> {
                     let rb = state.stack[insn.b()];
                     state.stack[insn.a()] = if let Value::Integer(x) = rb {
                         Value::Integer(-x)
-                    } else if let Some(x) = rb.as_number_without_string_coercion() {
+                    } else if let Some(x) = rb.to_number_without_string_coercion() {
                         Value::Number(-x)
                     } else {
                         unimplemented!("UNM")
@@ -390,7 +390,7 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::BNot => {
                     let rb = state.stack[insn.b()];
-                    state.stack[insn.a()] = if let Some(x) = rb.as_integer_without_string_coercion()
+                    state.stack[insn.a()] = if let Some(x) = rb.to_integer_without_string_coercion()
                     {
                         Value::Integer(!x)
                     } else {
@@ -399,7 +399,7 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::Not => {
                     let rb = state.stack[insn.b()];
-                    state.stack[insn.a()] = Value::Boolean(!rb.as_boolean())
+                    state.stack[insn.a()] = Value::Boolean(!rb.to_boolean())
                 }
                 OpCode::Len => {
                     let rb = state.stack[insn.b()];
@@ -415,7 +415,7 @@ impl<'gc> Vm<'gc> {
                     let b = insn.b();
                     let mut strings = Vec::with_capacity(b);
                     for value in state.stack[a..].iter().take(b) {
-                        if let Some(string) = value.as_lua_string(self.heap) {
+                        if let Some(string) = value.to_lua_string(self.heap) {
                             strings.push(string);
                         } else {
                             return Err(ErrorKind::TypeError {
@@ -500,12 +500,12 @@ impl<'gc> Vm<'gc> {
                     Number::ge,
                 ),
                 OpCode::Test => {
-                    let cond = state.stack[insn.a()].as_boolean();
+                    let cond = state.stack[insn.a()].to_boolean();
                     ops::do_conditional_jump(&mut state, &closure.proto, insn, cond);
                 }
                 OpCode::TestSet => {
                     let rb = state.stack[insn.b()];
-                    let cond = !rb.as_boolean();
+                    let cond = !rb.to_boolean();
                     if cond == insn.k() {
                         state.pc += 1;
                     } else {
@@ -579,10 +579,10 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::ForLoop => {
                     let a = insn.a();
-                    if let Some(step) = state.stack[a + 2].as_integer() {
-                        let count = state.stack[a + 1].as_integer().unwrap();
+                    if let Some(step) = state.stack[a + 2].to_integer() {
+                        let count = state.stack[a + 1].to_integer().unwrap();
                         if count > 0 {
-                            let index = state.stack[a].as_integer().unwrap();
+                            let index = state.stack[a].to_integer().unwrap();
                             state.stack[a + 1] = (count - 1).into();
                             let index = Value::from(index + step);
                             state.stack[a] = index;
@@ -596,9 +596,9 @@ impl<'gc> Vm<'gc> {
                 OpCode::ForPrep => {
                     let a = insn.a();
                     if let (Some(init), Some(limit), Some(step)) = (
-                        state.stack[a].as_integer(),
-                        state.stack[a + 1].as_integer(),
-                        state.stack[a + 2].as_integer(),
+                        state.stack[a].to_integer(),
+                        state.stack[a + 1].to_integer(),
+                        state.stack[a + 2].to_integer(),
                     ) {
                         assert!(step != 0);
                         let skip = if step > 0 { init > limit } else { init < limit };

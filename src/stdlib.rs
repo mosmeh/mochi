@@ -106,7 +106,7 @@ fn get_string_arg<'a, 'gc: 'a>(
     nth: usize,
 ) -> Result<LuaString<'gc>, ErrorKind> {
     let arg = &vm.stack(window)[nth];
-    arg.as_lua_string(vm.heap())
+    arg.to_lua_string(vm.heap())
         .ok_or_else(|| ErrorKind::ArgumentTypeError {
             nth,
             expected_type: Type::String,
@@ -116,7 +116,7 @@ fn get_string_arg<'a, 'gc: 'a>(
 
 fn get_integer_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Integer, ErrorKind> {
     let arg = &vm.stack(window)[nth];
-    arg.as_integer()
+    arg.to_integer()
         .ok_or_else(|| ErrorKind::ArgumentTypeError {
             nth,
             expected_type: Type::Number,
@@ -126,7 +126,7 @@ fn get_integer_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Integer, 
 
 fn get_number_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Number, ErrorKind> {
     let arg = &vm.stack(window)[nth];
-    arg.as_number().ok_or_else(|| ErrorKind::ArgumentTypeError {
+    arg.to_number().ok_or_else(|| ErrorKind::ArgumentTypeError {
         nth,
         expected_type: Type::Number,
         got_type: arg.ty(),
@@ -134,7 +134,7 @@ fn get_number_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Number, Er
 }
 
 fn error_obj_to_error_kind<'gc>(heap: &'gc GcHeap, error_obj: Value<'gc>) -> ErrorKind {
-    let msg = if let Some(lua_str) = error_obj.as_lua_string(heap) {
+    let msg = if let Some(lua_str) = error_obj.to_lua_string(heap) {
         String::from_utf8_lossy(&lua_str).to_string()
     } else {
         format!("(error object is a {} value)", error_obj.ty())
@@ -144,7 +144,7 @@ fn error_obj_to_error_kind<'gc>(heap: &'gc GcHeap, error_obj: Value<'gc>) -> Err
 
 fn assert(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let stack = vm.stack(window.clone());
-    if stack[1].as_boolean() {
+    if stack[1].to_boolean() {
         let stack = vm.stack_mut(window);
         stack.copy_within(1..stack.len(), 0);
         Ok(stack.len() - 1)

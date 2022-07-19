@@ -22,7 +22,7 @@ pub fn create_table(heap: &GcHeap) -> Table {
 fn char(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let mut bytes = Vec::with_capacity(window.0.len() - 1);
     for (i, x) in vm.stack(window.clone())[1..].iter().enumerate() {
-        let n = x.as_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
+        let n = x.to_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
             nth: i + 1,
             expected_type: Type::Number,
             got_type: x.ty(),

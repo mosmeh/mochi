@@ -51,7 +51,7 @@ impl<'gc> Table<'gc> {
         K: Into<Value<'gc>>,
     {
         let key = key.into();
-        let key = if let Some(i) = key.as_integer_without_string_coercion() {
+        let key = if let Some(i) = key.to_integer_without_string_coercion() {
             if i >= 1 {
                 if let Some(value) = self.array.get((i - 1) as usize) {
                     return *value;
@@ -79,7 +79,7 @@ impl<'gc> Table<'gc> {
         let key = key.into();
         let value = value.into();
 
-        let key = if let Some(i) = key.as_integer_without_string_coercion() {
+        let key = if let Some(i) = key.to_integer_without_string_coercion() {
             if i >= 1 {
                 if let Some(slot) = self.array.get_mut((i - 1) as usize) {
                     *slot = value;
