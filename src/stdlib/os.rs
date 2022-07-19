@@ -29,19 +29,21 @@ fn clock(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 }
 
 fn difftime(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] =
-        (get_number_arg(vm, window.clone(), 1)? - get_number_arg(vm, window.clone(), 2)?).into();
+    let stack = vm.stack_mut(window);
+    stack[0] = (get_number_arg(stack, 1)? - get_number_arg(stack, 2)?).into();
     Ok(1)
 }
 
 fn getenv(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let var = get_string_arg(vm, window.clone(), 1)?;
-    vm.stack_mut(window)[0] = var
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
+    let var = get_string_arg(stack, 1)?;
+    stack[0] = var
         .to_os_str()
         .ok()
         .and_then(std::env::var_os)
         .and_then(|s| Vec::from_os_string(s).ok())
-        .map(|s| vm.heap().allocate_string(s).into())
+        .map(|s| heap.allocate_string(s).into())
         .unwrap_or_default();
     Ok(1)
 }

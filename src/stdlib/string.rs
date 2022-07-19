@@ -20,8 +20,10 @@ pub fn create_table(heap: &GcHeap) -> Table {
 }
 
 fn char(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let heap = vm.heap();
     let mut bytes = Vec::with_capacity(window.0.len() - 1);
-    for (i, x) in vm.stack(window.clone())[1..].iter().enumerate() {
+    let stack = vm.stack_mut(window);
+    for (i, x) in stack[1..].iter().enumerate() {
         let n = x.to_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
             nth: i + 1,
             expected_type: Type::Number,
@@ -36,34 +38,41 @@ fn char(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
             });
         }
     }
-    vm.stack_mut(window)[0] = vm.heap().allocate_string(bytes).into();
+    stack[0] = heap.allocate_string(bytes).into();
     Ok(1)
 }
 
 fn len(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let string = get_string_arg(vm, window.clone(), 1)?;
+    let stack = vm.stack_mut(window);
+    let string = get_string_arg(stack, 1)?;
     let len = string.len() as Integer;
-    vm.stack_mut(window)[0] = len.into();
+    stack[0] = len.into();
     Ok(1)
 }
 
 fn lower(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let string = get_string_arg(vm, window.clone(), 1)?;
-    let lower = vm.heap().allocate_string(string.to_ascii_lowercase());
-    vm.stack_mut(window)[0] = lower.into();
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
+    let string = get_string_arg(stack, 1)?;
+    let lower = heap.allocate_string(string.to_ascii_lowercase());
+    stack[0] = lower.into();
     Ok(1)
 }
 
 fn reverse(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let mut string = get_string_arg(vm, window.clone(), 1)?.to_vec();
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
+    let mut string = get_string_arg(stack, 1)?.to_vec();
     string.reverse();
-    vm.stack_mut(window)[0] = vm.heap().allocate_string(string).into();
+    stack[0] = heap.allocate_string(string).into();
     Ok(1)
 }
 
 fn upper(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let string = get_string_arg(vm, window.clone(), 1)?;
-    let upper = vm.heap().allocate_string(string.to_ascii_uppercase());
-    vm.stack_mut(window)[0] = upper.into();
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
+    let string = get_string_arg(stack, 1)?;
+    let upper = heap.allocate_string(string.to_ascii_uppercase());
+    stack[0] = upper.into();
     Ok(1)
 }

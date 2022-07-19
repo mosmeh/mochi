@@ -1,4 +1,4 @@
-use super::get_number_arg;
+use super::{get_integer_arg, get_number_arg};
 use crate::{
     gc::GcHeap,
     types::{Integer, NativeFunction, Number, StackWindow, Table, Type, Value},
@@ -53,12 +53,14 @@ fn abs(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 }
 
 fn acos(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] = get_number_arg(vm, window.clone(), 1)?.acos().into();
+    let stack = vm.stack_mut(window);
+    stack[0] = get_number_arg(stack, 1)?.acos().into();
     Ok(1)
 }
 
 fn asin(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] = get_number_arg(vm, window.clone(), 1)?.asin().into();
+    let stack = vm.stack_mut(window);
+    stack[0] = get_number_arg(stack, 1)?.asin().into();
     Ok(1)
 }
 
@@ -87,60 +89,53 @@ fn floor(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 }
 
 fn cos(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] = get_number_arg(vm, window.clone(), 1)?.cos().into();
+    let stack = vm.stack_mut(window);
+    stack[0] = get_number_arg(stack, 1)?.cos().into();
     Ok(1)
 }
 
 fn deg(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] = get_number_arg(vm, window.clone(), 1)?.to_degrees().into();
+    let stack = vm.stack_mut(window);
+    stack[0] = get_number_arg(stack, 1)?.to_degrees().into();
     Ok(1)
 }
 
 fn exp(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] = get_number_arg(vm, window.clone(), 1)?.exp().into();
+    let stack = vm.stack_mut(window);
+    stack[0] = get_number_arg(stack, 1)?.exp().into();
     Ok(1)
 }
 
 fn log(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let x = get_number_arg(vm, window.clone(), 1)?;
-    let result = if vm.stack(window.clone()).len() > 2 {
-        x.log(get_number_arg(vm, window.clone(), 2)?)
+    let stack = vm.stack_mut(window);
+    let x = get_number_arg(stack, 1)?;
+    let result = if stack.len() > 2 {
+        x.log(get_number_arg(stack, 2)?)
     } else {
         x.ln()
     };
-    vm.stack_mut(window)[0] = result.into();
+    stack[0] = result.into();
     Ok(1)
 }
 
 fn rad(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] = get_number_arg(vm, window.clone(), 1)?.to_radians().into();
+    let stack = vm.stack_mut(window);
+    stack[0] = get_number_arg(stack, 1)?.to_radians().into();
     Ok(1)
 }
 
 fn random(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let mut rng = rand::thread_rng();
     let stack = vm.stack_mut(window);
-    stack[0] = match stack[1..] {
-        [] => rng.gen::<Number>().into(),
-        [m] => {
-            let upper = m.to_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
-                nth: 1,
-                expected_type: Type::Number,
-                got_type: m.ty(),
-            })?;
+    stack[0] = match stack.len() {
+        1 => rng.gen::<Number>().into(),
+        2 => {
+            let upper = get_integer_arg(stack, 1)?;
             rng.gen_range(1..=upper).into()
         }
-        [m, n] => {
-            let lower = m.to_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
-                nth: 1,
-                expected_type: Type::Number,
-                got_type: m.ty(),
-            })?;
-            let upper = n.to_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
-                nth: 2,
-                expected_type: Type::Number,
-                got_type: n.ty(),
-            })?;
+        3 => {
+            let lower = get_integer_arg(stack, 1)?;
+            let upper = get_integer_arg(stack, 2)?;
             rng.gen_range(lower..=upper).into()
         }
         _ => {
@@ -153,26 +148,31 @@ fn random(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 }
 
 fn sin(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] = get_number_arg(vm, window.clone(), 1)?.sin().into();
+    let stack = vm.stack_mut(window);
+    stack[0] = get_number_arg(stack, 1)?.sin().into();
     Ok(1)
 }
 
 fn sqrt(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] = get_number_arg(vm, window.clone(), 1)?.sqrt().into();
+    let stack = vm.stack_mut(window);
+    stack[0] = get_number_arg(stack, 1)?.sqrt().into();
     Ok(1)
 }
 
 fn tan(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    vm.stack_mut(window)[0] = get_number_arg(vm, window.clone(), 1)?.tan().into();
+    let stack = vm.stack_mut(window);
+    stack[0] = get_number_arg(stack, 1)?.tan().into();
     Ok(1)
 }
 
 fn ty(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let result = match vm.stack(window.clone())[1] {
-        Value::Integer(_) => vm.heap().allocate_string(B("integer")).into(),
-        Value::Number(_) => vm.heap().allocate_string(B("float")).into(),
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
+    let result = match stack[1] {
+        Value::Integer(_) => heap.allocate_string(B("integer")).into(),
+        Value::Number(_) => heap.allocate_string(B("float")).into(),
         _ => Value::Nil,
     };
-    vm.stack_mut(window)[0] = result;
+    stack[0] = result;
     Ok(1)
 }

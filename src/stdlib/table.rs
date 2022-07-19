@@ -36,12 +36,12 @@ fn unpack(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
             got_type: table_value.ty(),
         })?;
     let start = if stack.len() >= 3 {
-        get_integer_arg(vm, window.clone(), 2)?
+        get_integer_arg(stack, 2)?
     } else {
         1
     };
     let end = if stack.len() >= 4 {
-        get_integer_arg(vm, window.clone(), 3)?
+        get_integer_arg(stack, 3)?
     } else {
         table.lua_len()
     };

@@ -100,12 +100,11 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     global
 }
 
-fn get_string_arg<'a>(
-    vm: &'a Vm,
-    window: StackWindow,
+fn get_string_arg<'a, 'gc>(
+    stack: &'a [Value<'gc>],
     nth: usize,
 ) -> Result<Cow<'a, [u8]>, ErrorKind> {
-    let arg = &vm.stack(window)[nth];
+    let arg = &stack[nth];
     arg.to_string().ok_or_else(|| ErrorKind::ArgumentTypeError {
         nth,
         expected_type: Type::String,
@@ -113,8 +112,8 @@ fn get_string_arg<'a>(
     })
 }
 
-fn get_integer_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Integer, ErrorKind> {
-    let arg = &vm.stack(window)[nth];
+fn get_integer_arg(stack: &[Value], nth: usize) -> Result<Integer, ErrorKind> {
+    let arg = stack[nth];
     arg.to_integer()
         .ok_or_else(|| ErrorKind::ArgumentTypeError {
             nth,
@@ -123,8 +122,8 @@ fn get_integer_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Integer, 
         })
 }
 
-fn get_number_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Number, ErrorKind> {
-    let arg = &vm.stack(window)[nth];
+fn get_number_arg(stack: &[Value], nth: usize) -> Result<Number, ErrorKind> {
+    let arg = stack[nth];
     arg.to_number().ok_or_else(|| ErrorKind::ArgumentTypeError {
         nth,
         expected_type: Type::Number,
@@ -145,9 +144,8 @@ fn error_obj_to_error_kind(error_obj: Value) -> ErrorKind {
 }
 
 fn assert(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack(window.clone());
+    let stack = vm.stack_mut(window);
     if stack[1].to_boolean() {
-        let stack = vm.stack_mut(window);
         stack.copy_within(1..stack.len(), 0);
         Ok(stack.len() - 1)
     } else if stack.len() > 2 {
@@ -158,12 +156,14 @@ fn assert(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 }
 
 fn collectgarbage(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    if vm.stack(window.clone()).len() != 2 {
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
+    if stack.len() != 2 {
         unimplemented!();
     }
-    let opt = get_string_arg(vm, window.clone(), 1)?;
-    vm.stack_mut(window)[0] = match opt.as_ref() {
-        b"count" => ((vm.heap().total_bytes() as Number) / 1024.0).into(),
+    let opt = get_string_arg(stack, 1)?;
+    stack[0] = match opt.as_ref() {
+        b"count" => ((heap.total_bytes() as Number) / 1024.0).into(),
         _ => unimplemented!(),
     };
     Ok(1)
@@ -186,8 +186,8 @@ fn getmetatable(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 
 fn ipairs(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     fn iterate(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-        let stack = vm.stack(window.clone());
-        let i = get_integer_arg(vm, window.clone(), 2)? + 1;
+        let stack = vm.stack_mut(window);
+        let i = get_integer_arg(stack, 2)? + 1;
         let value = {
             let table = stack[1]
                 .as_table()
@@ -199,7 +199,6 @@ fn ipairs(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
             table.get(i)
         };
 
-        let stack = vm.stack_mut(window);
         if value == Value::Nil {
             stack[0] = Value::Nil;
             Ok(1)
@@ -238,11 +237,12 @@ fn rawequal(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 }
 
 fn setmetatable(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
     {
-        let stack = vm.stack(window.clone());
         let mut table =
             stack[1]
-                .as_table_mut(vm.heap())
+                .as_table_mut(heap)
                 .ok_or_else(|| ErrorKind::ArgumentTypeError {
                     nth: 1,
                     expected_type: Type::Table,
@@ -261,7 +261,6 @@ fn setmetatable(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
         };
         table.set_metatable(metatable);
     }
-    let stack = vm.stack_mut(window);
     stack[0] = stack[1];
     Ok(1)
 }
@@ -290,34 +289,37 @@ fn tonumber(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 }
 
 fn tostring(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
     let mut string = Vec::new();
-    vm.stack(window.clone())[1].fmt_bytes(&mut string)?;
-    vm.stack_mut(window)[0] = vm.heap().allocate_string(string).into();
+    stack[1].fmt_bytes(&mut string)?;
+    stack[0] = heap.allocate_string(string).into();
     Ok(1)
 }
 
 fn ty(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let string = vm.stack(window.clone())[1].ty().display_bytes();
-    vm.stack_mut(window)[0] = vm.heap().allocate_string(string).into();
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
+    let string = stack[1].ty().display_bytes();
+    stack[0] = heap.allocate_string(string).into();
     Ok(1)
 }
 
 fn require(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
+    let stack = vm.stack_mut(window.clone());
+
+    let module_name = get_string_arg(stack, 1)?;
+    let module_name = heap.allocate_string(module_name);
 
     let package_str = heap.allocate_string(B("package"));
     let package_table = vm.global_table().borrow().get_field(package_str);
     let package_table = package_table.as_table().unwrap();
 
     let loaded_str = heap.allocate_string(B("loaded"));
-    let maybe_loaded_value = {
-        let loaded_table = package_table.get_field(loaded_str);
-        let loaded_table = loaded_table.as_table().unwrap();
-        let module_name = get_string_arg(vm, window.clone(), 1)?;
-        loaded_table.get_field(heap.allocate_string(module_name))
-    };
+    let loaded_table = package_table.get_field(loaded_str);
+    let maybe_loaded_value = loaded_table.as_table().unwrap().get_field(module_name);
 
-    let module_name = get_string_arg(vm, window.clone(), 1)?;
     let filename = format!("./{}.lua", module_name.as_bstr());
     let filename_value = heap.allocate_string(filename.clone().into_bytes()).into();
 
@@ -329,12 +331,12 @@ fn require(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
             .push(heap.allocate_cell(Value::Table(vm.global_table()).into()));
 
         let callee = heap.allocate(closure).into();
-        let module_name = heap.allocate_string(get_string_arg(vm, window.clone(), 1)?);
         let value = vm.execute_inner(callee, &[module_name.into(), filename_value])?;
 
-        let loaded_table = package_table.get_field(loaded_str);
-        let mut loaded_table = loaded_table.as_table_mut(heap).unwrap();
-        loaded_table.set_field(module_name, value);
+        loaded_table
+            .as_table_mut(heap)
+            .unwrap()
+            .set_field(module_name, value);
 
         value
     } else {
