@@ -6,11 +6,11 @@ mod table;
 
 use crate::{
     gc::{GcCell, GcHeap},
-    types::{Integer, LuaString, NativeFunction, Number, StackWindow, Table, Type, Value},
+    types::{Integer, NativeFunction, Number, StackWindow, Table, Type, Value},
     vm::{ErrorKind, Vm},
 };
 use bstr::{ByteSlice, B};
-use std::io::Write;
+use std::{borrow::Cow, io::Write};
 
 pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     let mut table = Table::new();
@@ -100,18 +100,17 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     global
 }
 
-fn get_string_arg<'a, 'gc: 'a>(
-    vm: &'a Vm<'gc>,
+fn get_string_arg<'a>(
+    vm: &'a Vm,
     window: StackWindow,
     nth: usize,
-) -> Result<LuaString<'gc>, ErrorKind> {
+) -> Result<Cow<'a, [u8]>, ErrorKind> {
     let arg = &vm.stack(window)[nth];
-    arg.to_lua_string(vm.heap())
-        .ok_or_else(|| ErrorKind::ArgumentTypeError {
-            nth,
-            expected_type: Type::String,
-            got_type: arg.ty(),
-        })
+    arg.to_string().ok_or_else(|| ErrorKind::ArgumentTypeError {
+        nth,
+        expected_type: Type::String,
+        got_type: arg.ty(),
+    })
 }
 
 fn get_integer_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Integer, ErrorKind> {
@@ -133,11 +132,14 @@ fn get_number_arg(vm: &Vm, window: StackWindow, nth: usize) -> Result<Number, Er
     })
 }
 
-fn error_obj_to_error_kind<'gc>(heap: &'gc GcHeap, error_obj: Value<'gc>) -> ErrorKind {
-    let msg = if let Some(lua_str) = error_obj.to_lua_string(heap) {
-        String::from_utf8_lossy(&lua_str).to_string()
+fn error_obj_to_error_kind(error_obj: Value) -> ErrorKind {
+    let msg = if let Some(s) = error_obj.to_string() {
+        String::from_utf8_lossy(&s).to_string()
     } else {
-        format!("(error object is a {} value)", error_obj.ty())
+        format!(
+            "(error object is a {} value",
+            error_obj.ty().display_bytes().as_bstr()
+        )
     };
     ErrorKind::ExplicitError(msg)
 }
@@ -149,7 +151,7 @@ fn assert(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
         stack.copy_within(1..stack.len(), 0);
         Ok(stack.len() - 1)
     } else if stack.len() > 2 {
-        Err(error_obj_to_error_kind(vm.heap(), stack[2]))
+        Err(error_obj_to_error_kind(stack[2]))
     } else {
         Err(ErrorKind::ExplicitError("assertion failed!".to_owned()))
     }
@@ -169,7 +171,7 @@ fn collectgarbage(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> 
 
 fn error(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let error_obj = vm.stack(window)[1];
-    Err(error_obj_to_error_kind(vm.heap(), error_obj))
+    Err(error_obj_to_error_kind(error_obj))
 }
 
 fn getmetatable(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
@@ -220,12 +222,12 @@ fn print(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let mut stdout = std::io::stdout().lock();
     if let Some((last, xs)) = stack[1..].split_last() {
         for x in xs {
-            write!(stdout, "{}\t", x)?;
+            x.fmt_bytes(&mut stdout)?;
+            stdout.write_all(b"\t")?;
         }
-        writeln!(stdout, "{}", last)?;
-    } else {
-        writeln!(stdout)?;
+        last.fmt_bytes(&mut stdout)?;
     }
+    stdout.write_all(b"\n")?;
     Ok(0)
 }
 
@@ -288,13 +290,14 @@ fn tonumber(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 }
 
 fn tostring(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let string = vm.stack(window.clone())[1].to_string().into_bytes();
+    let mut string = Vec::new();
+    vm.stack(window.clone())[1].fmt_bytes(&mut string)?;
     vm.stack_mut(window)[0] = vm.heap().allocate_string(string).into();
     Ok(1)
 }
 
 fn ty(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let string = vm.stack(window.clone())[1].ty().to_string().into_bytes();
+    let string = vm.stack(window.clone())[1].ty().display_bytes();
     vm.stack_mut(window)[0] = vm.heap().allocate_string(string).into();
     Ok(1)
 }
@@ -311,7 +314,7 @@ fn require(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
         let loaded_table = package_table.get_field(loaded_str);
         let loaded_table = loaded_table.as_table().unwrap();
         let module_name = get_string_arg(vm, window.clone(), 1)?;
-        loaded_table.get_field(module_name)
+        loaded_table.get_field(heap.allocate_string(module_name))
     };
 
     let module_name = get_string_arg(vm, window.clone(), 1)?;
@@ -326,7 +329,7 @@ fn require(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
             .push(heap.allocate_cell(Value::Table(vm.global_table()).into()));
 
         let callee = heap.allocate(closure).into();
-        let module_name = get_string_arg(vm, window.clone(), 1)?;
+        let module_name = heap.allocate_string(get_string_arg(vm, window.clone(), 1)?);
         let value = vm.execute_inner(callee, &[module_name.into(), filename_value])?;
 
         let loaded_table = package_table.get_field(loaded_str);

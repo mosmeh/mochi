@@ -10,9 +10,12 @@ pub use string::LuaString;
 pub use table::Table;
 
 use crate::gc::{GarbageCollect, Gc, GcCell, GcHeap, Tracer};
+use bstr::ByteSlice;
 use std::{
+    borrow::Cow,
     cell::{Ref, RefMut},
     fmt::Display,
+    io::Write,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -26,14 +29,20 @@ pub enum Type {
 }
 
 impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_bytes().as_bstr())
+    }
+}
+
+impl Type {
+    pub fn display_bytes(&self) -> &'static [u8] {
         match self {
-            Type::Nil => f.write_str("nil"),
-            Type::Boolean => f.write_str("boolean"),
-            Type::Number => f.write_str("number"),
-            Type::String => f.write_str("string"),
-            Type::Table => f.write_str("table"),
-            Type::Function => f.write_str("function"),
+            Type::Nil => b"nil",
+            Type::Boolean => b"boolean",
+            Type::Number => b"number",
+            Type::String => b"string",
+            Type::Table => b"table",
+            Type::Function => b"function",
         }
     }
 }
@@ -146,26 +155,6 @@ impl std::hash::Hash for Value<'_> {
     }
 }
 
-impl Display for Value<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::Nil => f.write_str("nil"),
-            Self::Boolean(x) => write!(f, "{}", x),
-            Self::Integer(x) => write!(f, "{}", x),
-            Self::Number(x) => write!(f, "{}", x),
-            Self::NativeFunction(x) => write!(f, "{}", x),
-            Self::String(x) => write!(f, "{}", x),
-            Self::Table(x) => write!(f, "table: {:?}", x.as_ptr()),
-            Self::LuaClosure(x) => {
-                write!(f, "function: {:?}", x.as_ptr())
-            }
-            Self::NativeClosure(x) => {
-                write!(f, "function: {:?}", x.as_ptr())
-            }
-        }
-    }
-}
-
 unsafe impl GarbageCollect for Value<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         match self {
@@ -179,6 +168,24 @@ unsafe impl GarbageCollect for Value<'_> {
 }
 
 impl<'gc> Value<'gc> {
+    pub fn fmt_bytes(&self, f: &mut impl std::io::Write) -> std::io::Result<()> {
+        match self {
+            Self::Nil => f.write_all(b"nil"),
+            Self::Boolean(x) => write!(f, "{}", x),
+            Self::Integer(x) => write!(f, "{}", x),
+            Self::Number(x) => write!(f, "{}", x),
+            Self::NativeFunction(x) => write!(f, "function: {:?}", x.as_ptr()),
+            Self::String(x) => f.write_all(x.as_bytes()),
+            Self::Table(x) => write!(f, "table: {:?}", x.as_ptr()),
+            Self::LuaClosure(x) => {
+                write!(f, "function: {:?}", x.as_ptr())
+            }
+            Self::NativeClosure(x) => {
+                write!(f, "function: {:?}", x.as_ptr())
+            }
+        }
+    }
+
     pub fn ty(&self) -> Type {
         match self {
             Value::Nil => Type::Nil,
@@ -244,11 +251,19 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn to_lua_string(&self, heap: &'gc GcHeap) -> Option<LuaString<'gc>> {
+    pub fn to_string(&self) -> Option<Cow<[u8]>> {
         match self {
-            Self::String(x) => Some(*x),
-            Self::Integer(x) => Some(heap.allocate_string(x.to_string().into_bytes())),
-            Self::Number(x) => Some(heap.allocate_string(x.to_string().into_bytes())),
+            Self::String(x) => Some(Cow::Borrowed(x.as_bytes())),
+            Self::Integer(x) => {
+                let mut bytes = Vec::new();
+                write!(&mut bytes, "{}", x).ok()?;
+                Some(Cow::Owned(bytes))
+            }
+            Self::Number(x) => {
+                let mut bytes = Vec::new();
+                write!(&mut bytes, "{}", x).ok()?;
+                Some(Cow::Owned(bytes))
+            }
             _ => None,
         }
     }

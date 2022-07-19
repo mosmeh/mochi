@@ -3,11 +3,7 @@ use crate::{
     types::{LuaString, Value},
     vm::{ErrorKind, Instruction, Vm},
 };
-use std::{
-    fmt::{Debug, Display},
-    hash::Hash,
-    ops::Range,
-};
+use std::{fmt::Debug, hash::Hash, ops::Range};
 
 #[derive(Clone)]
 pub struct StackWindow(pub(crate) Range<usize>);
@@ -22,12 +18,6 @@ impl Debug for NativeFunction {
         f.debug_tuple("NativeFunction")
             .field(&self.as_ptr())
             .finish()
-    }
-}
-
-impl Display for NativeFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "function: {:?}", self.as_ptr())
     }
 }
 
@@ -48,7 +38,7 @@ impl NativeFunction {
         Self(x)
     }
 
-    fn as_ptr(&self) -> *const () {
+    pub fn as_ptr(&self) -> *const () {
         self.0 as *const ()
     }
 }

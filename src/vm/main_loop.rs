@@ -427,7 +427,7 @@ impl<'gc> Vm<'gc> {
                     let b = insn.b();
                     let mut strings = Vec::with_capacity(b);
                     for value in state.stack[a..].iter().take(b) {
-                        if let Some(string) = value.to_lua_string(self.heap) {
+                        if let Some(string) = value.to_string() {
                             strings.push(string);
                         } else {
                             return Err(ErrorKind::TypeError {
@@ -436,7 +436,7 @@ impl<'gc> Vm<'gc> {
                             });
                         }
                     }
-                    let strings: Vec<_> = strings.iter().map(|x| x.as_bytes()).collect();
+                    let strings: Vec<_> = strings.iter().map(|x| x.as_ref()).collect();
                     state.stack[a] = self.heap.allocate_string(strings.concat()).into();
                 }
                 OpCode::Close => {

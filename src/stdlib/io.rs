@@ -22,7 +22,7 @@ fn write(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let stack = vm.stack(window);
     let mut stdout = std::io::stdout().lock();
     for x in &stack[1..] {
-        write!(stdout, "{}", x)?;
+        x.fmt_bytes(&mut stdout)?;
     }
     Ok(0)
 }
