@@ -235,3 +235,35 @@ pub(super) fn do_comparison_with_immediate<I, F>(
     };
     do_conditional_jump(state, proto, insn, cond);
 }
+
+pub(super) fn idivi(m: Integer, n: Integer) -> Integer {
+    let q = m / n;
+    if m ^ n < 0 && m % n != 0 {
+        q - 1
+    } else {
+        q
+    }
+}
+
+pub(super) fn idivf(m: Number, n: Number) -> Number {
+    (m / n).floor()
+}
+
+pub(super) fn modi(m: Integer, n: Integer) -> Integer {
+    let r = m % n;
+    if r != 0 && r ^ n < 0 {
+        r + n
+    } else {
+        r
+    }
+}
+
+pub(super) fn modf(m: Number, n: Number) -> Number {
+    let r = m % n;
+    let c = if r > 0.0 { n < 0.0 } else { r < 0.0 && n > 0.0 };
+    if c {
+        r + n
+    } else {
+        r
+    }
+}

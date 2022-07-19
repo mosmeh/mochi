@@ -303,7 +303,13 @@ impl<'gc> Vm<'gc> {
                     Integer::wrapping_mul,
                     Number::mul,
                 ),
-                OpCode::ModK => unimplemented!("MODK"),
+                OpCode::ModK => ops::do_arithmetic_with_constant(
+                    &mut state,
+                    &closure.proto,
+                    insn,
+                    ops::modi,
+                    ops::modf,
+                ),
                 OpCode::PowK => ops::do_float_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
@@ -316,7 +322,13 @@ impl<'gc> Vm<'gc> {
                     insn,
                     Number::div,
                 ),
-                OpCode::IDivK => unimplemented!("IDIVK"),
+                OpCode::IDivK => ops::do_arithmetic_with_constant(
+                    &mut state,
+                    &closure.proto,
+                    insn,
+                    ops::idivi,
+                    ops::idivf,
+                ),
                 OpCode::BAndK => ops::do_bitwise_op_with_constant(
                     &mut state,
                     &closure.proto,
@@ -346,10 +358,10 @@ impl<'gc> Vm<'gc> {
                 OpCode::Mul => {
                     ops::do_arithmetic(&mut state, insn, Integer::wrapping_mul, Number::mul)
                 }
-                OpCode::Mod => unimplemented!("MOD"),
+                OpCode::Mod => ops::do_arithmetic(&mut state, insn, ops::modi, ops::modf),
                 OpCode::Pow => ops::do_float_arithmetic(&mut state, insn, Number::powf),
                 OpCode::Div => ops::do_float_arithmetic(&mut state, insn, Number::div),
-                OpCode::IDiv => unimplemented!("IDIV"),
+                OpCode::IDiv => ops::do_arithmetic(&mut state, insn, ops::idivi, ops::idivf),
                 OpCode::BAnd => ops::do_bitwise_op(&mut state, insn, Integer::bitand),
                 OpCode::BOr => ops::do_bitwise_op(&mut state, insn, Integer::bitor),
                 OpCode::BXor => ops::do_bitwise_op(&mut state, insn, Integer::bitxor),
