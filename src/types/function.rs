@@ -47,10 +47,10 @@ impl NativeFunction {
 pub struct LuaClosureProto<'gc> {
     pub max_stack_size: u8,
     pub lines_defined: LineRange,
-    pub constants: Vec<Value<'gc>>,
-    pub code: Vec<Instruction>,
-    pub protos: Vec<Gc<'gc, LuaClosureProto<'gc>>>,
-    pub upvalues: Vec<UpvalueDescription>,
+    pub constants: Box<[Value<'gc>]>,
+    pub code: Box<[Instruction]>,
+    pub protos: Box<[Gc<'gc, LuaClosureProto<'gc>>]>,
+    pub upvalues: Box<[UpvalueDescription]>,
     pub source: LuaString<'gc>,
 }
 

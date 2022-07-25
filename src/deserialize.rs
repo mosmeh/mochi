@@ -139,13 +139,13 @@ fn load_function<'gc, R: Read>(
         } else {
             LineRange::File
         },
-        constants,
-        code,
+        constants: constants.into(),
+        code: code.into(),
         protos: protos
             .into_iter()
             .map(|proto| heap.allocate(proto))
             .collect(),
-        upvalues,
+        upvalues: upvalues.into(),
         source,
     })
 }
@@ -156,11 +156,11 @@ fn load_protos<'gc, T: Read>(
     parent_source: LuaString<'gc>,
 ) -> Result<Vec<LuaClosureProto<'gc>>, DeserializeError> {
     let n = load_int(reader)?;
-    let mut p = Vec::with_capacity(n as usize);
+    let mut protos = Vec::with_capacity(n as usize);
     for _ in 0..n {
-        p.push(load_function(heap, reader, parent_source)?);
+        protos.push(load_function(heap, reader, parent_source)?);
     }
-    Ok(p)
+    Ok(protos)
 }
 
 fn load_unsigned<T: Read>(reader: &mut T, mut limit: usize) -> Result<usize, DeserializeError> {
