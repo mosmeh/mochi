@@ -15,6 +15,7 @@ clap = { version = "3.2.15", features = ["std", "derive"], default-features = fa
 cpu-time = "1.0.0"
 hashbrown = { version = "0.12.3", features = ["inline-more"], default-features = false }
 rand = "0.8.5"
+rand_xoshiro = "0.6.0"
 rlua = { version = "0.19.4", features = ["builtin-lua54", "lua-no-oslib"] }
 rustc-hash = "1.1.0"
 rustyline = { version = "10.0.0", default-features = false, optional = true }
