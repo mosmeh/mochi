@@ -517,13 +517,13 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::TestSet => {
                     let rb = state.stack[insn.b()];
-                    let cond = !rb.to_boolean();
+                    let cond = rb.to_boolean();
                     if cond == insn.k() {
-                        state.pc += 1;
-                    } else {
                         state.stack[insn.a()] = rb;
                         let next_insn = closure.proto.code[state.pc];
                         state.pc = (state.pc as isize + next_insn.sj() as isize + 1) as usize;
+                    } else {
+                        state.pc += 1;
                     }
                 }
                 OpCode::Call => {
