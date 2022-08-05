@@ -1,20 +1,20 @@
 use anyhow::Result;
 use bstr::{ByteVec, B};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use mochi_lua::{
     gc::GcHeap,
     types::{Integer, Table},
     vm::Vm,
 };
 use rustyline::{error::ReadlineError, Editor};
-use std::{ops::Deref, path::PathBuf};
+use std::{fs::File, io::BufWriter, ops::Deref, path::PathBuf};
 
 #[cfg(all(feature = "jemalloc", not(target_env = "msvc")))]
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[derive(Debug, Parser)]
-#[clap(version, about)]
+#[clap(version, about, args_conflicts_with_subcommands = true)]
 struct Args {
     #[clap(value_parser)]
     script: Option<PathBuf>,
@@ -25,6 +25,24 @@ struct Args {
     /// Enter interactive mode after executing <SCRIPT>
     #[clap(value_parser, short, default_value_t = false)]
     interactive: bool,
+
+    #[clap(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
+    Compile(CompileCommand),
+}
+
+#[derive(Debug, Parser)]
+struct CompileCommand {
+    #[clap(value_parser)]
+    filename: PathBuf,
+
+    /// Output to file <OUTPUT>
+    #[clap(value_parser, short, default_value = "luac.out")]
+    output: PathBuf,
 }
 
 struct LeakingGcHeap(GcHeap);
@@ -48,6 +66,13 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     let heap = LeakingGcHeap(GcHeap::new());
+
+    if let Some(command) = args.command {
+        match command {
+            Command::Compile(command) => compile(&heap, command)?,
+        }
+        return Ok(());
+    }
 
     let mut arg = Table::new();
     if let Some(script) = &args.script {
@@ -101,5 +126,12 @@ fn eval(vm: &mut Vm, line: &str) -> Result<()> {
     };
     let closure = proto.into_lua_closure(heap);
     vm.execute(closure)?;
+    Ok(())
+}
+
+fn compile(heap: &GcHeap, command: CompileCommand) -> Result<()> {
+    let proto = mochi_lua::load_file(heap, command.filename)?;
+    let mut writer = BufWriter::new(File::create(command.output)?);
+    mochi_lua::binary_chunk::dump(&mut writer, &proto)?;
     Ok(())
 }
