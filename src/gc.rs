@@ -4,7 +4,6 @@ mod traits;
 pub(crate) use string::BoxedString;
 pub use traits::{Finalizer, GarbageCollect, Tracer};
 
-use self::string::StringPool;
 use crate::types::{LuaString, Value};
 use hashbrown::hash_map::RawEntryMut;
 use std::{
@@ -16,6 +15,7 @@ use std::{
     ops::Deref,
     ptr::NonNull,
 };
+use string::StringPool;
 
 const GCSWEEPMAX: i32 = 100;
 const PAUSEADJ: usize = 100;
