@@ -68,7 +68,7 @@ fn main() -> Result<()> {
     let mut vm = Vm::new(&heap, global_table);
 
     if let Some(script) = args.script {
-        let closure = mochi_lua::load_file(&heap, script)?;
+        let closure = mochi_lua::load_file(&heap, script)?.into_lua_closure(&heap);
         vm.execute(closure)?;
 
         if !args.interactive {
@@ -94,11 +94,12 @@ fn main() -> Result<()> {
 fn eval(vm: &mut Vm, line: &str) -> Result<()> {
     const SOURCE: &str = "stdin";
     let heap = vm.heap();
-    let closure = if let Ok(closure) = mochi_lua::load(heap, format!("print({})", line), SOURCE) {
-        closure
+    let proto = if let Ok(proto) = mochi_lua::load(heap, format!("print({})", line), SOURCE) {
+        proto
     } else {
         mochi_lua::load(heap, &line, SOURCE)?
     };
+    let closure = proto.into_lua_closure(heap);
     vm.execute(closure)?;
     Ok(())
 }

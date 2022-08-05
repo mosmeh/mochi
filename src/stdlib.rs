@@ -324,8 +324,9 @@ fn require(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let filename_value = heap.allocate_string(filename.clone().into_bytes()).into();
 
     let loaded_value = if maybe_loaded_value == Value::Nil {
-        let mut closure = crate::load_file(heap, &filename).unwrap();
-        assert!(closure.upvalues.is_empty());
+        let mut closure = crate::load_file(heap, &filename)
+            .unwrap()
+            .into_lua_closure(heap);
         closure
             .upvalues
             .push(heap.allocate_cell(Value::Table(vm.global_table()).into()));

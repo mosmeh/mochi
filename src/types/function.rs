@@ -1,5 +1,5 @@
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell, Tracer},
+    gc::{GarbageCollect, Gc, GcCell, GcHeap, Tracer},
     types::{LuaString, Value},
     vm::{ErrorKind, Instruction, Vm},
 };
@@ -63,6 +63,15 @@ unsafe impl GarbageCollect for LuaClosureProto<'_> {
         self.constants.trace(tracer);
         self.protos.trace(tracer);
         self.source.trace(tracer);
+    }
+}
+
+impl<'gc> LuaClosureProto<'gc> {
+    pub fn into_lua_closure(self, heap: &'gc GcHeap) -> LuaClosure<'gc> {
+        LuaClosure {
+            proto: heap.allocate(self),
+            upvalues: Default::default(),
+        }
     }
 }
 

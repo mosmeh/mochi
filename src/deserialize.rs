@@ -1,8 +1,8 @@
 use crate::{
     gc::GcHeap,
     types::{
-        Integer, LineRange, LuaClosure, LuaClosureProto, LuaString, Number, RegisterIndex,
-        UpvalueDescription, UpvalueIndex, Value,
+        Integer, LineRange, LuaClosureProto, LuaString, Number, RegisterIndex, UpvalueDescription,
+        UpvalueIndex, Value,
     },
     vm::Instruction,
 };
@@ -45,7 +45,7 @@ const LUAC_FORMAT: u8 = 0;
 pub fn load<'gc, R: Read>(
     heap: &'gc GcHeap,
     reader: &mut R,
-) -> Result<LuaClosure<'gc>, DeserializeError> {
+) -> Result<LuaClosureProto<'gc>, DeserializeError> {
     if reader.read_u32::<NativeEndian>()? != u32::from_ne_bytes(*b"\x1bLua") {
         return Err(DeserializeError::BadMagic);
     }
@@ -84,10 +84,7 @@ pub fn load<'gc, R: Read>(
     let proto = load_function(heap, reader, default_source)?;
     assert_eq!(num_upvalues as usize, proto.upvalues.len());
 
-    Ok(LuaClosure {
-        proto: heap.allocate(proto),
-        upvalues: Vec::new(),
-    })
+    Ok(proto)
 }
 
 fn load_function<'gc, R: Read>(

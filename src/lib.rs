@@ -22,7 +22,7 @@ use std::{
     io::{BufReader, Cursor, Read},
     path::Path,
 };
-use types::LuaClosure;
+use types::{LuaClosure, LuaClosureProto};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -45,7 +45,7 @@ pub enum Error {
     RLua(#[from] rlua::Error),
 }
 
-pub fn load<B, S>(heap: &GcHeap, bytes: B, source: S) -> Result<LuaClosure, Error>
+pub fn load<B, S>(heap: &GcHeap, bytes: B, source: S) -> Result<LuaClosureProto, Error>
 where
     B: AsRef<[u8]>,
     S: AsRef<[u8]>,
@@ -60,8 +60,8 @@ where
         let bin_bytes = rlua::Lua::new()
             .context(|ctx| ctx.load(&bytes).set_name(&source)?.into_function()?.dump())?;
         let mut reader = Cursor::new(bin_bytes);
-        let closure = deserialize::load(heap, &mut reader)?;
-        Ok(closure)
+        let proto = deserialize::load(heap, &mut reader)?;
+        Ok(proto)
     }
 
     #[cfg(not(feature = "luac"))]
@@ -70,15 +70,11 @@ where
         let chunk = parser::parse(heap, reader)?;
         let source = heap.allocate_string(source.as_ref());
         let proto = codegen::codegen(heap, source, chunk)?;
-        let closure = LuaClosure {
-            proto: heap.allocate(proto),
-            upvalues: Default::default(),
-        };
-        Ok(closure)
+        Ok(proto)
     }
 }
 
-pub fn load_file<P: AsRef<Path>>(heap: &GcHeap, path: P) -> Result<LuaClosure, Error> {
+pub fn load_file<P: AsRef<Path>>(heap: &GcHeap, path: P) -> Result<LuaClosureProto, Error> {
     let mut reader = BufReader::new(File::open(&path)?);
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes)?;
