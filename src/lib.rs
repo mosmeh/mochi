@@ -1,4 +1,4 @@
-pub mod deserialize;
+pub mod binary_chunk;
 pub mod gc;
 pub mod types;
 pub mod vm;
@@ -27,7 +27,7 @@ use types::{LuaClosure, LuaClosureProto};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Deserialize(#[from] deserialize::DeserializeError),
+    Deserialize(#[from] binary_chunk::DeserializeError),
 
     #[cfg(not(feature = "luac"))]
     #[error(transparent)]
@@ -51,7 +51,7 @@ where
     S: AsRef<[u8]>,
 {
     let mut reader = Cursor::new(&bytes);
-    if let Ok(closure) = deserialize::load(heap, &mut reader) {
+    if let Ok(closure) = binary_chunk::load(heap, &mut reader) {
         return Ok(closure);
     }
 
@@ -60,7 +60,7 @@ where
         let bin_bytes = rlua::Lua::new()
             .context(|ctx| ctx.load(&bytes).set_name(&source)?.into_function()?.dump())?;
         let mut reader = Cursor::new(bin_bytes);
-        let proto = deserialize::load(heap, &mut reader)?;
+        let proto = binary_chunk::load(heap, &mut reader)?;
         Ok(proto)
     }
 

@@ -1,3 +1,4 @@
+use super::{LUAC_FORMAT, LUAC_VERSION};
 use crate::{
     gc::GcHeap,
     types::{
@@ -36,11 +37,6 @@ pub enum DeserializeError {
     #[error(transparent)]
     TryFromInt(#[from] std::num::TryFromIntError),
 }
-
-const LUA_VERSION_MAJOR: u8 = 5;
-const LUA_VERSION_MINOR: u8 = 4;
-const LUAC_VERSION: u8 = LUA_VERSION_MAJOR * 16 + LUA_VERSION_MINOR;
-const LUAC_FORMAT: u8 = 0;
 
 pub fn load<'gc, R: Read>(
     heap: &'gc GcHeap,
@@ -218,19 +214,6 @@ fn load_code<R: Read>(reader: &mut R) -> Result<Vec<Instruction>, DeserializeErr
     Ok(code)
 }
 
-const LUA_TNIL: u8 = 0;
-const LUA_TBOOLEAN: u8 = 1;
-const LUA_TNUMBER: u8 = 3;
-const LUA_TSTRING: u8 = 4;
-
-const LUA_VNIL: u8 = LUA_TNIL;
-const LUA_VFALSE: u8 = LUA_TBOOLEAN;
-const LUA_VTRUE: u8 = LUA_TBOOLEAN | (1 << 4);
-const LUA_VNUMINT: u8 = LUA_TNUMBER;
-const LUA_VNUMFLT: u8 = LUA_TNUMBER | (1 << 4);
-const LUA_VSHRSHR: u8 = LUA_TSTRING;
-const LUA_VLNGSHR: u8 = LUA_TSTRING | (1 << 4);
-
 fn load_constants<'gc, R: Read>(
     heap: &'gc GcHeap,
     reader: &mut R,
@@ -240,12 +223,12 @@ fn load_constants<'gc, R: Read>(
     for _ in 0..n {
         let ty = reader.read_u8()?;
         let value = match ty {
-            LUA_VNIL => Value::Nil,
-            LUA_VFALSE => Value::Boolean(false),
-            LUA_VTRUE => Value::Boolean(true),
-            LUA_VNUMFLT => Value::Number(reader.read_f64::<NativeEndian>()?),
-            LUA_VNUMINT => Value::Integer(reader.read_i64::<NativeEndian>()?),
-            LUA_VSHRSHR | LUA_VLNGSHR => Value::String(load_str(heap, reader)?),
+            super::LUA_VNIL => Value::Nil,
+            super::LUA_VFALSE => Value::Boolean(false),
+            super::LUA_VTRUE => Value::Boolean(true),
+            super::LUA_VNUMFLT => Value::Number(reader.read_f64::<NativeEndian>()?),
+            super::LUA_VNUMINT => Value::Integer(reader.read_i64::<NativeEndian>()?),
+            super::LUA_VSHRSHR | super::LUA_VLNGSHR => Value::String(load_str(heap, reader)?),
             _ => unreachable!(),
         };
         constants.push(value);
