@@ -1,6 +1,6 @@
 use super::{ops, ErrorKind, OpCode, Operation, Root, State, Vm};
 use crate::{
-    types::{Integer, Number, Table, Upvalue, Value},
+    types::{Integer, Number, Table, Upvalue, UpvalueDescription, Value},
     LuaClosure,
 };
 use std::{
@@ -693,14 +693,15 @@ impl<'gc> Vm<'gc> {
                     let upvalues = proto
                         .upvalues
                         .iter()
-                        .map(|desc| {
-                            if desc.in_stack {
-                                let index = frame.base + desc.index as usize;
+                        .map(|desc| match desc {
+                            UpvalueDescription::Register(index) => {
+                                let index = frame.base + index.0 as usize;
                                 *self.open_upvalues.entry(index).or_insert_with(|| {
                                     self.heap.allocate_cell(Upvalue::Open(index))
                                 })
-                            } else {
-                                closure.upvalues[desc.index as usize]
+                            }
+                            UpvalueDescription::Upvalue(index) => {
+                                closure.upvalues[index.0 as usize]
                             }
                         })
                         .collect();

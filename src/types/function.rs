@@ -130,8 +130,14 @@ unsafe impl GarbageCollect for Upvalue<'_> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct UpvalueDescription {
-    pub in_stack: bool,
-    pub index: u8,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpvalueDescription {
+    Register(RegisterIndex),
+    Upvalue(UpvalueIndex),
 }
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RegisterIndex(pub u8);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UpvalueIndex(pub u8);

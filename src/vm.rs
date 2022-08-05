@@ -1,9 +1,10 @@
+pub(crate) mod instruction;
+pub(crate) mod tag_method;
+
 mod error;
-mod instruction;
 mod main_loop;
 mod opcode;
 mod ops;
-mod tag_method;
 
 pub use error::{ErrorKind, Operation, RuntimeError, TracebackFrame};
 pub use instruction::Instruction;

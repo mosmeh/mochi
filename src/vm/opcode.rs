@@ -18,7 +18,7 @@ macro_rules! impl_from_u8 {
 }
 
 impl_from_u8! {
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpCode {
     Move,
     LoadI,

@@ -1,8 +1,8 @@
 use crate::{
     gc::GcHeap,
     types::{
-        Integer, LineRange, LuaClosure, LuaClosureProto, LuaString, Number, UpvalueDescription,
-        Value,
+        Integer, LineRange, LuaClosure, LuaClosureProto, LuaString, Number, RegisterIndex,
+        UpvalueDescription, UpvalueIndex, Value,
     },
     vm::Instruction,
 };
@@ -263,7 +263,13 @@ fn load_upvalues<R: Read>(reader: &mut R) -> Result<Vec<UpvalueDescription>, Des
         let in_stack = reader.read_u8()? != 0;
         let index = reader.read_u8()?;
         reader.read_u8()?; // kind
-        upvalues.push(UpvalueDescription { in_stack, index });
+
+        let upvalue = if in_stack {
+            UpvalueDescription::Register(RegisterIndex(index))
+        } else {
+            UpvalueDescription::Upvalue(UpvalueIndex(index))
+        };
+        upvalues.push(upvalue);
     }
     Ok(upvalues)
 }

@@ -4,7 +4,7 @@ mod table;
 
 pub use function::{
     LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeClosureFn, NativeFunction,
-    NativeFunctionPtr, StackWindow, Upvalue, UpvalueDescription,
+    NativeFunctionPtr, RegisterIndex, StackWindow, Upvalue, UpvalueDescription, UpvalueIndex,
 };
 pub use string::LuaString;
 pub use table::Table;

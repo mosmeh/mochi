@@ -32,6 +32,8 @@ impl PartialEq for LuaString<'_> {
     }
 }
 
+impl Eq for LuaString<'_> {}
+
 impl PartialOrd for LuaString<'_> {
     fn partial_cmp(&self, other: &LuaString) -> Option<Ordering> {
         if Gc::ptr_eq(&self.0, &other.0) {

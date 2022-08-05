@@ -1,5 +1,13 @@
 use super::opcode::OpCode;
 
+pub const UINT17_MAX: u32 = (1 << 17) - 1;
+pub const UINT25_MAX: u32 = (1 << 25) - 1;
+
+pub const OFFSET_SB: i16 = u8::MAX as i16 >> 1;
+pub const OFFSET_SC: i16 = u8::MAX as i16 >> 1;
+pub const OFFSET_SBX: i32 = UINT17_MAX as i32 >> 1;
+pub const OFFSET_SJ: i32 = UINT25_MAX as i32 >> 1;
+
 #[derive(Clone, Copy)]
 pub struct Instruction(pub u32);
 
@@ -24,8 +32,7 @@ impl Instruction {
     }
 
     pub fn sb(&self) -> i16 {
-        const OFFSET: i16 = ((1 << 8) - 1) >> 1;
-        self.b() as i16 - OFFSET
+        self.b() as i16 - OFFSET_SB
     }
 
     pub fn c(&self) -> u8 {
@@ -33,8 +40,7 @@ impl Instruction {
     }
 
     pub fn sc(&self) -> i16 {
-        const OFFSET: i16 = ((1 << 8) - 1) >> 1;
-        self.c() as i16 - OFFSET
+        self.c() as i16 - OFFSET_SC
     }
 
     pub fn k(&self) -> bool {
@@ -46,8 +52,7 @@ impl Instruction {
     }
 
     pub fn sbx(&self) -> i32 {
-        const OFFSET: i32 = ((1 << 17) - 1) >> 1;
-        (self.0 >> 15) as i32 - OFFSET
+        (self.0 >> 15) as i32 - OFFSET_SBX
     }
 
     pub fn ax(&self) -> usize {
@@ -55,7 +60,6 @@ impl Instruction {
     }
 
     pub fn sj(&self) -> i32 {
-        const OFFSET: i32 = ((1 << 25) - 1) >> 1;
-        (self.0 >> 7) as i32 - OFFSET
+        (self.0 >> 7) as i32 - OFFSET_SJ
     }
 }
