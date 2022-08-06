@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bstr::{ByteVec, B};
 use clap::Parser;
-use mochi::{
+use mochi_lua::{
     gc::GcHeap,
     types::{Integer, Table},
     vm::Vm,
@@ -60,7 +60,7 @@ fn main() -> Result<()> {
         arg.set(key, value);
     }
 
-    let global_table = mochi::create_global_table(&heap);
+    let global_table = mochi_lua::create_global_table(&heap);
     {
         let mut table = global_table.borrow_mut(&heap);
         table.set_field(heap.allocate_string(B("_ENV")), global_table);
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
     let mut vm = Vm::new(&heap, global_table);
 
     if let Some(script) = args.script {
-        let closure = mochi::load_file(&heap, script)?;
+        let closure = mochi_lua::load_file(&heap, script)?;
         vm.execute(closure)?;
 
         if !args.interactive {
@@ -96,10 +96,10 @@ fn main() -> Result<()> {
 fn eval(vm: &mut Vm, line: &str) -> Result<()> {
     const SOURCE: &str = "stdin";
     let heap = vm.heap();
-    let closure = if let Ok(closure) = mochi::load(heap, format!("print({})", line), SOURCE) {
+    let closure = if let Ok(closure) = mochi_lua::load(heap, format!("print({})", line), SOURCE) {
         closure
     } else {
-        mochi::load(heap, &line, SOURCE)?
+        mochi_lua::load(heap, &line, SOURCE)?
     };
     vm.execute(closure)?;
     Ok(())

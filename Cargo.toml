@@ -1,10 +1,11 @@
 [package]
-name = "mochi"
+name = "mochi-lua"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
 name = "mochi"
+path = "src/main.rs"
 required-features = ["bin"]
 
 [dependencies]
