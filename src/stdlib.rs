@@ -8,6 +8,7 @@ use crate::{
     gc::{GcCell, GcHeap},
     types::{Integer, NativeFunction, Number, StackWindow, Table, Type, Value},
     vm::{ErrorKind, Vm},
+    LUA_VERSION,
 };
 use bstr::{ByteSlice, B};
 use std::{borrow::Cow, io::Write};
@@ -53,7 +54,7 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     table.set_field(heap.allocate_string(B("type")), NativeFunction::new(ty));
     table.set_field(
         heap.allocate_string(B("_VERSION")),
-        heap.allocate_string(B("Lua 5.4")),
+        heap.allocate_string(format!("Lua {}.{}", LUA_VERSION.0, LUA_VERSION.1).into_bytes()),
     );
 
     // package

@@ -24,6 +24,8 @@ use std::{
 };
 use types::{LuaClosure, LuaClosureProto};
 
+pub const LUA_VERSION: (u8, u8) = (5, 4);
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]

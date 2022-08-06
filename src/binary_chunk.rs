@@ -4,9 +4,9 @@ mod serialize;
 pub use deserialize::{load, DeserializeError};
 pub use serialize::dump;
 
-const LUA_VERSION_MAJOR: u8 = 5;
-const LUA_VERSION_MINOR: u8 = 4;
-const LUAC_VERSION: u8 = LUA_VERSION_MAJOR * 16 + LUA_VERSION_MINOR;
+use crate::LUA_VERSION;
+
+const LUAC_VERSION: u8 = LUA_VERSION.0 * 16 + LUA_VERSION.1;
 const LUAC_FORMAT: u8 = 0;
 
 const LUA_TNIL: u8 = 0;
