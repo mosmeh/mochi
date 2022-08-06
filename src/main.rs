@@ -61,11 +61,9 @@ fn main() -> Result<()> {
     }
 
     let global_table = mochi_lua::create_global_table(&heap);
-    {
-        let mut table = global_table.borrow_mut(&heap);
-        table.set_field(heap.allocate_string(B("_ENV")), global_table);
-        table.set_field(heap.allocate_string(B("arg")), heap.allocate_cell(arg));
-    }
+    global_table
+        .borrow_mut(&heap)
+        .set_field(heap.allocate_string(B("arg")), heap.allocate_cell(arg));
 
     let mut vm = Vm::new(&heap, global_table);
 
