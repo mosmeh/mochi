@@ -53,7 +53,7 @@ impl<'gc> Vm<'gc> {
                     state.pc += 1;
                 }
                 OpCode::LoadTrue => state.stack[insn.a()] = Value::Boolean(true),
-                OpCode::LoadNil => state.stack[insn.a()..][..insn.b()].fill(Value::Nil),
+                OpCode::LoadNil => state.stack[insn.a()..][..=insn.b()].fill(Value::Nil),
                 OpCode::GetUpval => {
                     let upvalue = closure.upvalues[insn.b()].borrow();
                     let value = state.resolve_upvalue(&upvalue);
