@@ -46,6 +46,25 @@ impl<'gc> Table<'gc> {
         }
     }
 
+    pub fn array(&self) -> &[Value<'gc>] {
+        &self.array
+    }
+
+    pub fn reserve_array(&mut self, additional: usize) {
+        self.array.resize(self.array.len() + additional, Value::Nil);
+        self.map.retain(|k, v| {
+            if let Value::Integer(i) = *k {
+                if i >= 1 {
+                    if let Some(slot) = self.array.get_mut((i - 1) as usize) {
+                        *slot = *v;
+                        return false;
+                    }
+                }
+            }
+            true
+        });
+    }
+
     pub fn get<K>(&self, key: K) -> Value<'gc>
     where
         K: Into<Value<'gc>>,
@@ -96,7 +115,7 @@ impl<'gc> Table<'gc> {
             Err(hash) => hash,
         };
 
-        self.resize_array(key);
+        self.grow_storage(key);
 
         if let Value::Integer(i) = key {
             if i >= 1 {
@@ -123,7 +142,7 @@ impl<'gc> Table<'gc> {
             Err(hash) => hash,
         };
 
-        self.resize_array(key);
+        self.grow_storage(key);
 
         self.map
             .raw_table()
@@ -159,7 +178,7 @@ impl<'gc> Table<'gc> {
         }
     }
 
-    fn resize_array(&mut self, new_key: Value<'gc>) {
+    fn grow_storage(&mut self, new_key: Value<'gc>) {
         // create histogram of non negative integer keys
 
         const NUM_BINS: usize = usize::BITS as usize;
@@ -221,18 +240,7 @@ impl<'gc> Table<'gc> {
         // move some elements in map to array
         let old_array_len = self.array.len();
         if optimal_len > old_array_len {
-            self.array.resize(optimal_len, Value::Nil);
-            self.map.retain(|k, v| {
-                if let Value::Integer(i) = *k {
-                    if i >= 1 {
-                        if let Some(slot) = self.array.get_mut((i - 1) as usize) {
-                            *slot = *v;
-                            return false;
-                        }
-                    }
-                }
-                true
-            });
+            self.reserve_array(optimal_len - old_array_len);
         } else {
             self.map.reserve(self.map.len());
         }
