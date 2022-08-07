@@ -660,17 +660,32 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetList => {
                     let a = insn.a();
-                    let b = insn.b();
-                    let c = insn.c() as usize;
                     let ra = state.stack[a];
+                    let n = if insn.b() > 0 {
+                        insn.b()
+                    } else {
+                        saved_stack_top - a - 1
+                    };
+
+                    let mut offset = insn.c() as usize;
+                    if insn.k() {
+                        let next_insn = closure.proto.code[state.pc];
+                        offset += next_insn.ax() * (u8::MAX as usize + 1);
+                        state.pc += 1;
+                    }
+
                     let mut table =
                         ra.as_table_mut(self.heap)
                             .ok_or_else(|| ErrorKind::TypeError {
                                 operation: Operation::Index,
                                 ty: ra.ty(),
                             })?;
-                    for (i, x) in state.stack[a + 1..=a + b].iter().cloned().enumerate() {
-                        table.set((c + i + 1) as Integer, x);
+                    if offset + n > table.array().len() {
+                        let additional = offset + n - table.array().len();
+                        table.reserve_array(additional);
+                    }
+                    for (i, x) in state.stack[a + 1..=a + n].iter().cloned().enumerate() {
+                        table.set((offset + i + 1) as Integer, x);
                     }
                 }
                 OpCode::Closure => {
