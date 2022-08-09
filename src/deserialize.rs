@@ -135,7 +135,7 @@ fn load_function<'gc, R: Read>(
     Ok(LuaClosureProto {
         max_stack_size,
         lines_defined: if line_defined > 0 {
-            LineRange::Lines(line_defined..last_line_defined + 1)
+            LineRange::Lines(line_defined..=last_line_defined)
         } else {
             LineRange::File
         },

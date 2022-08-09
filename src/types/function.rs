@@ -3,7 +3,11 @@ use crate::{
     types::{LuaString, Value},
     vm::{ErrorKind, Instruction, Vm},
 };
-use std::{fmt::Debug, hash::Hash, ops::Range};
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    ops::{Range, RangeInclusive},
+};
 
 #[derive(Clone)]
 pub struct StackWindow(pub(crate) Range<usize>);
@@ -65,7 +69,7 @@ unsafe impl GarbageCollect for LuaClosureProto<'_> {
 #[derive(Debug, Clone)]
 pub enum LineRange {
     File,
-    Lines(Range<u32>),
+    Lines(RangeInclusive<u32>),
 }
 
 #[derive(Debug, Clone)]

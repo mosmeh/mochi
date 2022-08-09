@@ -23,7 +23,9 @@ impl Display for RuntimeError {
                         LineRange::Lines(range) => {
                             format!(
                                 "\t{}: in function <{}:{}>",
-                                frame.source, frame.source, range.start
+                                frame.source,
+                                frame.source,
+                                range.start()
                             )
                         }
                     }
