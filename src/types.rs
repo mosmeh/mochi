@@ -199,6 +199,10 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    pub fn is_nil(&self) -> bool {
+        matches!(self, Value::Nil)
+    }
+
     pub fn to_boolean(&self) -> bool {
         !matches!(self, Value::Nil | Value::Boolean(false))
     }

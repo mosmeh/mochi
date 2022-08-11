@@ -200,7 +200,7 @@ fn ipairs(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
             table.get(i)
         };
 
-        if value == Value::Nil {
+        if value.is_nil() {
             stack[0] = Value::Nil;
             Ok(1)
         } else {
@@ -324,7 +324,7 @@ fn require(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let filename = format!("./{}.lua", module_name.as_bstr());
     let filename_value = heap.allocate_string(filename.clone().into_bytes()).into();
 
-    let loaded_value = if maybe_loaded_value == Value::Nil {
+    let loaded_value = if maybe_loaded_value.is_nil() {
         let mut closure = crate::load_file(heap, &filename)
             .unwrap()
             .into_lua_closure(heap);

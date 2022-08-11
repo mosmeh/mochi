@@ -282,7 +282,7 @@ impl<'gc> Vm<'gc> {
                 }
                 Value::Table(next_table) => {
                     let value = next_table.borrow().get(key);
-                    if value != Value::Nil {
+                    if !value.is_nil() {
                         return Ok(value);
                     }
                     table = next_table;

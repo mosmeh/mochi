@@ -161,14 +161,14 @@ impl<'gc> Table<'gc> {
         let hash = calc_hash(key);
         let table = self.map.raw_table();
         if let Some(bucket) = table.find(hash, |(k, _)| *k == key) {
-            if value == Value::Nil {
+            if value.is_nil() {
                 unsafe { table.remove(bucket) };
             } else {
                 unsafe { bucket.write((key, value)) };
             }
             return Ok(());
         }
-        if value == Value::Nil {
+        if value.is_nil() {
             return Ok(());
         }
         if table.try_insert_no_grow(hash, (key, value)).is_ok() {
@@ -187,7 +187,7 @@ impl<'gc> Table<'gc> {
 
         // array part
         if let Some(x) = self.array.get(0) {
-            if *x != Value::Nil {
+            if !x.is_nil() {
                 bins[0] = 1;
                 num_non_neg += 1;
             }
@@ -199,7 +199,7 @@ impl<'gc> Table<'gc> {
             }
             let next_threshold = threshold.saturating_mul(2).min(self.array.len());
             for x in &self.array[threshold..next_threshold] {
-                if *x != Value::Nil {
+                if !x.is_nil() {
                     *bin += 1;
                     num_non_neg += 1;
                 }
@@ -252,7 +252,7 @@ impl<'gc> Table<'gc> {
             let mut j = self.array.len();
             while j - i > 1 {
                 let m = (j - i) / 2 + i;
-                if self.array[m - 1] != Value::Nil {
+                if !self.array[m - 1].is_nil() {
                     i = m;
                 } else {
                     j = m;

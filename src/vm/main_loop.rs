@@ -74,14 +74,13 @@ impl<'gc> Vm<'gc> {
                     };
                     if let Value::Table(table) = table_value {
                         let raw_value = table.borrow().get_field(rc);
-                        if raw_value != Value::Nil {
-                            state.stack[insn.a()] = raw_value;
-                        } else {
+                        if raw_value.is_nil() {
                             self.frames.last_mut().unwrap().pc = state.pc;
                             self.stack[frame.base + insn.a()] =
                                 self.call_index_metamethod(table, rc)?;
                             return Ok(());
                         }
+                        state.stack[insn.a()] = raw_value;
                     } else {
                         return Err(ErrorKind::TypeError {
                             operation: Operation::Index,
@@ -94,14 +93,13 @@ impl<'gc> Vm<'gc> {
                     let rc = state.stack[insn.c() as usize];
                     if let Value::Table(table) = rb {
                         let raw_value = table.borrow().get(rc);
-                        if raw_value != Value::Nil {
-                            state.stack[insn.a()] = raw_value;
-                        } else {
+                        if raw_value.is_nil() {
                             self.frames.last_mut().unwrap().pc = state.pc;
                             self.stack[frame.base + insn.a()] =
                                 self.call_index_metamethod(table, rc)?;
                             return Ok(());
                         }
+                        state.stack[insn.a()] = raw_value;
                     } else {
                         return Err(ErrorKind::TypeError {
                             operation: Operation::Index,
@@ -114,14 +112,13 @@ impl<'gc> Vm<'gc> {
                     let c = insn.c() as Integer;
                     if let Value::Table(table) = rb {
                         let raw_value = table.borrow().get(c);
-                        if raw_value != Value::Nil {
-                            state.stack[insn.a()] = raw_value;
-                        } else {
+                        if raw_value.is_nil() {
                             self.frames.last_mut().unwrap().pc = state.pc;
                             self.stack[frame.base + insn.a()] =
                                 self.call_index_metamethod(table, c)?;
                             return Ok(());
                         }
+                        state.stack[insn.a()] = raw_value;
                     } else {
                         return Err(ErrorKind::TypeError {
                             operation: Operation::Index,
@@ -138,14 +135,13 @@ impl<'gc> Vm<'gc> {
                     };
                     if let Value::Table(table) = rb {
                         let raw_value = table.borrow().get_field(rc);
-                        if raw_value != Value::Nil {
-                            state.stack[insn.a()] = raw_value;
-                        } else {
+                        if raw_value.is_nil() {
                             self.frames.last_mut().unwrap().pc = state.pc;
                             self.stack[frame.base + insn.a()] =
                                 self.call_index_metamethod(table, rc)?;
                             return Ok(());
                         }
+                        state.stack[insn.a()] = raw_value;
                     } else {
                         return Err(ErrorKind::TypeError {
                             operation: Operation::Index,
@@ -261,14 +257,13 @@ impl<'gc> Vm<'gc> {
                     };
                     if let Value::Table(table) = rb {
                         let raw_value = table.borrow().get_field(rkc);
-                        if raw_value != Value::Nil {
-                            state.stack[insn.a()] = raw_value;
-                        } else {
+                        if raw_value.is_nil() {
                             self.frames.last_mut().unwrap().pc = state.pc;
                             self.stack[frame.base + insn.a()] =
                                 self.call_index_metamethod(table, rkc)?;
                             return Ok(());
                         }
+                        state.stack[insn.a()] = raw_value;
                     } else {
                         return Err(ErrorKind::TypeError {
                             operation: Operation::Index,
@@ -653,7 +648,7 @@ impl<'gc> Vm<'gc> {
                 OpCode::TForLoop => {
                     let a = insn.a();
                     let control = state.stack[a + 4];
-                    if control != Value::Nil {
+                    if !control.is_nil() {
                         state.stack[a + 2] = control;
                         state.pc -= insn.bx();
                     }
