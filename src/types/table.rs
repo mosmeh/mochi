@@ -1,20 +1,30 @@
-use super::{Integer, LuaString, Value};
-use crate::gc::{GarbageCollect, GcCell, Tracer};
-use hashbrown::HashMap;
-use rustc_hash::FxHasher;
-use std::hash::{BuildHasherDefault, Hash, Hasher};
+mod bucket;
 
-fn calc_hash(value: Value) -> u64 {
-    let mut state = FxHasher::default();
-    value.hash(&mut state);
-    state.finish()
+use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Value};
+use crate::gc::{GarbageCollect, GcCell, Tracer};
+use bucket::Bucket;
+use rustc_hash::FxHasher;
+use std::hash::{Hash, Hasher};
+
+#[derive(Clone, Default)]
+pub struct Table<'gc> {
+    array: Vec<Value<'gc>>,
+
+    buckets: Vec<Bucket<'gc>>,
+    last_free_bucket: usize,
+
+    metatable: Option<GcCell<'gc, Table<'gc>>>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Table<'gc> {
-    map: HashMap<Value<'gc>, Value<'gc>, BuildHasherDefault<FxHasher>>,
-    array: Vec<Value<'gc>>,
-    metatable: Option<GcCell<'gc, Table<'gc>>>,
+impl std::fmt::Debug for Table<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Table")
+            .field("array", &self.array)
+            .field("#buckets", &self.buckets.len())
+            .field("last_free_bucket", &self.last_free_bucket)
+            .field("metatable", &self.metatable)
+            .finish()
+    }
 }
 
 impl<'gc> From<Vec<Value<'gc>>> for Table<'gc> {
@@ -28,8 +38,15 @@ impl<'gc> From<Vec<Value<'gc>>> for Table<'gc> {
 
 unsafe impl GarbageCollect for Table<'_> {
     fn trace(&self, tracer: &mut Tracer) {
-        self.map.trace(tracer);
         self.array.trace(tracer);
+
+        for bucket in &self.buckets {
+            if bucket.has_value() {
+                debug_assert!(bucket.has_key());
+                bucket.key().trace(tracer);
+                bucket.value().trace(tracer);
+            }
+        }
     }
 }
 
@@ -38,31 +55,18 @@ impl<'gc> Table<'gc> {
         Default::default()
     }
 
-    pub fn with_capacity_and_len(map_capacity: usize, array_len: usize) -> Self {
-        Self {
-            map: HashMap::with_capacity_and_hasher(map_capacity, BuildHasherDefault::default()),
-            array: vec![Value::Nil; array_len],
-            ..Default::default()
-        }
+    pub fn with_size(array_len: usize, hashtable_capacity: usize) -> Self {
+        let mut table = Self::default();
+        table.resize(array_len, hashtable_capacity);
+        table
     }
 
     pub fn array(&self) -> &[Value<'gc>] {
         &self.array
     }
 
-    pub fn reserve_array(&mut self, additional: usize) {
-        self.array.resize(self.array.len() + additional, Value::Nil);
-        self.map.retain(|k, v| {
-            if let Value::Integer(i) = *k {
-                if i >= 1 {
-                    if let Some(slot) = self.array.get_mut((i - 1) as usize) {
-                        *slot = *v;
-                        return false;
-                    }
-                }
-            }
-            true
-        });
+    pub fn resize_array(&mut self, new_len: usize) {
+        self.resize(new_len, self.buckets.len());
     }
 
     pub fn get<K>(&self, key: K) -> Value<'gc>
@@ -80,13 +84,15 @@ impl<'gc> Table<'gc> {
         } else {
             key
         };
-        self.map.get(&key).copied().unwrap_or_default()
+
+        self.find_bucket(key)
+            .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
+            .unwrap_or_default()
     }
 
     pub fn get_field(&self, field: LuaString<'gc>) -> Value<'gc> {
-        self.map
-            .get(&Value::String(field))
-            .copied()
+        self.find_bucket(field.into())
+            .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
             .unwrap_or_default()
     }
 
@@ -110,24 +116,15 @@ impl<'gc> Table<'gc> {
             key
         };
 
-        let hash = match self.try_set_no_grow(key, value) {
-            Ok(_) => return,
-            Err(hash) => hash,
-        };
-
-        self.grow_storage(key);
-
-        if let Value::Integer(i) = key {
-            if i >= 1 {
-                if let Some(slot) = self.array.get_mut((i - 1) as usize) {
-                    *slot = value;
-                    return;
-                }
-            }
+        if let Some(index) = self.find_bucket(key) {
+            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
+            return;
         }
-        self.map
-            .raw_table()
-            .insert(hash, (key, value), |(k, _)| calc_hash(*k));
+        if value.is_nil() {
+            return;
+        }
+
+        unsafe { self.set_new_hashtable_key(key, value) };
     }
 
     pub fn set_field<V>(&mut self, field: LuaString<'gc>, value: V)
@@ -137,16 +134,15 @@ impl<'gc> Table<'gc> {
         let key = Value::String(field);
         let value = value.into();
 
-        let hash = match self.try_set_no_grow(key, value) {
-            Ok(_) => return,
-            Err(hash) => hash,
-        };
+        if let Some(index) = self.find_bucket(key) {
+            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
+            return;
+        }
+        if value.is_nil() {
+            return;
+        }
 
-        self.grow_storage(key);
-
-        self.map
-            .raw_table()
-            .insert(hash, (key, value), |(k, _)| calc_hash(*k));
+        unsafe { self.set_new_hashtable_key(key, value) };
     }
 
     pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
@@ -158,95 +154,6 @@ impl<'gc> Table<'gc> {
         T: Into<Option<GcCell<'gc, Table<'gc>>>>,
     {
         self.metatable = metatable.into();
-    }
-
-    fn try_set_no_grow(&mut self, key: Value<'gc>, value: Value<'gc>) -> Result<(), u64> {
-        let hash = calc_hash(key);
-        let table = self.map.raw_table();
-        if let Some(bucket) = table.find(hash, |(k, _)| *k == key) {
-            if value.is_nil() {
-                unsafe { table.remove(bucket) };
-            } else {
-                unsafe { bucket.write((key, value)) };
-            }
-            return Ok(());
-        }
-        if value.is_nil() {
-            return Ok(());
-        }
-        if table.try_insert_no_grow(hash, (key, value)).is_ok() {
-            Ok(())
-        } else {
-            Err(hash)
-        }
-    }
-
-    fn grow_storage(&mut self, new_key: Value<'gc>) {
-        // create histogram of non negative integer keys
-
-        const NUM_BINS: usize = usize::BITS as usize;
-        let mut bins = [0; NUM_BINS];
-        let mut num_non_neg = 0;
-
-        // array part
-        if let Some(x) = self.array.get(0) {
-            if !x.is_nil() {
-                bins[0] = 1;
-                num_non_neg += 1;
-            }
-        }
-        let mut threshold = 1;
-        for bin in bins[1..].iter_mut() {
-            if threshold >= self.array.len() {
-                break;
-            }
-            let next_threshold = threshold.saturating_mul(2).min(self.array.len());
-            for x in &self.array[threshold..next_threshold] {
-                if !x.is_nil() {
-                    *bin += 1;
-                    num_non_neg += 1;
-                }
-            }
-            threshold = next_threshold;
-        }
-
-        // map part
-        fn increment_bin(bins: &mut [usize; NUM_BINS], num_non_neg: &mut usize, key: Value) {
-            if let Value::Integer(i) = key {
-                if i >= 1 {
-                    let log2 = Integer::BITS - (i - 1).leading_zeros();
-                    bins[log2 as usize] += 1;
-                    *num_non_neg += 1;
-                }
-            }
-        }
-        for x in self.map.keys() {
-            increment_bin(&mut bins, &mut num_non_neg, *x);
-        }
-        increment_bin(&mut bins, &mut num_non_neg, new_key);
-
-        // determine optimal length of array
-        let mut optimal_len = 0;
-        let mut num_elems_in_array = 0;
-        let mut power_of_two = 1;
-        for bin in &bins {
-            num_elems_in_array += *bin;
-            if num_elems_in_array > power_of_two / 2 {
-                optimal_len = power_of_two;
-            }
-            if num_non_neg <= power_of_two {
-                break;
-            }
-            power_of_two *= 2;
-        }
-
-        // move some elements in map to array
-        let old_array_len = self.array.len();
-        if optimal_len > old_array_len {
-            self.reserve_array(optimal_len - old_array_len);
-        } else {
-            self.map.reserve(self.map.len());
-        }
     }
 
     pub fn lua_len(&self) -> Integer {
@@ -263,14 +170,14 @@ impl<'gc> Table<'gc> {
             }
             return i as Integer;
         }
-        if self.map.is_empty() {
+        if self.buckets.is_empty() {
             return self.array.len() as Integer;
         }
 
         // exponential search
         let mut i = self.array.len() as Integer;
         let mut j = i + 1;
-        while self.map.contains_key(&j.into()) {
+        while self.find_bucket(j.into()).is_some() {
             if j == Integer::MAX {
                 return j;
             }
@@ -278,12 +185,237 @@ impl<'gc> Table<'gc> {
         }
         while j - i > 1 {
             let m = (j - i) / 2 + i;
-            if self.map.contains_key(&m.into()) {
+            if self.find_bucket(m.into()).is_some() {
                 i = m;
             } else {
                 j = m;
             }
         }
         i
+    }
+
+    unsafe fn set_new_hashtable_key(&mut self, key: Value<'gc>, value: Value<'gc>) {
+        if self.buckets.is_empty() {
+            self.rehash(key);
+            self.set(key, value);
+            return;
+        }
+
+        let main_index = self.calc_main_bucket_index(key);
+        let index = if self.buckets.get_unchecked(main_index).has_value() {
+            let free_index = if let Some(free_index) = self.find_free_bucket() {
+                free_index
+            } else {
+                self.rehash(key);
+                self.set(key, value);
+                return;
+            };
+
+            let main_bucket = self.buckets.get_unchecked(main_index);
+            let main_index_of_colliding_item = self.calc_main_bucket_index(main_bucket.key());
+
+            if main_index_of_colliding_item == main_index {
+                if let Some(next_index) = main_bucket.next_index() {
+                    self.buckets
+                        .get_unchecked_mut(free_index)
+                        .set_next_index(next_index);
+                } else {
+                    debug_assert!(!self.buckets[free_index].has_next());
+                }
+
+                self.buckets
+                    .get_unchecked_mut(main_index)
+                    .set_next_index(free_index);
+                free_index
+            } else {
+                let mut prev_in_chain = main_index_of_colliding_item;
+                loop {
+                    let next_index = self
+                        .buckets
+                        .get_unchecked(prev_in_chain)
+                        .next_index()
+                        .unwrap();
+                    if next_index == main_index {
+                        break;
+                    }
+                    prev_in_chain = next_index;
+                }
+                self.buckets
+                    .get_unchecked_mut(prev_in_chain)
+                    .set_next_index(free_index);
+
+                let colliding_item = self.buckets.get_unchecked(main_index).clone();
+                let free_bucket = self.buckets.get_unchecked_mut(free_index);
+                *free_bucket = colliding_item;
+                if free_bucket.has_next() {
+                    self.buckets
+                        .get_unchecked_mut(main_index)
+                        .set_next_index(None);
+                }
+
+                self.buckets.get_unchecked_mut(main_index).remove_item();
+                main_index
+            }
+        } else {
+            main_index
+        };
+
+        let bucket = self.buckets.get_unchecked_mut(index);
+        debug_assert!(!bucket.has_value());
+        bucket.set_new_item(key, value);
+    }
+
+    fn find_bucket(&self, key: Value<'gc>) -> Option<usize> {
+        if self.buckets.is_empty() {
+            return None;
+        }
+
+        let mut index = self.calc_main_bucket_index(key);
+        loop {
+            let bucket = unsafe { self.buckets.get_unchecked(index) };
+            if bucket.matches(key) {
+                return Some(index);
+            }
+            if let Some(next_index) = bucket.next_index() {
+                index = next_index;
+            } else {
+                return None;
+            }
+        }
+    }
+
+    fn calc_main_bucket_index(&self, key: Value) -> usize {
+        debug_assert!(!self.buckets.is_empty());
+        debug_assert!(self.buckets.len().is_power_of_two());
+
+        let mut state = FxHasher::default();
+        key.hash(&mut state);
+        (state.finish() as usize) & (self.buckets.len() - 1)
+    }
+
+    unsafe fn find_free_bucket(&mut self) -> Option<usize> {
+        while self.last_free_bucket > 0 {
+            self.last_free_bucket -= 1;
+            if !self.buckets.get_unchecked(self.last_free_bucket).has_key() {
+                return Some(self.last_free_bucket);
+            }
+        }
+        None
+    }
+
+    fn rehash(&mut self, new_key: Value) {
+        // create histogram of non negative integer keys
+
+        const NUM_BINS: usize = usize::BITS as usize;
+        let mut bins = [0; NUM_BINS];
+        let mut num_positive = 0;
+
+        // array part
+        if let Some(x) = self.array.get(0) {
+            if !x.is_nil() {
+                bins[0] = 1;
+                num_positive += 1;
+            }
+        }
+        let mut threshold = 1;
+        for bin in bins[1..].iter_mut() {
+            if threshold >= self.array.len() {
+                break;
+            }
+            let next_threshold = threshold.saturating_mul(2).min(self.array.len());
+            for x in &self.array[threshold..next_threshold] {
+                if !x.is_nil() {
+                    *bin += 1;
+                    num_positive += 1;
+                }
+            }
+            threshold = next_threshold;
+        }
+
+        let mut num_keys = num_positive;
+
+        // map part
+        fn increment_bin(bins: &mut [usize; NUM_BINS], num_positive: &mut usize, i: Integer) {
+            if i >= 1 {
+                let log2 = Integer::BITS - (i - 1).leading_zeros();
+                bins[log2 as usize] += 1;
+                *num_positive += 1;
+            }
+        }
+
+        for bucket in &self.buckets {
+            if !bucket.has_value() {
+                continue;
+            }
+            num_keys += 1;
+            if let Value::Integer(integer) = bucket.key() {
+                increment_bin(&mut bins, &mut num_positive, integer);
+            }
+        }
+
+        num_keys += 1;
+        if let Value::Integer(i) = new_key {
+            increment_bin(&mut bins, &mut num_positive, i);
+        }
+
+        // determine optimal length of array
+        let mut optimal_array_len = 0;
+        let mut num_items_in_array = 0;
+
+        let mut bins_cumulative_sum = 0;
+        let mut power_of_two = 1;
+
+        for bin in &bins {
+            bins_cumulative_sum += *bin;
+            if bins_cumulative_sum > power_of_two / 2 {
+                optimal_array_len = power_of_two;
+                num_items_in_array = bins_cumulative_sum;
+            }
+            if num_positive <= power_of_two {
+                break;
+            }
+            power_of_two *= 2;
+        }
+
+        self.resize(optimal_array_len, num_keys - num_items_in_array);
+    }
+
+    fn resize(&mut self, new_array_len: usize, new_num_buckets: usize) {
+        let new_num_buckets = if new_num_buckets > 0 {
+            new_num_buckets.next_power_of_two()
+        } else {
+            0
+        };
+        let old_buckets: Vec<_> = self
+            .buckets
+            .drain(..)
+            .filter(|bucket| bucket.has_value())
+            .collect();
+        self.buckets.resize(new_num_buckets, Default::default());
+        self.last_free_bucket = new_num_buckets;
+
+        if new_array_len < self.array.len() {
+            let excess_items = self.array.split_off(new_array_len);
+            for (i, x) in excess_items.into_iter().enumerate() {
+                self.set((new_array_len + 1 + i) as Integer, x);
+            }
+        } else {
+            self.array.resize(new_array_len, Default::default());
+        }
+
+        for bucket in old_buckets {
+            debug_assert!(bucket.has_key());
+            let key = bucket.key();
+            let value = bucket.value();
+            if let Value::Integer(i) = key {
+                if i >= 1 {
+                    if let Some(slot) = self.array.get_mut((i - 1) as usize) {
+                        *slot = value;
+                        continue;
+                    }
+                }
+            }
+            self.set(key, value);
+        }
     }
 }

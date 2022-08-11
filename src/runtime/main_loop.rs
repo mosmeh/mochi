@@ -215,7 +215,7 @@ impl<'gc> Vm<'gc> {
                         let next_insn = closure.proto.code[state.pc];
                         c += next_insn.ax() * (u8::MAX as usize + 1);
                     }
-                    let table = Table::with_capacity_and_len(b, c);
+                    let table = Table::with_size(c, b);
                     state.stack[insn.a()] = gc.allocate_cell(table).into();
                     state.pc += 1;
                 }
@@ -667,9 +667,9 @@ impl<'gc> Vm<'gc> {
                         operation: Operation::Index,
                         ty: ra.ty(),
                     })?;
-                    if offset + n > table.array().len() {
-                        let additional = offset + n - table.array().len();
-                        table.reserve_array(additional);
+                    let new_array_len = offset + n;
+                    if new_array_len > table.array().len() {
+                        table.resize_array(new_array_len);
                     }
                     for (i, x) in state.stack[a + 1..=a + n].iter().cloned().enumerate() {
                         table.set((offset + i + 1) as Integer, x);
