@@ -9,7 +9,7 @@ macro_rules! impl_from_u8 {
         impl From<u8> for $name {
             fn from(v: u8) -> Self {
                 match v {
-                    $(x if x == $name::$variant as u8 => $name::$variant,)*
+                    $(x if x == Self::$variant as u8 => Self::$variant,)*
                     _ => unimplemented!()
                 }
             }

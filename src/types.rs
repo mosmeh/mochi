@@ -37,12 +37,12 @@ impl Display for Type {
 impl Type {
     pub fn display_bytes(&self) -> &'static [u8] {
         match self {
-            Type::Nil => b"nil",
-            Type::Boolean => b"boolean",
-            Type::Number => b"number",
-            Type::String => b"string",
-            Type::Table => b"table",
-            Type::Function => b"function",
+            Self::Nil => b"nil",
+            Self::Boolean => b"boolean",
+            Self::Number => b"number",
+            Self::String => b"string",
+            Self::Table => b"table",
+            Self::Function => b"function",
         }
     }
 }
@@ -158,10 +158,10 @@ impl std::hash::Hash for Value<'_> {
 unsafe impl GarbageCollect for Value<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         match self {
-            Value::String(x) => x.trace(tracer),
-            Value::Table(x) => x.trace(tracer),
-            Value::LuaClosure(x) => x.trace(tracer),
-            Value::NativeClosure(x) => x.trace(tracer),
+            Self::String(x) => x.trace(tracer),
+            Self::Table(x) => x.trace(tracer),
+            Self::LuaClosure(x) => x.trace(tracer),
+            Self::NativeClosure(x) => x.trace(tracer),
             _ => (),
         }
     }
@@ -188,12 +188,12 @@ impl<'gc> Value<'gc> {
 
     pub fn ty(&self) -> Type {
         match self {
-            Value::Nil => Type::Nil,
-            Value::Boolean(_) => Type::Boolean,
-            Value::Integer(_) | Value::Number(_) => Type::Number,
-            Value::String(_) => Type::String,
-            Value::Table(_) => Type::Table,
-            Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
+            Self::Nil => Type::Nil,
+            Self::Boolean(_) => Type::Boolean,
+            Self::Integer(_) | Self::Number(_) => Type::Number,
+            Self::String(_) => Type::String,
+            Self::Table(_) => Type::Table,
+            Self::NativeFunction(_) | Self::LuaClosure(_) | Self::NativeClosure(_) => {
                 Type::Function
             }
         }
