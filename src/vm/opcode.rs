@@ -1,3 +1,8 @@
+macro_rules! count  {
+    () => (0);
+    ($x:tt $($xs:tt)*) => (1 + count!($($xs)*));
+}
+
 macro_rules! impl_from_u8 {
     ($(#[$meta:meta])* $vis:vis enum $name:ident {
         $($variant:ident,)*
@@ -7,11 +12,9 @@ macro_rules! impl_from_u8 {
         }
 
         impl From<u8> for $name {
-            fn from(v: u8) -> Self {
-                match v {
-                    $(x if x == Self::$variant as u8 => Self::$variant,)*
-                    _ => unimplemented!()
-                }
+            fn from(i: u8) -> Self {
+                const OPCODES: [OpCode; count!($($variant)*)] = [$($name::$variant,)*];
+                OPCODES[i as usize]
             }
         }
     }
