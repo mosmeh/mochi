@@ -53,6 +53,17 @@ impl<'gc> Argument<'gc> {
         self.to_type("string", Value::to_string)
     }
 
+    pub fn to_string_or<'a, I>(&'a self, default: I) -> Result<Cow<'a, [u8]>, ErrorKind>
+    where
+        I: Into<Cow<'a, [u8]>>,
+    {
+        if self.value.is_some() {
+            self.to_type("string", Value::to_string)
+        } else {
+            Ok(default.into())
+        }
+    }
+
     pub fn as_table(&self) -> Result<Ref<'_, Table<'gc>>, ErrorKind> {
         self.to_type("table", Value::as_table)
     }
