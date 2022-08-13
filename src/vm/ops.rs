@@ -209,7 +209,7 @@ pub(super) fn do_comparison<I, F, S>(
             ) {
                 float_op(&a, &b)
             } else {
-                unimplemented!("order")
+                todo!("comparison metamethod")
             }
         }
     };
@@ -231,7 +231,7 @@ pub(super) fn do_comparison_with_immediate<I, F>(
     let cond = match ra {
         Value::Integer(x) => int_op(&x, &(imm as Integer)),
         Value::Number(x) => float_op(&x, &(imm as Number)),
-        _ => unimplemented!("orderI"),
+        _ => todo!("comparison metamethod"),
     };
     do_conditional_jump(state, proto, insn, cond);
 }

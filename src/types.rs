@@ -299,7 +299,7 @@ impl<'gc> Value<'gc> {
         if let Self::Table(table) = self {
             table.borrow().metatable()
         } else {
-            unimplemented!()
+            todo!("metatable for non-table type")
         }
     }
 }

@@ -342,8 +342,8 @@ impl<'gc> Vm<'gc> {
                     insn,
                     Integer::bitxor,
                 ),
-                OpCode::ShrI => unimplemented!("SHRI"),
-                OpCode::ShlI => unimplemented!("SHLI"),
+                OpCode::ShrI => todo!("SHRI"),
+                OpCode::ShlI => todo!("SHLI"),
                 OpCode::Add => {
                     ops::do_arithmetic(&mut state, insn, Integer::wrapping_add, Number::add)
                 }
@@ -383,8 +383,8 @@ impl<'gc> Vm<'gc> {
                     self.stack[frame.base + prev_insn.a()] = result;
                     return Ok(());
                 }
-                OpCode::MmBinI => unimplemented!("MMBINI"),
-                OpCode::MmBinK => unimplemented!("MMBINK"),
+                OpCode::MmBinI => todo!("MMBINI"),
+                OpCode::MmBinK => todo!("MMBINK"),
                 OpCode::Unm => {
                     let rb = state.stack[insn.b()];
                     state.stack[insn.a()] = if let Value::Integer(x) = rb {
@@ -392,7 +392,7 @@ impl<'gc> Vm<'gc> {
                     } else if let Some(x) = rb.to_number_without_string_coercion() {
                         Value::Number(-x)
                     } else {
-                        unimplemented!("UNM")
+                        todo!("__unm")
                     };
                 }
                 OpCode::BNot => {
@@ -401,7 +401,7 @@ impl<'gc> Vm<'gc> {
                     {
                         Value::Integer(!x)
                     } else {
-                        unimplemented!("BNOT")
+                        todo!("__bnot")
                     }
                 }
                 OpCode::Not => {
@@ -413,7 +413,7 @@ impl<'gc> Vm<'gc> {
                     let len = match rb {
                         Value::String(s) => s.len() as Integer,
                         Value::Table(t) => t.borrow().lua_len(),
-                        _ => unimplemented!("LEN"),
+                        _ => todo!("__len"),
                     };
                     state.stack[insn.a()] = len.into();
                 }
@@ -439,7 +439,7 @@ impl<'gc> Vm<'gc> {
                     self.close_upvalues(frame.base + insn.a());
                     return Ok(());
                 }
-                OpCode::Tbc => unimplemented!("TBC"),
+                OpCode::Tbc => todo!("TBC"),
                 OpCode::Jmp => state.pc = (state.pc as isize + insn.sj() as isize) as usize,
                 OpCode::Eq => ops::do_comparison(
                     &mut state,
@@ -597,7 +597,7 @@ impl<'gc> Vm<'gc> {
                             state.pc -= insn.bx();
                         }
                     } else {
-                        unimplemented!("FORLOOP")
+                        todo!("float FORLOOP")
                     }
                 }
                 OpCode::ForPrep => {
@@ -621,7 +621,7 @@ impl<'gc> Vm<'gc> {
                             state.stack[a + 1] = count.into();
                         }
                     } else {
-                        unimplemented!("FORPREP")
+                        todo!("float FORPREP")
                     }
                 }
                 OpCode::TForPrep => state.pc += insn.bx(),
