@@ -7,7 +7,7 @@ mod table;
 
 use crate::{
     gc::{GcCell, GcHeap},
-    types::{NativeFunction, Number, StackWindow, Table, Value},
+    types::{Integer, NativeFunction, Number, StackWindow, Table, Value},
     vm::{ErrorKind, Vm},
     LUA_VERSION,
 };
@@ -40,6 +40,22 @@ pub fn create_global_table(heap: &GcHeap) -> GcCell<Table> {
     table.set_field(
         heap.allocate_string(B("rawequal")),
         NativeFunction::new(rawequal),
+    );
+    table.set_field(
+        heap.allocate_string(B("rawget")),
+        NativeFunction::new(rawget),
+    );
+    table.set_field(
+        heap.allocate_string(B("rawlen")),
+        NativeFunction::new(rawlen),
+    );
+    table.set_field(
+        heap.allocate_string(B("rawset")),
+        NativeFunction::new(rawset),
+    );
+    table.set_field(
+        heap.allocate_string(B("select")),
+        NativeFunction::new(select),
     );
     table.set_field(
         heap.allocate_string(B("setmetatable")),
@@ -195,6 +211,72 @@ fn rawequal(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let stack = vm.stack_mut(window);
     stack[0] = (stack.arg(0).to_value()? == stack.arg(1).to_value()?).into();
     Ok(1)
+}
+
+fn rawget(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
+    let index = stack.arg(1).to_value()?;
+    stack[0] = stack.arg(0).as_table()?.get(index);
+    Ok(1)
+}
+
+fn rawlen(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
+    let len = match stack.arg(0).get() {
+        Some(Value::Table(t)) => t.borrow().lua_len(),
+        Some(Value::String(s)) => s.len() as Integer,
+        value => {
+            return Err(ErrorKind::ArgumentTypeError {
+                nth: 0,
+                expected_type: "table or string",
+                got_type: value.map(|value| value.ty().name()),
+            })
+        }
+    };
+    stack[0] = len.into();
+    Ok(1)
+}
+
+fn rawset(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let heap = vm.heap();
+    let stack = vm.stack_mut(window);
+
+    let table = stack.arg(0);
+    let index = stack.arg(1).to_value()?;
+    let value = stack.arg(2).to_value()?;
+
+    table.as_table_mut(heap)?.set(index, value);
+
+    stack[0] = table.to_value()?;
+    Ok(1)
+}
+
+fn select(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
+
+    let num_args = stack.args().len() as Integer;
+    let index = stack.arg(0);
+
+    if let Some(Value::String(s)) = index.get() {
+        if s.as_ref() == b"#" {
+            stack[0] = (num_args - 1).into();
+            return Ok(1);
+        }
+    }
+
+    let index = match index.to_integer()? {
+        i if i < 0 => i + num_args,
+        i if i > num_args => num_args,
+        i => i,
+    };
+    if index < 1 {
+        return Err(ErrorKind::ArgumentError {
+            nth: 0,
+            message: "index out of range",
+        });
+    }
+    stack.copy_within((index + 1) as usize.., 0);
+    Ok((num_args - index) as usize)
 }
 
 fn setmetatable(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
