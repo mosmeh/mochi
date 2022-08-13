@@ -308,19 +308,33 @@ fn tonumber(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     stack[0] = match stack.arg(0).to_value()? {
         Value::Integer(x) => Value::Integer(x),
         Value::Number(x) => Value::Number(x),
-        Value::String(x) => x
-            .as_str()
-            .ok()
-            .map(|s| {
-                if let Ok(i) = s.parse() {
-                    Value::Integer(i)
-                } else if let Ok(f) = s.parse() {
-                    Value::Number(f)
-                } else {
-                    Value::Nil
+        Value::String(s) => {
+            let base = stack.arg(1);
+            let maybe_value = if base.get().is_some() {
+                let base = base.to_integer()?;
+                if !(2..=36).contains(&base) {
+                    return Err(ErrorKind::ArgumentError {
+                        nth: 1,
+                        message: "base out of range",
+                    });
                 }
-            })
-            .unwrap_or(Value::Nil),
+                s.as_str()
+                    .ok()
+                    .and_then(|s| Integer::from_str_radix(s, base as u32).ok())
+                    .map(|i| i.into())
+            } else {
+                s.as_str().ok().map(|s| {
+                    if let Ok(i) = s.parse() {
+                        Value::Integer(i)
+                    } else if let Ok(f) = s.parse() {
+                        Value::Number(f)
+                    } else {
+                        Value::Nil
+                    }
+                })
+            };
+            maybe_value.unwrap_or(Value::Nil)
+        }
         _ => Value::Nil,
     };
     Ok(1)
