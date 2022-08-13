@@ -1,7 +1,7 @@
-use super::get_string_arg;
+use super::StackExt;
 use crate::{
     gc::GcHeap,
-    types::{Integer, NativeFunction, StackWindow, Table, Type},
+    types::{Integer, NativeFunction, StackWindow, Table},
     vm::{ErrorKind, Vm},
 };
 use bstr::B;
@@ -21,19 +21,15 @@ pub fn create_table(heap: &GcHeap) -> Table {
 
 fn char(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
-    let mut bytes = Vec::with_capacity(window.0.len() - 1);
     let stack = vm.stack_mut(window);
-    for (i, x) in stack[1..].iter().enumerate() {
-        let n = x.to_integer().ok_or_else(|| ErrorKind::ArgumentTypeError {
-            nth: i + 1,
-            expected_type: Type::Number,
-            got_type: x.ty(),
-        })?;
+    let mut bytes = Vec::with_capacity(stack.args().len());
+    for nth in 0..bytes.len() {
+        let n = stack.arg(nth).to_integer()?;
         if let Ok(n) = n.try_into() {
             bytes.push(n);
         } else {
             return Err(ErrorKind::ArgumentError {
-                nth: i + 1,
+                nth,
                 message: "value out of range",
             });
         }
@@ -44,8 +40,7 @@ fn char(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 
 fn len(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let stack = vm.stack_mut(window);
-    let string = get_string_arg(stack, 1)?;
-    let len = string.len() as Integer;
+    let len = stack.arg(0).to_string()?.len() as Integer;
     stack[0] = len.into();
     Ok(1)
 }
@@ -53,8 +48,8 @@ fn len(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 fn lower(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
     let stack = vm.stack_mut(window);
-    let string = get_string_arg(stack, 1)?;
-    let lower = heap.allocate_string(string.to_ascii_lowercase());
+    let lower = stack.arg(0).to_string()?.to_ascii_lowercase();
+    let lower = heap.allocate_string(lower);
     stack[0] = lower.into();
     Ok(1)
 }
@@ -62,7 +57,7 @@ fn lower(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 fn reverse(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
     let stack = vm.stack_mut(window);
-    let mut string = get_string_arg(stack, 1)?.to_vec();
+    let mut string = stack.arg(0).to_string()?.to_vec();
     string.reverse();
     stack[0] = heap.allocate_string(string).into();
     Ok(1)
@@ -71,8 +66,8 @@ fn reverse(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 fn upper(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
     let stack = vm.stack_mut(window);
-    let string = get_string_arg(stack, 1)?;
-    let upper = heap.allocate_string(string.to_ascii_uppercase());
+    let upper = stack.arg(0).to_string()?.to_ascii_uppercase();
+    let upper = heap.allocate_string(upper);
     stack[0] = upper.into();
     Ok(1)
 }

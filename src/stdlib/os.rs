@@ -1,4 +1,4 @@
-use super::{get_number_arg, get_string_arg};
+use super::StackExt;
 use crate::{
     gc::GcHeap,
     types::{NativeFunction, StackWindow, Table},
@@ -30,15 +30,16 @@ fn clock(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 
 fn difftime(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let stack = vm.stack_mut(window);
-    stack[0] = (get_number_arg(stack, 1)? - get_number_arg(stack, 2)?).into();
+    stack[0] = (stack.arg(0).to_number()? - stack.arg(1).to_number()?).into();
     Ok(1)
 }
 
 fn getenv(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
     let stack = vm.stack_mut(window);
-    let var = get_string_arg(stack, 1)?;
-    stack[0] = var
+    stack[0] = stack
+        .arg(0)
+        .to_string()?
         .to_os_str()
         .ok()
         .and_then(std::env::var_os)

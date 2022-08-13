@@ -1,4 +1,4 @@
-use super::get_string_arg;
+use super::StackExt;
 use crate::{
     gc::GcHeap,
     types::{NativeFunction, StackWindow, Table},
@@ -22,9 +22,8 @@ fn flush(_: &mut Vm, _: StackWindow) -> Result<usize, ErrorKind> {
 fn write(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let stack = vm.stack(window);
     let mut stdout = std::io::stdout().lock();
-    for i in 1..stack.len() {
-        let string = get_string_arg(stack, i)?;
-        stdout.write_all(string.as_ref())?;
+    for i in 0..stack.args().len() {
+        stdout.write_all(stack.arg(i).to_string()?.as_ref())?;
     }
     Ok(0)
 }

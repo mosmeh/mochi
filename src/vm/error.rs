@@ -44,14 +44,17 @@ pub enum ErrorKind {
     #[error("attempt to {operation} a {ty} value")]
     TypeError { operation: Operation, ty: Type },
 
-    #[error("bad argument #{nth} ({message})")]
+    #[error("bad argument #{nth} ({message})", nth = nth + 1)]
     ArgumentError { nth: usize, message: &'static str },
 
-    #[error("bad argument #{nth} ({expected_type} expected, got {got_type})")]
+    #[error("bad argument #{nth} ({expected_type} expected, got {got})",
+        nth = nth + 1,
+        got = got_type.unwrap_or("no value")
+    )]
     ArgumentTypeError {
         nth: usize,
-        expected_type: Type,
-        got_type: Type,
+        expected_type: &'static str,
+        got_type: Option<&'static str>,
     },
 
     #[error(transparent)]
