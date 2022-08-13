@@ -136,10 +136,7 @@ fn error_obj_to_error_kind(error_obj: Value) -> ErrorKind {
     let msg = if let Some(s) = error_obj.to_string() {
         String::from_utf8_lossy(&s).to_string()
     } else {
-        format!(
-            "(error object is a {} value",
-            error_obj.ty().display_bytes().as_bstr()
-        )
+        format!("(error object is a {} value", error_obj.ty().name())
     };
     ErrorKind::ExplicitError(msg)
 }
@@ -301,7 +298,7 @@ fn tostring(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
 fn ty(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
     let stack = vm.stack_mut(window);
-    let string = stack[1].ty().display_bytes();
+    let string = stack[1].ty().name().as_bytes();
     stack[0] = heap.allocate_string(string).into();
     Ok(1)
 }
