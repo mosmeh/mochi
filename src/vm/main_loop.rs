@@ -431,7 +431,6 @@ impl<'gc> Vm<'gc> {
                             });
                         }
                     }
-                    let strings: Vec<_> = strings.iter().map(|x| x.as_ref()).collect();
                     state.stack[a] = self.heap.allocate_string(strings.concat()).into();
                 }
                 OpCode::Close => {
