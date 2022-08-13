@@ -14,14 +14,18 @@ pub fn create_table(heap: &GcHeap) -> Table {
     table.set_field(heap.allocate_string(B("abs")), NativeFunction::new(abs));
     table.set_field(heap.allocate_string(B("acos")), NativeFunction::new(acos));
     table.set_field(heap.allocate_string(B("asin")), NativeFunction::new(asin));
-    table.set_field(heap.allocate_string(B("floor")), NativeFunction::new(floor));
+    table.set_field(heap.allocate_string(B("atan")), NativeFunction::new(atan));
+    table.set_field(heap.allocate_string(B("ceil")), NativeFunction::new(ceil));
     table.set_field(heap.allocate_string(B("cos")), NativeFunction::new(cos));
     table.set_field(heap.allocate_string(B("deg")), NativeFunction::new(deg));
     table.set_field(heap.allocate_string(B("exp")), NativeFunction::new(exp));
+    table.set_field(heap.allocate_string(B("floor")), NativeFunction::new(floor));
+    table.set_field(heap.allocate_string(B("fmod")), NativeFunction::new(fmod));
     table.set_field(heap.allocate_string(B("huge")), Number::INFINITY);
     table.set_field(heap.allocate_string(B("log")), NativeFunction::new(log));
     table.set_field(heap.allocate_string(B("maxinteger")), Integer::MAX);
     table.set_field(heap.allocate_string(B("mininteger")), Integer::MIN);
+    table.set_field(heap.allocate_string(B("modf")), NativeFunction::new(modf));
     table.set_field(
         heap.allocate_string(B("pi")),
         std::f64::consts::PI as Number,
@@ -94,7 +98,12 @@ pub fn create_table(heap: &GcHeap) -> Table {
     table.set_field(heap.allocate_string(B("sin")), NativeFunction::new(sin));
     table.set_field(heap.allocate_string(B("sqrt")), NativeFunction::new(sqrt));
     table.set_field(heap.allocate_string(B("tan")), NativeFunction::new(tan));
+    table.set_field(
+        heap.allocate_string(B("tointeger")),
+        NativeFunction::new(tointeger),
+    );
     table.set_field(heap.allocate_string(B("type")), NativeFunction::new(ty));
+    table.set_field(heap.allocate_string(B("ult")), NativeFunction::new(ult));
     table
 }
 
@@ -121,19 +130,27 @@ fn asin(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn floor(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+fn atan(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
+    let y = stack.arg(0).to_number()?;
+    let x = stack.arg(1);
+    let result = if x.get().is_some() {
+        y.atan2(x.to_number()?)
+    } else {
+        y.atan()
+    };
+    stack[0] = result.into();
+    Ok(1)
+}
+
+fn ceil(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let stack = vm.stack_mut(window);
     let arg = stack.arg(0);
     stack[0] = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
     } else {
-        let float_floor = arg.to_number()?.floor();
-        let int_floor = float_floor as Integer;
-        if float_floor == int_floor as Number {
-            Value::Integer(int_floor)
-        } else {
-            Value::Number(float_floor)
-        }
+        let ceil = arg.to_number()?.ceil();
+        number_to_value(ceil)
     };
     Ok(1)
 }
@@ -156,6 +173,37 @@ fn exp(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
+fn floor(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
+    let arg = stack.arg(0);
+    stack[0] = if let Some(Value::Integer(x)) = arg.get() {
+        x.into()
+    } else {
+        let floor = arg.to_number()?.floor();
+        number_to_value(floor)
+    };
+    Ok(1)
+}
+
+fn fmod(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
+    let x = stack.arg(0);
+    let y = stack.arg(1);
+    let result = if let (Value::Integer(x), Value::Integer(y)) = (x.to_value()?, y.to_value()?) {
+        if y == 0 {
+            return Err(ErrorKind::ArgumentError {
+                nth: 1,
+                message: "zero",
+            });
+        }
+        (x % y).into()
+    } else {
+        (x.to_number()? % y.to_number()?).into()
+    };
+    stack[0] = result;
+    Ok(1)
+}
+
 fn log(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let stack = vm.stack_mut(window);
     let x = stack.arg(0).to_number()?;
@@ -167,6 +215,20 @@ fn log(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     };
     stack[0] = result.into();
     Ok(1)
+}
+
+fn modf(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
+    let x = stack.arg(0);
+    let (trunc, fract) = if let Value::Integer(x) = x.to_value()? {
+        (x.into(), 0.0.into())
+    } else {
+        let x = x.to_number()?;
+        (number_to_value(x.trunc()), x.fract().into())
+    };
+    stack[0] = trunc;
+    stack[1] = fract;
+    Ok(2)
 }
 
 fn rad(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
@@ -229,6 +291,17 @@ fn tan(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
+fn tointeger(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
+    stack[0] = stack
+        .arg(0)
+        .to_value()?
+        .to_integer()
+        .map(|i| i.into())
+        .unwrap_or_default();
+    Ok(1)
+}
+
 fn ty(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     let heap = vm.heap();
     let stack = vm.stack_mut(window);
@@ -239,4 +312,21 @@ fn ty(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     };
     stack[0] = result;
     Ok(1)
+}
+
+fn ult(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
+    let stack = vm.stack_mut(window);
+    let m = stack.arg(0).to_integer()?;
+    let n = stack.arg(1).to_integer()?;
+    stack[0] = ((m as u64) < (n as u64)).into();
+    Ok(1)
+}
+
+fn number_to_value<'gc>(x: Number) -> Value<'gc> {
+    let int = x as Integer;
+    if x == int as Number {
+        Value::Integer(int)
+    } else {
+        Value::Number(x)
+    }
 }
