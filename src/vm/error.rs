@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 #[derive(Debug)]
 pub struct RuntimeError {
-    pub source: ErrorKind,
+    pub kind: ErrorKind,
     pub traceback: Vec<TracebackFrame>,
 }
 
@@ -14,7 +14,7 @@ impl Display for RuntimeError {
         write!(
             f,
             "{}\nstack traceback:\n{}",
-            self.source,
+            self.kind,
             self.traceback
                 .iter()
                 .map(|frame| {

@@ -166,7 +166,7 @@ impl<'gc> Vm<'gc> {
         let callee = self.heap.allocate(closure).into();
         match self.execute_inner(callee, &[]) {
             Ok(result) => Ok(result),
-            Err(source) => {
+            Err(kind) => {
                 let traceback = self
                     .frames
                     .drain(..)
@@ -182,7 +182,7 @@ impl<'gc> Vm<'gc> {
                     .collect();
                 self.stack.clear();
                 self.open_upvalues.clear();
-                Err(RuntimeError { source, traceback })
+                Err(RuntimeError { kind, traceback })
             }
         }
     }
