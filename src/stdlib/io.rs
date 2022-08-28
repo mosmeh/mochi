@@ -1,4 +1,4 @@
-use super::StackExt;
+use super::helpers::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
@@ -7,11 +7,13 @@ use crate::{
 use bstr::B;
 use std::io::Write;
 
-pub fn create_table(gc: &GcContext) -> Table {
+pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("flush")), NativeFunction::new(flush));
     table.set_field(gc.allocate_string(B("write")), NativeFunction::new(write));
-    table
+    global_table
+        .borrow_mut(gc)
+        .set_field(gc.allocate_string(B("io")), gc.allocate_cell(table));
 }
 
 fn flush<'gc>(

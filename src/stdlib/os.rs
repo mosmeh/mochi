@@ -1,4 +1,4 @@
-use super::StackExt;
+use super::helpers::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
@@ -6,7 +6,7 @@ use crate::{
 };
 use bstr::{ByteSlice, ByteVec, B};
 
-pub fn create_table(gc: &GcContext) -> Table {
+pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("clock")), NativeFunction::new(clock));
     table.set_field(
@@ -14,7 +14,9 @@ pub fn create_table(gc: &GcContext) -> Table {
         NativeFunction::new(difftime),
     );
     table.set_field(gc.allocate_string(B("getenv")), NativeFunction::new(getenv));
-    table
+    global_table
+        .borrow_mut(gc)
+        .set_field(gc.allocate_string(B("os")), gc.allocate_cell(table));
 }
 
 fn clock<'gc>(

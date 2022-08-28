@@ -1,4 +1,4 @@
-use super::StackExt;
+use super::helpers::StackExt;
 use crate::{
     binary_chunk,
     gc::{GcCell, GcContext},
@@ -8,7 +8,7 @@ use crate::{
 use bstr::B;
 use std::ops::Range;
 
-pub fn create_table(gc: &GcContext) -> Table {
+pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("byte")), NativeFunction::new(byte));
     table.set_field(gc.allocate_string(B("char")), NativeFunction::new(char));
@@ -22,7 +22,9 @@ pub fn create_table(gc: &GcContext) -> Table {
         NativeFunction::new(reverse),
     );
     table.set_field(gc.allocate_string(B("upper")), NativeFunction::new(upper));
-    table
+    global_table
+        .borrow_mut(gc)
+        .set_field(gc.allocate_string(B("string")), gc.allocate_cell(table));
 }
 
 fn byte<'gc>(
