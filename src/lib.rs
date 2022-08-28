@@ -1,7 +1,7 @@
 pub mod binary_chunk;
 pub mod gc;
+pub mod runtime;
 pub mod types;
-pub mod vm;
 
 #[cfg(not(feature = "luac"))]
 mod codegen;
@@ -38,7 +38,7 @@ pub enum Error {
     Codegen(#[from] codegen::CodegenError),
 
     #[error(transparent)]
-    Runtime(#[from] vm::RuntimeError),
+    Runtime(#[from] runtime::RuntimeError),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),

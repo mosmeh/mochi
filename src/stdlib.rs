@@ -7,8 +7,8 @@ mod table;
 
 use crate::{
     gc::{root_gc, GcCell, GcContext},
+    runtime::{ErrorKind, Vm},
     types::{Integer, LuaClosure, LuaThread, NativeFunction, Number, StackWindow, Table, Value},
-    vm::{ErrorKind, Vm},
     LUA_VERSION,
 };
 use bstr::{ByteSlice, B};

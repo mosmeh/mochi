@@ -2,12 +2,12 @@ use super::{instruction::Address, CodegenError, Frame};
 use crate::{
     gc::GcContext,
     parser::ast::{BinaryOp, UnaryOp},
-    types::{Integer, LuaClosureProto, LuaString, RegisterIndex, UpvalueIndex},
-    vm::{
+    runtime::{
         instruction::{OFFSET_SBX, OFFSET_SC, OFFSET_SJ, UINT17_MAX, UINT25_MAX},
         tag_method::TagMethod,
         Instruction, OpCode,
     },
+    types::{Integer, LuaClosureProto, LuaString, RegisterIndex, UpvalueIndex},
 };
 
 #[derive(Debug, Clone, Copy)]

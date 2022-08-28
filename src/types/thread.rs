@@ -1,7 +1,7 @@
 use super::{Upvalue, Value};
 use crate::{
     gc::{GarbageCollect, GcCell, GcContext, Tracer},
-    vm::Frame,
+    runtime::Frame,
 };
 use std::{collections::BTreeMap, ops::Range};
 

@@ -2,8 +2,8 @@ use super::StackExt;
 use crate::{
     binary_chunk,
     gc::{GcCell, GcContext},
+    runtime::{ErrorKind, Vm},
     types::{Integer, LuaThread, NativeFunction, StackWindow, Table, Type, Value},
-    vm::{ErrorKind, Vm},
 };
 use bstr::B;
 use std::ops::Range;

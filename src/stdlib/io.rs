@@ -1,8 +1,8 @@
 use super::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
+    runtime::{ErrorKind, Vm},
     types::{LuaThread, NativeFunction, StackWindow, Table},
-    vm::{ErrorKind, Vm},
 };
 use bstr::B;
 use std::io::Write;

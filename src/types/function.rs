@@ -1,8 +1,8 @@
 use super::{thread::StackWindow, LuaThread};
 use crate::{
     gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
+    runtime::{ErrorKind, Instruction, Vm},
     types::{LuaString, Value},
-    vm::{ErrorKind, Instruction, Vm},
 };
 use std::{fmt::Debug, hash::Hash, ops::RangeInclusive};
 

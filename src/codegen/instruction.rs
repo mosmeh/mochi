@@ -1,4 +1,4 @@
-use crate::vm::{
+use crate::runtime::{
     instruction::{OFFSET_SB, OFFSET_SBX, OFFSET_SC, OFFSET_SJ, UINT17_MAX, UINT25_MAX},
     Instruction, OpCode,
 };

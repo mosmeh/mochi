@@ -4,8 +4,8 @@ use super::{
 };
 use crate::{
     gc::Gc,
+    runtime::Instruction,
     types::{Integer, LineRange, LuaClosureProto, LuaString, Number, UpvalueDescription, Value},
-    vm::Instruction,
 };
 use byteorder::{NativeEndian, WriteBytesExt};
 use std::io::Write;

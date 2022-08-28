@@ -3,8 +3,8 @@ use bstr::{ByteSlice, ByteVec, B};
 use clap::{Parser, Subcommand};
 use mochi_lua::{
     gc::GcHeap,
+    runtime::{OpCode, Runtime},
     types::{Integer, LineRange, LuaClosureProto, Table, UpvalueDescription, Value},
-    vm::{OpCode, Runtime},
 };
 use rustyline::{error::ReadlineError, Editor};
 use std::{fs::File, io::BufWriter, path::PathBuf};

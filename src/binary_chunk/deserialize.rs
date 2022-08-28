@@ -1,11 +1,11 @@
 use super::{LUAC_FORMAT, LUAC_VERSION};
 use crate::{
     gc::GcContext,
+    runtime::Instruction,
     types::{
         Integer, LineRange, LuaClosureProto, LuaString, Number, RegisterIndex, UpvalueDescription,
         UpvalueIndex, Value,
     },
-    vm::Instruction,
 };
 use bstr::B;
 use byteorder::{NativeEndian, ReadBytesExt};

@@ -5,8 +5,8 @@ pub(crate) use string::BoxedString;
 pub use traits::{Finalizer, GarbageCollect, Tracer};
 
 use crate::{
+    runtime::Vm,
     types::{LuaString, Value},
-    vm::Vm,
 };
 use hashbrown::hash_map::RawEntryMut;
 use std::{

@@ -1,7 +1,7 @@
 use crate::{
     gc::GcContext,
+    runtime::ErrorKind,
     types::{Integer, Number, Table, Value},
-    vm::ErrorKind,
 };
 use std::{
     borrow::{Borrow, Cow},

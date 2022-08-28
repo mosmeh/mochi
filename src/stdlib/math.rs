@@ -1,8 +1,8 @@
 use super::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
+    runtime::{ErrorKind, Vm},
     types::{Integer, LuaThread, NativeClosure, NativeFunction, Number, StackWindow, Table, Value},
-    vm::{ErrorKind, Vm},
 };
 use bstr::B;
 use rand::{Rng, RngCore, SeedableRng};
