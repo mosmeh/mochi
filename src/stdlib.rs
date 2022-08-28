@@ -452,7 +452,10 @@ fn require<'gc>(
     let filename = format!("./{}.lua", module_name.as_bstr());
     let lua_filename = gc.allocate_string(filename.clone().into_bytes());
 
-    let proto = crate::load_file(gc, &filename).unwrap();
+    let proto = match crate::load_file(gc, &filename) {
+        Ok(proto) => proto,
+        Err(err) => return Err(ErrorKind::ExplicitError(err.to_string())),
+    };
     let mut closure = LuaClosure::from(gc.allocate(proto));
     closure
         .upvalues
