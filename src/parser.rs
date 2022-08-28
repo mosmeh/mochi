@@ -1,7 +1,7 @@
 pub mod ast;
 
 use crate::{
-    gc::GcHeap,
+    gc::GcContext,
     lexer::{Lexer, LexerError, Token},
     types::LuaString,
 };
@@ -49,8 +49,8 @@ fn stringify_token_or_eof<'gc>(token: impl Into<Option<Token<'gc>>>) -> String {
     }
 }
 
-pub fn parse<R: Read>(heap: &GcHeap, reader: R) -> Result<Chunk, ParseError> {
-    Parser::new(heap, reader)?.parse_chunk()
+pub fn parse<R: Read>(gc: &GcContext, reader: R) -> Result<Chunk, ParseError> {
+    Parser::new(gc, reader)?.parse_chunk()
 }
 
 struct Parser<'gc, R: Read> {
@@ -58,9 +58,9 @@ struct Parser<'gc, R: Read> {
 }
 
 impl<'gc, R: Read> Parser<'gc, R> {
-    fn new(heap: &'gc GcHeap, reader: R) -> Result<Self, ParseError> {
+    fn new(gc: &'gc GcContext, reader: R) -> Result<Self, ParseError> {
         Ok(Self {
-            lexer: Lexer::new(heap, reader)?,
+            lexer: Lexer::new(gc, reader)?,
         })
     }
 

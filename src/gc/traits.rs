@@ -1,5 +1,5 @@
 use super::{GcPtr, StringPool};
-use std::{cell::RefCell, collections::BTreeMap, hash::BuildHasher, ops::Deref};
+use std::{collections::BTreeMap, hash::BuildHasher, ops::Deref};
 
 pub struct Tracer<'a> {
     pub(super) gray: &'a mut Vec<GcPtr<dyn GarbageCollect>>,
@@ -19,9 +19,11 @@ pub unsafe trait GarbageCollect {
         true
     }
 
-    fn trace(&self, _: &mut Tracer) {}
+    #[allow(unused_variables)]
+    fn trace(&self, tracer: &mut Tracer) {}
 
-    fn finalize(&self, _: &mut Finalizer) {}
+    #[allow(unused_variables)]
+    fn finalize(&self, finalizer: &mut Finalizer) {}
 }
 
 unsafe impl GarbageCollect for u8 {
@@ -91,16 +93,6 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Box<[T]> {
 unsafe impl GarbageCollect for String {
     fn needs_trace() -> bool {
         false
-    }
-}
-
-unsafe impl<T: GarbageCollect> GarbageCollect for RefCell<T> {
-    fn needs_trace() -> bool {
-        T::needs_trace()
-    }
-
-    fn trace(&self, tracer: &mut Tracer) {
-        self.borrow().trace(tracer);
     }
 }
 

@@ -1,4 +1,4 @@
-use super::{Instruction, State};
+use super::{ExecutionState, Instruction};
 use crate::types::{Integer, LuaClosureProto, Number, Value};
 
 fn calc_arithmetic_result<'gc, I, F>(
@@ -23,8 +23,12 @@ where
     None
 }
 
-pub(super) fn do_arithmetic<I, F>(state: &mut State, insn: Instruction, int_op: I, float_op: F)
-where
+pub(super) fn do_arithmetic<I, F>(
+    state: &mut ExecutionState,
+    insn: Instruction,
+    int_op: I,
+    float_op: F,
+) where
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
 {
@@ -37,7 +41,7 @@ where
 }
 
 pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
-    state: &mut State<'gc, '_>,
+    state: &mut ExecutionState<'gc, '_>,
     proto: &LuaClosureProto<'gc>,
     insn: Instruction,
     int_op: I,
@@ -55,7 +59,7 @@ pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
 }
 
 pub(super) fn do_arithmetic_with_immediate<I, F>(
-    state: &mut State,
+    state: &mut ExecutionState,
     insn: Instruction,
     int_op: I,
     float_op: F,
@@ -97,7 +101,7 @@ where
     }
 }
 
-pub(super) fn do_float_arithmetic<F>(state: &mut State, insn: Instruction, float_op: F)
+pub(super) fn do_float_arithmetic<F>(state: &mut ExecutionState, insn: Instruction, float_op: F)
 where
     F: Fn(Number, Number) -> Number,
 {
@@ -110,7 +114,7 @@ where
 }
 
 pub(super) fn do_float_arithmetic_with_constant<F>(
-    state: &mut State,
+    state: &mut ExecutionState,
     proto: &LuaClosureProto,
     insn: Instruction,
     float_op: F,
@@ -142,7 +146,7 @@ where
     }
 }
 
-pub(super) fn do_bitwise_op<I>(state: &mut State, insn: Instruction, int_op: I)
+pub(super) fn do_bitwise_op<I>(state: &mut ExecutionState, insn: Instruction, int_op: I)
 where
     I: Fn(Integer, Integer) -> Integer,
 {
@@ -155,7 +159,7 @@ where
 }
 
 pub(super) fn do_bitwise_op_with_constant<'gc, I>(
-    state: &mut State<'gc, '_>,
+    state: &mut ExecutionState<'gc, '_>,
     proto: &LuaClosureProto<'gc>,
     insn: Instruction,
     int_op: I,
@@ -172,7 +176,7 @@ pub(super) fn do_bitwise_op_with_constant<'gc, I>(
 }
 
 pub(super) fn do_conditional_jump(
-    state: &mut State,
+    state: &mut ExecutionState,
     proto: &LuaClosureProto,
     insn: Instruction,
     cond: bool,
@@ -186,7 +190,7 @@ pub(super) fn do_conditional_jump(
 }
 
 pub(super) fn do_comparison<I, F, S>(
-    state: &mut State,
+    state: &mut ExecutionState,
     proto: &LuaClosureProto,
     insn: Instruction,
     int_op: I,
@@ -217,7 +221,7 @@ pub(super) fn do_comparison<I, F, S>(
 }
 
 pub(super) fn do_comparison_with_immediate<I, F>(
-    state: &mut State,
+    state: &mut ExecutionState,
     proto: &LuaClosureProto,
     insn: Instruction,
     int_op: I,

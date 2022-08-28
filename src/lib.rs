@@ -12,10 +12,8 @@ mod parser;
 
 mod stdlib;
 
-pub use stdlib::create_global_table;
-
 use bstr::ByteVec;
-use gc::GcHeap;
+use gc::GcContext;
 use std::{
     fmt::Debug,
     fs::File,
@@ -40,6 +38,9 @@ pub enum Error {
     Codegen(#[from] codegen::CodegenError),
 
     #[error(transparent)]
+    Runtime(#[from] vm::RuntimeError),
+
+    #[error(transparent)]
     Io(#[from] std::io::Error),
 
     #[cfg(feature = "luac")]
@@ -47,13 +48,13 @@ pub enum Error {
     RLua(#[from] rlua::Error),
 }
 
-pub fn load<B, S>(heap: &GcHeap, bytes: B, source: S) -> Result<LuaClosureProto, Error>
+pub fn load<B, S>(gc: &GcContext, bytes: B, source: S) -> Result<LuaClosureProto, Error>
 where
     B: AsRef<[u8]>,
     S: AsRef<[u8]>,
 {
     let mut reader = Cursor::new(&bytes);
-    if let Ok(closure) = binary_chunk::load(heap, &mut reader) {
+    if let Ok(closure) = binary_chunk::load(gc, &mut reader) {
         return Ok(closure);
     }
 
@@ -62,24 +63,24 @@ where
         let bin_bytes = rlua::Lua::new()
             .context(|ctx| ctx.load(&bytes).set_name(&source)?.into_function()?.dump())?;
         let mut reader = Cursor::new(bin_bytes);
-        let proto = binary_chunk::load(heap, &mut reader)?;
+        let proto = binary_chunk::load(gc, &mut reader)?;
         Ok(proto)
     }
 
     #[cfg(not(feature = "luac"))]
     {
         let reader = Cursor::new(&bytes);
-        let chunk = parser::parse(heap, reader)?;
-        let source = heap.allocate_string(source.as_ref());
-        let proto = codegen::codegen(heap, source, chunk)?;
+        let chunk = parser::parse(gc, reader)?;
+        let source = gc.allocate_string(source.as_ref());
+        let proto = codegen::codegen(gc, source, chunk)?;
         Ok(proto)
     }
 }
 
-pub fn load_file<P: AsRef<Path>>(heap: &GcHeap, path: P) -> Result<LuaClosureProto, Error> {
+pub fn load_file<P: AsRef<Path>>(gc: &GcContext, path: P) -> Result<LuaClosureProto, Error> {
     let mut reader = BufReader::new(File::open(&path)?);
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes)?;
     let source = Vec::from_path_lossy(path.as_ref());
-    load(heap, bytes, source)
+    load(gc, bytes, source)
 }

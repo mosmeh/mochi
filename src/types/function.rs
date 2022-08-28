@@ -1,18 +1,17 @@
+use super::{thread::StackWindow, LuaThread};
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell, GcHeap, Tracer},
+    gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
     types::{LuaString, Value},
     vm::{ErrorKind, Instruction, Vm},
 };
-use std::{
-    fmt::Debug,
-    hash::Hash,
-    ops::{Range, RangeInclusive},
-};
+use std::{fmt::Debug, hash::Hash, ops::RangeInclusive};
 
-#[derive(Clone)]
-pub struct StackWindow(pub(crate) Range<usize>);
-
-pub type NativeFunctionPtr = fn(&mut Vm, StackWindow) -> Result<usize, ErrorKind>;
+pub type NativeFunctionPtr = for<'gc> fn(
+    &'gc GcContext,
+    &Vm<'gc>,
+    GcCell<'gc, LuaThread<'gc>>,
+    StackWindow,
+) -> Result<usize, ErrorKind>;
 
 #[derive(Clone, Copy)]
 pub struct NativeFunction(pub NativeFunctionPtr);
@@ -66,15 +65,6 @@ unsafe impl GarbageCollect for LuaClosureProto<'_> {
     }
 }
 
-impl<'gc> LuaClosureProto<'gc> {
-    pub fn into_lua_closure(self, heap: &'gc GcHeap) -> LuaClosure<'gc> {
-        LuaClosure {
-            proto: heap.allocate(self),
-            upvalues: Default::default(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum LineRange {
     File,
@@ -94,7 +84,21 @@ unsafe impl GarbageCollect for LuaClosure<'_> {
     }
 }
 
-pub type NativeClosureFn = dyn Fn(&mut Vm, StackWindow) -> Result<usize, ErrorKind>;
+impl<'gc> From<Gc<'gc, LuaClosureProto<'gc>>> for LuaClosure<'gc> {
+    fn from(proto: Gc<'gc, LuaClosureProto<'gc>>) -> Self {
+        Self {
+            proto,
+            upvalues: Default::default(),
+        }
+    }
+}
+
+pub type NativeClosureFn = dyn for<'gc> Fn(
+    &'gc GcContext,
+    &Vm<'gc>,
+    GcCell<'gc, LuaThread<'gc>>,
+    StackWindow,
+) -> Result<usize, ErrorKind>;
 
 pub struct NativeClosure(pub Box<NativeClosureFn>);
 
@@ -113,7 +117,13 @@ unsafe impl GarbageCollect for NativeClosure {
 impl NativeClosure {
     pub fn new<T>(func: T) -> Self
     where
-        T: 'static + Fn(&mut Vm, StackWindow) -> Result<usize, ErrorKind>,
+        T: 'static
+            + for<'gc> Fn(
+                &'gc GcContext,
+                &Vm<'gc>,
+                GcCell<'gc, LuaThread<'gc>>,
+                StackWindow,
+            ) -> Result<usize, ErrorKind>,
     {
         Self(Box::new(func))
     }

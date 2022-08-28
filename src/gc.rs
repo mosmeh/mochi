@@ -4,7 +4,10 @@ mod traits;
 pub(crate) use string::BoxedString;
 pub use traits::{Finalizer, GarbageCollect, Tracer};
 
-use crate::types::{LuaString, Value};
+use crate::{
+    types::{LuaString, Value},
+    vm::Vm,
+};
 use hashbrown::hash_map::RawEntryMut;
 use std::{
     borrow::Cow,
@@ -17,63 +20,93 @@ use std::{
 };
 use string::StringPool;
 
+pub struct GcHeap {
+    gc: GcContext,
+    vm: GcCell<'static, Vm<'static>>,
+}
+
+impl Default for GcHeap {
+    fn default() -> Self {
+        let gc = GcContext {
+            pause: 200,
+            step_multiplier: 100,
+            step_size: 13,
+
+            phase: Cell::new(Phase::Pause),
+            current_white: Default::default(),
+            allocated_bytes: Default::default(),
+            debt: Default::default(),
+            estimate: Default::default(),
+
+            root_stack: Default::default(),
+
+            all: Default::default(),
+            sweep: Default::default(),
+            prev_sweep: Default::default(),
+            gray: Default::default(),
+            gray_again: Default::default(),
+
+            string_pool: Default::default(),
+        };
+
+        let vm = gc.allocate_cell(Vm::new(&gc));
+        let vm: GcCell<Vm> = unsafe { std::mem::transmute(vm) };
+        gc.root_stack.borrow_mut().push(vm.0.ptr);
+
+        Self { gc, vm }
+    }
+}
+
+impl GcHeap {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn with<F, R>(&mut self, f: F) -> R
+    where
+        F: for<'gc> FnOnce(&'gc GcContext, GcCell<'gc, Vm<'gc>>) -> R,
+    {
+        f(&mut self.gc, unsafe { std::mem::transmute(self.vm) })
+    }
+
+    pub fn step(&mut self) {
+        self.gc.step();
+    }
+
+    pub fn leak_all(self) {
+        self.gc.leak_all();
+    }
+}
+
 const GCSWEEPMAX: i32 = 100;
 const PAUSEADJ: usize = 100;
 const WORK2MEM: usize = std::mem::size_of::<GcBox<Value>>();
 
 type GcPtr<T> = NonNull<GcBox<T>>;
 
-fn into_ptr_to_static<'a>(ptr: GcPtr<dyn GarbageCollect + 'a>) -> GcPtr<dyn GarbageCollect> {
-    unsafe { std::mem::transmute(ptr) }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Phase {
-    Pause,
-    Propagate,
-    Atomic,
-    Sweep,
-}
-
-pub struct GcHeap {
+pub struct GcContext {
     pause: usize,
     step_multiplier: usize,
     step_size: usize,
+
     phase: Cell<Phase>,
     current_white: Cell<bool>,
-    total_bytes: Cell<usize>,
+    allocated_bytes: Cell<usize>,
     debt: Cell<isize>,
     estimate: Cell<usize>,
+
+    root_stack: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
+
     all: Cell<Option<GcPtr<dyn GarbageCollect>>>,
     sweep: Cell<Option<GcPtr<dyn GarbageCollect>>>,
     prev_sweep: Cell<Option<GcPtr<dyn GarbageCollect>>>,
     gray: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
     gray_again: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
+
     string_pool: RefCell<StringPool>,
 }
 
-impl Default for GcHeap {
-    fn default() -> Self {
-        Self {
-            pause: 200,
-            step_multiplier: 100,
-            step_size: 13,
-            phase: Cell::new(Phase::Pause),
-            current_white: Default::default(),
-            total_bytes: Default::default(),
-            debt: Default::default(),
-            estimate: Default::default(),
-            all: Default::default(),
-            sweep: Default::default(),
-            prev_sweep: Default::default(),
-            gray: Default::default(),
-            gray_again: Default::default(),
-            string_pool: Default::default(),
-        }
-    }
-}
-
-impl Drop for GcHeap {
+impl Drop for GcContext {
     fn drop(&mut self) {
         let mut it = self.all.get();
         while let Some(ptr) = it {
@@ -84,13 +117,13 @@ impl Drop for GcHeap {
     }
 }
 
-impl GcHeap {
-    pub fn new() -> Self {
-        Default::default()
+impl GcContext {
+    pub fn total_bytes(&self) -> usize {
+        (self.allocated_bytes.get() as isize + self.debt.get()) as usize
     }
 
-    pub fn total_bytes(&self) -> usize {
-        (self.total_bytes.get() as isize + self.debt.get()) as usize
+    pub fn debt(&self) -> isize {
+        self.debt.get()
     }
 
     pub fn allocate<T: GarbageCollect>(&self, value: T) -> Gc<T> {
@@ -109,7 +142,7 @@ impl GcHeap {
     }
 
     pub fn allocate_cell<T: GarbageCollect>(&self, value: T) -> GcCell<T> {
-        GcCell(self.allocate(RefCell::new(value)))
+        GcCell(self.allocate(GcRefCell::new(value)))
     }
 
     pub fn allocate_string<'a, T>(&self, string: T) -> LuaString
@@ -137,22 +170,20 @@ impl GcHeap {
         LuaString(Gc::new(interned))
     }
 
-    /// # Safety
-    /// Only `Gc` and `GcCell` traced from `root`, including those on stack,
-    /// should be dereferenced after calling this function.
-    pub unsafe fn step<T: GarbageCollect>(&self, root: &T) {
+    fn step(&mut self) {
+        unsafe { self.step_unguarded() };
+    }
+
+    pub(crate) unsafe fn step_unguarded(&self) {
         let mut debt = self.debt.get();
-        if debt <= 0 {
-            return;
-        }
         let step_size = 1 << self.step_size;
         loop {
-            let work = self.do_single_step(root) / self.step_multiplier;
+            let work = self.do_single_step() / self.step_multiplier;
             debt -= work as isize;
             if self.phase.get() == Phase::Pause {
                 let estimate = self.estimate.get() / PAUSEADJ;
                 let threshold = estimate * self.pause;
-                debt = self.total_bytes.get() as isize + self.debt.get() - threshold as isize;
+                debt = self.allocated_bytes.get() as isize + self.debt.get() - threshold as isize;
                 if debt > 0 {
                     debt = 0;
                 }
@@ -162,21 +193,13 @@ impl GcHeap {
                 break;
             }
         }
-        self.total_bytes
-            .set((self.total_bytes.get() as isize + self.debt.get() - debt) as usize);
+        self.allocated_bytes
+            .set((self.allocated_bytes.get() as isize + self.debt.get() - debt) as usize);
         self.debt.set(debt);
     }
 
-    pub fn leak_all(&mut self) {
-        self.phase = Cell::new(Phase::Pause);
-        self.total_bytes = Default::default();
-        self.debt = Default::default();
-        self.estimate = Default::default();
+    fn leak_all(mut self) {
         self.all = Default::default();
-        self.sweep = Default::default();
-        self.prev_sweep = Default::default();
-        self.gray.borrow_mut().clear();
-        self.gray_again.borrow_mut().clear();
     }
 
     fn write_barrier<T: GarbageCollect>(&self, ptr: GcPtr<T>) {
@@ -191,10 +214,21 @@ impl GcHeap {
         }
     }
 
-    fn do_single_step<T: GarbageCollect>(&self, root: &T) -> usize {
+    fn trace_roots(&self, tracer: &mut Tracer) {
+        for root in self.root_stack.borrow().iter() {
+            let gc_box = unsafe { root.as_ref() };
+            let color = &gc_box.color;
+            if matches!(color.get(), Color::White(_)) {
+                color.set(Color::Gray);
+                tracer.gray.push(into_ptr_to_static(*root));
+            }
+        }
+    }
+
+    fn do_single_step(&self) -> usize {
         match self.phase.get() {
             Phase::Pause => {
-                self.do_pause(root);
+                self.do_pause();
                 self.phase.set(Phase::Propagate);
                 WORK2MEM
             }
@@ -206,12 +240,11 @@ impl GcHeap {
                 work
             }
             Phase::Atomic => {
-                let work = self.do_atomic(root);
+                let work = self.do_atomic();
                 self.phase.set(Phase::Sweep);
-                self.estimate
-                    .set((self.total_bytes.get() as isize + self.debt.get()) as usize);
                 self.sweep.set(self.all.get());
                 self.prev_sweep.take();
+                self.estimate.set(self.total_bytes());
                 work
             }
             Phase::Sweep => {
@@ -224,11 +257,11 @@ impl GcHeap {
         }
     }
 
-    fn do_pause<T: GarbageCollect>(&self, root: &T) {
+    fn do_pause(&self) {
         let mut gray = self.gray.borrow_mut();
         gray.clear();
         self.gray_again.borrow_mut().clear();
-        root.trace(&mut Tracer { gray: &mut gray });
+        self.trace_roots(&mut Tracer { gray: &mut gray });
     }
 
     fn do_propagate(&self) -> usize {
@@ -243,9 +276,9 @@ impl GcHeap {
         }
     }
 
-    fn do_atomic<T: GarbageCollect>(&self, root: &T) -> usize {
+    fn do_atomic(&self) -> usize {
         let mut gray = self.gray.borrow_mut();
-        root.trace(&mut Tracer { gray: &mut gray });
+        self.trace_roots(&mut Tracer { gray: &mut gray });
 
         let mut work = 0;
         while let Some(ptr) = gray.pop() {
@@ -313,11 +346,49 @@ impl GcHeap {
     }
 }
 
+fn into_ptr_to_static<'a>(ptr: GcPtr<dyn GarbageCollect + 'a>) -> GcPtr<dyn GarbageCollect> {
+    unsafe { std::mem::transmute(ptr) }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Phase {
+    Pause,
+    Propagate,
+    Atomic,
+    Sweep,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Color {
     White(bool),
     Black,
     Gray,
+}
+
+macro_rules! root_gc {
+    ($($gc:expr, $x:expr)*) => {$(
+        let _ = $crate::gc::Root::from_gc($gc, $x);
+    )*}
+}
+
+pub(crate) use root_gc;
+
+#[doc(hidden)]
+pub(crate) struct Root<'gc> {
+    gc: &'gc GcContext,
+}
+
+impl Drop for Root<'_> {
+    fn drop(&mut self) {
+        self.gc.root_stack.borrow_mut().pop().unwrap();
+    }
+}
+
+impl Root<'_> {
+    pub fn from_gc<T: GarbageCollect>(gc: &GcContext, x: Gc<T>) -> Self {
+        gc.root_stack.borrow_mut().push(into_ptr_to_static(x.ptr));
+        unsafe { std::mem::transmute(Root { gc }) }
+    }
 }
 
 struct GcBox<T: ?Sized + GarbageCollect> {
@@ -328,7 +399,7 @@ struct GcBox<T: ?Sized + GarbageCollect> {
 
 pub struct Gc<'gc, T: ?Sized + GarbageCollect + 'gc> {
     ptr: NonNull<GcBox<T>>,
-    phantom: PhantomData<&'gc GcHeap>,
+    phantom: PhantomData<&'gc GcContext>,
 }
 
 impl<T: GarbageCollect> Clone for Gc<'_, T> {
@@ -414,7 +485,25 @@ impl<T: GarbageCollect> Gc<'_, T> {
     }
 }
 
-pub struct GcCell<'gc, T: GarbageCollect + 'gc>(Gc<'gc, RefCell<T>>);
+struct GcRefCell<T: GarbageCollect>(RefCell<T>);
+
+unsafe impl<T: GarbageCollect> GarbageCollect for GcRefCell<T> {
+    fn needs_trace() -> bool {
+        T::needs_trace()
+    }
+
+    fn trace(&self, tracer: &mut Tracer) {
+        self.0.borrow().trace(tracer);
+    }
+}
+
+impl<T: GarbageCollect> GcRefCell<T> {
+    fn new(value: T) -> Self {
+        Self(RefCell::new(value))
+    }
+}
+
+pub struct GcCell<'gc, T: GarbageCollect + 'gc>(Gc<'gc, GcRefCell<T>>);
 
 impl<T: GarbageCollect> Clone for GcCell<'_, T> {
     fn clone(&self) -> Self {
@@ -426,7 +515,7 @@ impl<T: GarbageCollect> Copy for GcCell<'_, T> {}
 
 impl<T: GarbageCollect + Debug> Debug for GcCell<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_tuple("GcCell").field(&*self.0).finish()
+        f.debug_tuple("GcCell").field(&self.0 .0).finish()
     }
 }
 
@@ -443,16 +532,16 @@ impl<T: GarbageCollect> GcCell<'_, T> {
 
     pub fn as_ptr(&self) -> *const T {
         let gc_box = unsafe { self.0.ptr.as_ref() };
-        gc_box.value.as_ptr()
+        gc_box.value.0.as_ptr()
     }
 
     pub fn borrow(&self) -> Ref<T> {
-        self.0.borrow()
+        self.0 .0.borrow()
     }
 
-    pub fn borrow_mut(&self, heap: &GcHeap) -> RefMut<T> {
-        let b = self.0.deref().borrow_mut();
-        heap.write_barrier(self.0.ptr);
+    pub fn borrow_mut(&self, gc: &GcContext) -> RefMut<T> {
+        let b = self.0 .0.borrow_mut();
+        gc.write_barrier(self.0.ptr);
         b
     }
 }

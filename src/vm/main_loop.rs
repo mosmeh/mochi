@@ -1,6 +1,7 @@
-use super::{ops, ErrorKind, OpCode, Operation, Root, State, Vm};
+use super::{ops, ErrorKind, ExecutionState, OpCode, Operation, Vm};
 use crate::{
-    types::{Integer, Number, Table, Upvalue, UpvalueDescription, Value},
+    gc::{GcCell, GcContext},
+    types::{Integer, LuaThread, Number, Table, Upvalue, UpvalueDescription, Value},
     LuaClosure,
 };
 use std::{
@@ -10,20 +11,25 @@ use std::{
 };
 
 impl<'gc> Vm<'gc> {
-    pub(super) fn execute_frame(&mut self) -> Result<(), ErrorKind> {
-        let frame = self.frames.last().unwrap().clone();
+    pub(super) fn execute_frame(
+        &self,
+        gc: &'gc GcContext,
+        thread: GcCell<'gc, LuaThread<'gc>>,
+    ) -> Result<(), ErrorKind> {
+        let mut thread_ref = thread.borrow_mut(gc);
+        let frame = thread_ref.frames.last().unwrap().clone();
 
-        let bottom_value = self.stack[frame.bottom];
+        let bottom_value = thread_ref.stack[frame.bottom];
         let closure = bottom_value.as_lua_closure().unwrap();
 
-        let saved_stack_top = self.stack.len();
+        let saved_stack_top = thread_ref.stack.len();
         let new_stack_len = frame.base + closure.proto.max_stack_size as usize;
-        if self.stack.len() < new_stack_len {
-            self.stack.resize(new_stack_len, Value::Nil);
+        if thread_ref.stack.len() < new_stack_len {
+            thread_ref.stack.resize(new_stack_len, Value::Nil);
         }
 
-        let (lower_stack, stack) = self.stack.split_at_mut(frame.base);
-        let mut state = State {
+        let (lower_stack, stack) = thread_ref.stack.split_at_mut(frame.base);
+        let mut state = ExecutionState {
             base: frame.base,
             pc: frame.pc,
             stack,
@@ -61,7 +67,7 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetUpval => {
                     let value = state.stack[insn.a()];
-                    let mut upvalue = closure.upvalues[insn.b()].borrow_mut(self.heap);
+                    let mut upvalue = closure.upvalues[insn.b()].borrow_mut(gc);
                     *state.resolve_upvalue_mut(&mut upvalue) = value;
                 }
                 OpCode::GetTabUp => {
@@ -75,9 +81,9 @@ impl<'gc> Vm<'gc> {
                     if let Value::Table(table) = table_value {
                         let raw_value = table.borrow().get_field(rc);
                         if raw_value.is_nil() {
-                            self.frames.last_mut().unwrap().pc = state.pc;
-                            self.stack[frame.base + insn.a()] =
-                                self.call_index_metamethod(table, rc)?;
+                            thread_ref.current_frame().pc = state.pc;
+                            thread_ref.stack[frame.base + insn.a()] =
+                                unsafe { self.call_index_metamethod(gc, thread, table, rc)? };
                             return Ok(());
                         }
                         state.stack[insn.a()] = raw_value;
@@ -94,9 +100,9 @@ impl<'gc> Vm<'gc> {
                     if let Value::Table(table) = rb {
                         let raw_value = table.borrow().get(rc);
                         if raw_value.is_nil() {
-                            self.frames.last_mut().unwrap().pc = state.pc;
-                            self.stack[frame.base + insn.a()] =
-                                self.call_index_metamethod(table, rc)?;
+                            thread_ref.current_frame().pc = state.pc;
+                            thread_ref.stack[frame.base + insn.a()] =
+                                unsafe { self.call_index_metamethod(gc, thread, table, rc)? };
                             return Ok(());
                         }
                         state.stack[insn.a()] = raw_value;
@@ -113,9 +119,9 @@ impl<'gc> Vm<'gc> {
                     if let Value::Table(table) = rb {
                         let raw_value = table.borrow().get(c);
                         if raw_value.is_nil() {
-                            self.frames.last_mut().unwrap().pc = state.pc;
-                            self.stack[frame.base + insn.a()] =
-                                self.call_index_metamethod(table, c)?;
+                            thread_ref.current_frame().pc = state.pc;
+                            thread_ref.stack[frame.base + insn.a()] =
+                                unsafe { self.call_index_metamethod(gc, thread, table, c)? };
                             return Ok(());
                         }
                         state.stack[insn.a()] = raw_value;
@@ -136,9 +142,9 @@ impl<'gc> Vm<'gc> {
                     if let Value::Table(table) = rb {
                         let raw_value = table.borrow().get_field(rc);
                         if raw_value.is_nil() {
-                            self.frames.last_mut().unwrap().pc = state.pc;
-                            self.stack[frame.base + insn.a()] =
-                                self.call_index_metamethod(table, rc)?;
+                            thread_ref.current_frame().pc = state.pc;
+                            thread_ref.stack[frame.base + insn.a()] =
+                                unsafe { self.call_index_metamethod(gc, thread, table, rc)? };
                             return Ok(());
                         }
                         state.stack[insn.a()] = raw_value;
@@ -157,12 +163,13 @@ impl<'gc> Vm<'gc> {
                     };
                     let upvalue = closure.upvalues[insn.a()].borrow();
                     let table_value = state.resolve_upvalue(&upvalue);
-                    let mut table = table_value.as_table_mut(self.heap).ok_or_else(|| {
-                        ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: table_value.ty(),
-                        }
-                    })?;
+                    let mut table =
+                        table_value
+                            .as_table_mut(gc)
+                            .ok_or_else(|| ErrorKind::TypeError {
+                                operation: Operation::Index,
+                                ty: table_value.ty(),
+                            })?;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
                         closure.proto.constants[c]
@@ -173,12 +180,10 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetTable => {
                     let ra = state.stack[insn.a()];
-                    let mut table =
-                        ra.as_table_mut(self.heap)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: ra.ty(),
-                            })?;
+                    let mut table = ra.as_table_mut(gc).ok_or_else(|| ErrorKind::TypeError {
+                        operation: Operation::Index,
+                        ty: ra.ty(),
+                    })?;
                     let rb = state.stack[insn.b()];
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
@@ -190,12 +195,10 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetI => {
                     let ra = state.stack[insn.a()];
-                    let mut table =
-                        ra.as_table_mut(self.heap)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: ra.ty(),
-                            })?;
+                    let mut table = ra.as_table_mut(gc).ok_or_else(|| ErrorKind::TypeError {
+                        operation: Operation::Index,
+                        ty: ra.ty(),
+                    })?;
                     let b = insn.b() as Integer;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
@@ -207,12 +210,10 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetField => {
                     let ra = state.stack[insn.a()];
-                    let mut table =
-                        ra.as_table_mut(self.heap)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: ra.ty(),
-                            })?;
+                    let mut table = ra.as_table_mut(gc).ok_or_else(|| ErrorKind::TypeError {
+                        operation: Operation::Index,
+                        ty: ra.ty(),
+                    })?;
                     let kb = if let Value::String(s) = closure.proto.constants[insn.b()] {
                         s
                     } else {
@@ -237,7 +238,7 @@ impl<'gc> Vm<'gc> {
                         c += next_insn.ax() * (u8::MAX as usize + 1);
                     }
                     let table = Table::with_capacity_and_len(b, c);
-                    state.stack[insn.a()] = self.heap.allocate_cell(table).into();
+                    state.stack[insn.a()] = gc.allocate_cell(table).into();
                     state.pc += 1;
                 }
                 OpCode::Self_ => {
@@ -258,9 +259,9 @@ impl<'gc> Vm<'gc> {
                     if let Value::Table(table) = rb {
                         let raw_value = table.borrow().get_field(rkc);
                         if raw_value.is_nil() {
-                            self.frames.last_mut().unwrap().pc = state.pc;
-                            self.stack[frame.base + insn.a()] =
-                                self.call_index_metamethod(table, rkc)?;
+                            thread_ref.current_frame().pc = state.pc;
+                            thread_ref.stack[frame.base + insn.a()] =
+                                unsafe { self.call_index_metamethod(gc, thread, table, rkc)? };
                             return Ok(());
                         }
                         state.stack[insn.a()] = raw_value;
@@ -363,11 +364,12 @@ impl<'gc> Vm<'gc> {
                 OpCode::Shr => ops::do_bitwise_op(&mut state, insn, Integer::shr),
                 OpCode::Shl => ops::do_bitwise_op(&mut state, insn, Integer::shl),
                 OpCode::MmBin => {
-                    self.frames.last_mut().unwrap().pc = state.pc;
-
                     let ra = state.stack[insn.a()];
                     let rb = state.stack[insn.b()];
                     let prev_insn = closure.proto.code[state.pc - 2];
+
+                    thread_ref.current_frame().pc = state.pc;
+                    drop(thread_ref);
 
                     let metatable = ra.metatable().or_else(|| rb.metatable()).ok_or_else(|| {
                         ErrorKind::TypeError {
@@ -379,8 +381,9 @@ impl<'gc> Vm<'gc> {
                     let tag_method_name = self.tag_method_names[insn.c() as usize];
                     let tag_method_value = metatable.borrow().get_field(tag_method_name);
 
-                    let result = self.execute_inner(tag_method_value, &[ra, rb])?;
-                    self.stack[frame.base + prev_insn.a()] = result;
+                    let result =
+                        unsafe { self.execute_value(gc, thread, tag_method_value, &[ra, rb])? };
+                    thread.borrow_mut(gc).stack[frame.base + prev_insn.a()] = result;
                     return Ok(());
                 }
                 OpCode::MmBinI => todo!("MMBINI"),
@@ -431,11 +434,11 @@ impl<'gc> Vm<'gc> {
                             });
                         }
                     }
-                    state.stack[a] = self.heap.allocate_string(strings.concat()).into();
+                    state.stack[a] = gc.allocate_string(strings.concat()).into();
                 }
                 OpCode::Close => {
-                    self.frames.last_mut().unwrap().pc = state.pc;
-                    self.close_upvalues(frame.base + insn.a());
+                    thread_ref.current_frame().pc = state.pc;
+                    thread_ref.close_upvalues(gc, frame.base + insn.a());
                     return Ok(());
                 }
                 OpCode::Tbc => todo!("TBC"),
@@ -521,10 +524,15 @@ impl<'gc> Vm<'gc> {
                     }
                 }
                 OpCode::Call => {
-                    self.frames.last_mut().unwrap().pc = state.pc;
                     let a = insn.a();
                     let callee = state.stack[a];
+
+                    thread_ref.current_frame().pc = state.pc;
+                    drop(thread_ref);
+
                     return self.call_value(
+                        gc,
+                        thread,
                         callee,
                         frame.base + a..saved_stack_top,
                         NonZeroUsize::new(insn.b()),
@@ -535,21 +543,25 @@ impl<'gc> Vm<'gc> {
                     let b = insn.b();
                     let callee = state.stack[a];
                     if insn.k() {
-                        self.close_upvalues(frame.bottom);
+                        thread_ref.close_upvalues(gc, frame.bottom);
                     }
                     let num_results = if b > 0 {
                         b - 1
                     } else {
                         saved_stack_top - a - frame.base
                     };
-                    self.stack.copy_within(
+                    thread_ref.stack.copy_within(
                         frame.base + a..frame.base + a + num_results + 1,
                         frame.bottom,
                     );
                     let new_stack_len = frame.bottom + num_results + 1;
-                    self.stack.truncate(new_stack_len);
-                    self.frames.pop().unwrap();
+                    thread_ref.stack.truncate(new_stack_len);
+                    thread_ref.frames.pop().unwrap();
+                    drop(thread_ref);
+
                     return self.call_value(
+                        gc,
+                        thread,
                         callee,
                         frame.bottom..new_stack_len,
                         NonZeroUsize::new(insn.b()),
@@ -557,7 +569,7 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::Return => {
                     if insn.k() {
-                        self.close_upvalues(frame.bottom);
+                        thread_ref.close_upvalues(gc, frame.bottom);
                     }
                     let a = insn.a();
                     let b = insn.b();
@@ -566,21 +578,22 @@ impl<'gc> Vm<'gc> {
                     } else {
                         saved_stack_top - a - frame.base
                     };
-                    self.stack
+                    thread_ref
+                        .stack
                         .copy_within(frame.base + a..frame.base + a + num_results, frame.bottom);
-                    self.stack.truncate(frame.bottom + num_results);
-                    self.frames.pop().unwrap();
+                    thread_ref.stack.truncate(frame.bottom + num_results);
+                    thread_ref.frames.pop().unwrap();
                     return Ok(());
                 }
                 OpCode::Return0 => {
-                    self.stack.truncate(frame.bottom);
-                    self.frames.pop().unwrap();
+                    thread_ref.stack.truncate(frame.bottom);
+                    thread_ref.frames.pop().unwrap();
                     return Ok(());
                 }
                 OpCode::Return1 => {
-                    self.stack[frame.bottom] = state.stack[insn.a()];
-                    self.stack.truncate(frame.bottom + 1);
-                    self.frames.pop().unwrap();
+                    thread_ref.stack[frame.bottom] = state.stack[insn.a()];
+                    thread_ref.stack.truncate(frame.bottom + 1);
+                    thread_ref.frames.pop().unwrap();
                     return Ok(());
                 }
                 OpCode::ForLoop => {
@@ -625,20 +638,23 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::TForPrep => state.pc += insn.bx(),
                 OpCode::TForCall => {
-                    self.frames.last_mut().unwrap().pc = state.pc;
-
                     let a = insn.a();
                     let callee = state.stack[a];
+                    thread_ref.current_frame().pc = state.pc;
 
                     let new_bottom = frame.base + a + 4;
                     let new_stack_len = new_bottom + 3;
-                    if self.stack.len() < new_stack_len {
-                        self.stack.resize(new_stack_len, Value::Nil);
+                    if thread_ref.stack.len() < new_stack_len {
+                        thread_ref.stack.resize(new_stack_len, Value::Nil);
                     }
-                    self.stack
+                    thread_ref
+                        .stack
                         .copy_within(frame.base + a..new_bottom, new_bottom);
+                    drop(thread_ref);
 
                     return self.call_value(
+                        gc,
+                        thread,
                         callee,
                         new_bottom..new_stack_len,
                         NonZeroUsize::new(3),
@@ -668,12 +684,10 @@ impl<'gc> Vm<'gc> {
                         state.pc += 1;
                     }
 
-                    let mut table =
-                        ra.as_table_mut(self.heap)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: ra.ty(),
-                            })?;
+                    let mut table = ra.as_table_mut(gc).ok_or_else(|| ErrorKind::TypeError {
+                        operation: Operation::Index,
+                        ty: ra.ty(),
+                    })?;
                     if offset + n > table.array().len() {
                         let additional = offset + n - table.array().len();
                         table.reserve_array(additional);
@@ -683,6 +697,7 @@ impl<'gc> Vm<'gc> {
                     }
                 }
                 OpCode::Closure => {
+                    thread_ref.current_frame().pc = state.pc;
                     let proto = closure.proto.protos[insn.bx()];
                     let upvalues = proto
                         .upvalues
@@ -690,17 +705,19 @@ impl<'gc> Vm<'gc> {
                         .map(|desc| match desc {
                             UpvalueDescription::Register(index) => {
                                 let index = frame.base + index.0 as usize;
-                                *self.open_upvalues.entry(index).or_insert_with(|| {
-                                    self.heap.allocate_cell(Upvalue::Open(index))
-                                })
+                                *thread_ref
+                                    .open_upvalues
+                                    .entry(index)
+                                    .or_insert_with(|| gc.allocate_cell(Upvalue::Open(index)))
                             }
                             UpvalueDescription::Upvalue(index) => {
                                 closure.upvalues[index.0 as usize]
                             }
                         })
                         .collect();
-                    state.stack[insn.a()] =
-                        self.heap.allocate(LuaClosure { proto, upvalues }).into();
+                    thread_ref.stack[frame.base + insn.a()] =
+                        gc.allocate(LuaClosure { proto, upvalues }).into();
+                    return Ok(());
                 }
                 OpCode::VarArg => {
                     let n = insn.c();
@@ -710,23 +727,23 @@ impl<'gc> Vm<'gc> {
                         frame.num_extra_args
                     };
                     if num_wanted > 0 {
-                        self.frames.last_mut().unwrap().pc = state.pc;
+                        thread_ref.current_frame().pc = state.pc;
 
                         let a = insn.a();
 
                         let new_stack_len = frame.base + a + num_wanted;
-                        if self.stack.len() < new_stack_len {
-                            self.stack.resize(new_stack_len, Value::Nil);
+                        if thread_ref.stack.len() < new_stack_len {
+                            thread_ref.stack.resize(new_stack_len, Value::Nil);
                         }
                         let extra_args_bottom = frame.base - 1 - frame.num_extra_args;
                         let num_copied = num_wanted.min(frame.num_extra_args);
-                        self.stack.copy_within(
+                        thread_ref.stack.copy_within(
                             extra_args_bottom..extra_args_bottom + num_copied,
                             frame.base + a,
                         );
 
                         if num_wanted > frame.num_extra_args {
-                            self.stack[frame.base + a + frame.num_extra_args
+                            thread_ref.stack[frame.base + a + frame.num_extra_args
                                 ..frame.base + a + num_wanted]
                                 .fill(Value::Nil);
                         }
@@ -739,21 +756,24 @@ impl<'gc> Vm<'gc> {
                     let num_extra_args = saved_stack_top - frame.bottom - 1 - num_fixed_args;
                     if num_extra_args > 0 {
                         let new_base = saved_stack_top + 1;
-                        let frame = self.frames.last_mut().unwrap();
-                        frame.pc = state.pc;
-                        frame.base = new_base;
-                        frame.num_extra_args = num_extra_args;
-
-                        let new_stack_len = new_base + closure.proto.max_stack_size as usize;
-                        if self.stack.len() < new_stack_len {
-                            self.stack.resize(new_stack_len, Value::Nil);
+                        {
+                            let pc = state.pc;
+                            let frame = thread_ref.current_frame();
+                            frame.pc = pc;
+                            frame.base = new_base;
+                            frame.num_extra_args = num_extra_args;
                         }
 
-                        self.stack.copy_within(
+                        let new_stack_len = new_base + closure.proto.max_stack_size as usize;
+                        if thread_ref.stack.len() < new_stack_len {
+                            thread_ref.stack.resize(new_stack_len, Value::Nil);
+                        }
+
+                        thread_ref.stack.copy_within(
                             frame.bottom..frame.bottom + num_fixed_args + 1,
                             saved_stack_top,
                         );
-                        self.stack[frame.bottom + 1..frame.bottom + num_fixed_args + 1]
+                        thread_ref.stack[frame.bottom + 1..frame.bottom + num_fixed_args + 1]
                             .fill(Value::Nil);
 
                         return Ok(());
@@ -762,13 +782,10 @@ impl<'gc> Vm<'gc> {
                 OpCode::ExtraArg => unreachable!(),
             }
 
-            let root = Root {
-                state: &state,
-                global_table: self.global_table,
-                open_upvalues: &self.open_upvalues,
-                tag_method_names: &self.tag_method_names,
-            };
-            unsafe { self.heap.step(&root) };
+            if gc.debt() > 0 {
+                thread_ref.current_frame().pc = state.pc;
+                return Ok(());
+            }
         }
     }
 }

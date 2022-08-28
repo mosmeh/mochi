@@ -1,7 +1,7 @@
 use super::StackExt;
 use crate::{
-    gc::GcHeap,
-    types::{Integer, NativeClosure, NativeFunction, Number, StackWindow, Table, Value},
+    gc::{GcCell, GcContext},
+    types::{Integer, LuaThread, NativeClosure, NativeFunction, Number, StackWindow, Table, Value},
     vm::{ErrorKind, Vm},
 };
 use bstr::B;
@@ -9,28 +9,25 @@ use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use std::{cell::RefCell, ops::DerefMut, rc::Rc, time::SystemTime};
 
-pub fn create_table(heap: &GcHeap) -> Table {
+pub fn create_table(gc: &GcContext) -> Table {
     let mut table = Table::new();
-    table.set_field(heap.allocate_string(B("abs")), NativeFunction::new(abs));
-    table.set_field(heap.allocate_string(B("acos")), NativeFunction::new(acos));
-    table.set_field(heap.allocate_string(B("asin")), NativeFunction::new(asin));
-    table.set_field(heap.allocate_string(B("atan")), NativeFunction::new(atan));
-    table.set_field(heap.allocate_string(B("ceil")), NativeFunction::new(ceil));
-    table.set_field(heap.allocate_string(B("cos")), NativeFunction::new(cos));
-    table.set_field(heap.allocate_string(B("deg")), NativeFunction::new(deg));
-    table.set_field(heap.allocate_string(B("exp")), NativeFunction::new(exp));
-    table.set_field(heap.allocate_string(B("floor")), NativeFunction::new(floor));
-    table.set_field(heap.allocate_string(B("fmod")), NativeFunction::new(fmod));
-    table.set_field(heap.allocate_string(B("huge")), Number::INFINITY);
-    table.set_field(heap.allocate_string(B("log")), NativeFunction::new(log));
-    table.set_field(heap.allocate_string(B("maxinteger")), Integer::MAX);
-    table.set_field(heap.allocate_string(B("mininteger")), Integer::MIN);
-    table.set_field(heap.allocate_string(B("modf")), NativeFunction::new(modf));
-    table.set_field(
-        heap.allocate_string(B("pi")),
-        std::f64::consts::PI as Number,
-    );
-    table.set_field(heap.allocate_string(B("rad")), NativeFunction::new(rad));
+    table.set_field(gc.allocate_string(B("abs")), NativeFunction::new(abs));
+    table.set_field(gc.allocate_string(B("acos")), NativeFunction::new(acos));
+    table.set_field(gc.allocate_string(B("asin")), NativeFunction::new(asin));
+    table.set_field(gc.allocate_string(B("atan")), NativeFunction::new(atan));
+    table.set_field(gc.allocate_string(B("ceil")), NativeFunction::new(ceil));
+    table.set_field(gc.allocate_string(B("cos")), NativeFunction::new(cos));
+    table.set_field(gc.allocate_string(B("deg")), NativeFunction::new(deg));
+    table.set_field(gc.allocate_string(B("exp")), NativeFunction::new(exp));
+    table.set_field(gc.allocate_string(B("floor")), NativeFunction::new(floor));
+    table.set_field(gc.allocate_string(B("fmod")), NativeFunction::new(fmod));
+    table.set_field(gc.allocate_string(B("huge")), Number::INFINITY);
+    table.set_field(gc.allocate_string(B("log")), NativeFunction::new(log));
+    table.set_field(gc.allocate_string(B("maxinteger")), Integer::MAX);
+    table.set_field(gc.allocate_string(B("mininteger")), Integer::MIN);
+    table.set_field(gc.allocate_string(B("modf")), NativeFunction::new(modf));
+    table.set_field(gc.allocate_string(B("pi")), std::f64::consts::PI as Number);
+    table.set_field(gc.allocate_string(B("rad")), NativeFunction::new(rad));
 
     fn seed1() -> i64 {
         SystemTime::now()
@@ -45,9 +42,10 @@ pub fn create_table(heap: &GcHeap) -> Table {
     {
         let rng = rng.clone();
         table.set_field(
-            heap.allocate_string(B("random")),
-            heap.allocate(NativeClosure::new(move |vm, window| {
-                let stack = vm.stack_mut(window);
+            gc.allocate_string(B("random")),
+            gc.allocate(NativeClosure::new(move |gc, _, thread, window| {
+                let mut thread = thread.borrow_mut(gc);
+                let stack = thread.stack_mut(window);
                 let mut rng = rng.borrow_mut();
                 stack[0] = match stack.args().len() {
                     0 => rng.gen::<Number>().into(),
@@ -75,9 +73,10 @@ pub fn create_table(heap: &GcHeap) -> Table {
         );
     }
     table.set_field(
-        heap.allocate_string(B("randomseed")),
-        heap.allocate(NativeClosure::new(move |vm, window| {
-            let stack = vm.stack(window.clone());
+        gc.allocate_string(B("randomseed")),
+        gc.allocate(NativeClosure::new(move |gc, _, thread, window| {
+            let mut thread = thread.borrow_mut(gc);
+            let stack = thread.stack(window.clone());
             let (x, y) = if stack.args().is_empty() {
                 (seed1(), seed2)
             } else {
@@ -87,28 +86,34 @@ pub fn create_table(heap: &GcHeap) -> Table {
             };
             *rng.borrow_mut() = rng_from_seeds(x, y);
 
-            let window = vm.ensure_stack(window, 2);
-            let stack = vm.stack_mut(window);
+            let window = thread.ensure_stack(window, 2);
+            let stack = thread.stack_mut(window);
             stack[0] = x.into();
             stack[1] = y.into();
             Ok(2)
         })),
     );
 
-    table.set_field(heap.allocate_string(B("sin")), NativeFunction::new(sin));
-    table.set_field(heap.allocate_string(B("sqrt")), NativeFunction::new(sqrt));
-    table.set_field(heap.allocate_string(B("tan")), NativeFunction::new(tan));
+    table.set_field(gc.allocate_string(B("sin")), NativeFunction::new(sin));
+    table.set_field(gc.allocate_string(B("sqrt")), NativeFunction::new(sqrt));
+    table.set_field(gc.allocate_string(B("tan")), NativeFunction::new(tan));
     table.set_field(
-        heap.allocate_string(B("tointeger")),
+        gc.allocate_string(B("tointeger")),
         NativeFunction::new(tointeger),
     );
-    table.set_field(heap.allocate_string(B("type")), NativeFunction::new(ty));
-    table.set_field(heap.allocate_string(B("ult")), NativeFunction::new(ult));
+    table.set_field(gc.allocate_string(B("type")), NativeFunction::new(ty));
+    table.set_field(gc.allocate_string(B("ult")), NativeFunction::new(ult));
     table
 }
 
-fn abs(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn abs<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let arg = stack.arg(0);
     stack[0] = if let Some(Value::Integer(x)) = arg.get() {
         x.abs().into()
@@ -118,20 +123,38 @@ fn abs(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn acos(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn acos<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack.arg(0).to_number()?.acos().into();
     Ok(1)
 }
 
-fn asin(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn asin<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack.arg(0).to_number()?.asin().into();
     Ok(1)
 }
 
-fn atan(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn atan<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let y = stack.arg(0).to_number()?;
     let x = stack.arg(1);
     let result = if x.get().is_some() {
@@ -143,8 +166,14 @@ fn atan(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn ceil(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn ceil<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let arg = stack.arg(0);
     stack[0] = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
@@ -155,26 +184,50 @@ fn ceil(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn cos(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn cos<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack.arg(0).to_number()?.cos().into();
     Ok(1)
 }
 
-fn deg(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn deg<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack.arg(0).to_number()?.to_degrees().into();
     Ok(1)
 }
 
-fn exp(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn exp<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack.arg(0).to_number()?.exp().into();
     Ok(1)
 }
 
-fn floor(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn floor<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let arg = stack.arg(0);
     stack[0] = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
@@ -185,8 +238,14 @@ fn floor(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn fmod(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn fmod<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let x = stack.arg(0);
     let y = stack.arg(1);
     let result = if let (Value::Integer(x), Value::Integer(y)) = (x.to_value()?, y.to_value()?) {
@@ -204,8 +263,14 @@ fn fmod(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn log(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn log<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let x = stack.arg(0).to_number()?;
     let base = stack.arg(1);
     let result = if base.get().is_some() {
@@ -217,8 +282,14 @@ fn log(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn modf(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn modf<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let x = stack.arg(0);
     let (trunc, fract) = if let Value::Integer(x) = x.to_value()? {
         (x.into(), 0.0.into())
@@ -231,8 +302,14 @@ fn modf(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(2)
 }
 
-fn rad(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn rad<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack.arg(0).to_number()?.to_radians().into();
     Ok(1)
 }
@@ -273,26 +350,50 @@ fn random_in_range<R: Rng>(rng: &mut R, lower: Integer, upper: Integer) -> Integ
     lower + project(rng, upper - lower)
 }
 
-fn sin(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn sin<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack.arg(0).to_number()?.sin().into();
     Ok(1)
 }
 
-fn sqrt(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn sqrt<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack.arg(0).to_number()?.sqrt().into();
     Ok(1)
 }
 
-fn tan(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn tan<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack.arg(0).to_number()?.tan().into();
     Ok(1)
 }
 
-fn tointeger(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn tointeger<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     stack[0] = stack
         .arg(0)
         .to_value()?
@@ -302,20 +403,31 @@ fn tointeger(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn ty(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let heap = vm.heap();
-    let stack = vm.stack_mut(window);
+fn ty<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let result = match stack.arg(0).to_value()? {
-        Value::Integer(_) => heap.allocate_string(B("integer")).into(),
-        Value::Number(_) => heap.allocate_string(B("float")).into(),
+        Value::Integer(_) => gc.allocate_string(B("integer")).into(),
+        Value::Number(_) => gc.allocate_string(B("float")).into(),
         _ => Value::Nil,
     };
     stack[0] = result;
     Ok(1)
 }
 
-fn ult(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack_mut(window);
+fn ult<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let m = stack.arg(0).to_integer()?;
     let n = stack.arg(1).to_integer()?;
     stack[0] = ((m as u64) < (n as u64)).into();

@@ -11,15 +11,49 @@ pub use instruction::Instruction;
 pub use opcode::OpCode;
 
 use crate::{
-    gc::{GarbageCollect, GcCell, GcHeap, Tracer},
-    types::{LuaString, StackWindow, Table, Upvalue, Value},
-    LuaClosure,
+    gc::{GarbageCollect, GcCell, GcContext, GcHeap, Tracer},
+    types::{LuaClosureProto, LuaString, LuaThread, StackWindow, Table, Upvalue, Value},
+    Error, LuaClosure,
 };
-use std::{collections::BTreeMap, num::NonZeroUsize, ops::Range};
+use std::{num::NonZeroUsize, ops::Range};
 use tag_method::TagMethod;
 
+#[derive(Default)]
+pub struct Runtime {
+    heap: GcHeap,
+}
+
+impl Runtime {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn heap(&mut self) -> &mut GcHeap {
+        &mut self.heap
+    }
+
+    pub fn into_heap(self) -> GcHeap {
+        self.heap
+    }
+
+    pub fn execute<F>(&mut self, f: F) -> Result<(), Error>
+    where
+        F: for<'gc> FnOnce(
+            &'gc GcContext,
+            GcCell<'gc, Vm<'gc>>,
+        ) -> Result<LuaClosureProto<'gc>, Error>,
+    {
+        self.heap.with(|gc, vm| -> Result<(), Error> {
+            let proto = f(gc, vm)?;
+            let closure = gc.allocate(proto).into();
+            vm.borrow().execute_main(gc, closure)?;
+            Ok(())
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
-struct Frame {
+pub(crate) struct Frame {
     bottom: usize,
     base: usize,
     pc: usize,
@@ -37,22 +71,14 @@ impl Frame {
     }
 }
 
-#[derive(Debug)]
-struct State<'gc, 'stack> {
+struct ExecutionState<'gc, 'stack> {
     base: usize,
     pc: usize,
     stack: &'stack mut [Value<'gc>],
     lower_stack: &'stack mut [Value<'gc>],
 }
 
-unsafe impl GarbageCollect for State<'_, '_> {
-    fn trace(&self, tracer: &mut Tracer) {
-        self.stack.trace(tracer);
-        self.lower_stack.trace(tracer);
-    }
-}
-
-impl<'gc, 'stack> State<'gc, 'stack> {
+impl<'gc, 'stack> ExecutionState<'gc, 'stack> {
     fn resolve_upvalue(&self, upvalue: &Upvalue<'gc>) -> Value<'gc> {
         match upvalue {
             Upvalue::Open(i) => {
@@ -80,99 +106,66 @@ impl<'gc, 'stack> State<'gc, 'stack> {
     }
 }
 
-struct Root<'gc, 'vm, 'stack> {
-    state: &'stack State<'gc, 'stack>,
-    global_table: GcCell<'gc, Table<'gc>>,
-    open_upvalues: &'vm BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
-    tag_method_names: &'vm [LuaString<'gc>; TagMethod::COUNT],
-}
-
-unsafe impl GarbageCollect for Root<'_, '_, '_> {
-    fn trace(&self, tracer: &mut Tracer) {
-        self.state.trace(tracer);
-        self.global_table.trace(tracer);
-        self.open_upvalues.trace(tracer);
-        self.tag_method_names.as_ref().trace(tracer);
-    }
-}
-
 pub struct Vm<'gc> {
-    heap: &'gc GcHeap,
-    stack: Vec<Value<'gc>>,
-    frames: Vec<Frame>,
+    main_thread: GcCell<'gc, LuaThread<'gc>>,
     global_table: GcCell<'gc, Table<'gc>>,
-    open_upvalues: BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
     tag_method_names: [LuaString<'gc>; TagMethod::COUNT],
 }
 
 unsafe impl GarbageCollect for Vm<'_> {
     fn trace(&self, tracer: &mut Tracer) {
-        self.stack.trace(tracer);
+        self.main_thread.trace(tracer);
         self.global_table.trace(tracer);
-        self.open_upvalues.trace(tracer);
+        self.tag_method_names.as_ref().trace(tracer);
     }
 }
 
 impl<'gc> Vm<'gc> {
-    pub fn new(heap: &'gc GcHeap, global_table: GcCell<'gc, Table<'gc>>) -> Self {
+    pub(crate) fn new(gc: &'gc GcContext) -> Self {
         Self {
-            heap,
-            stack: Vec::new(),
-            frames: Vec::new(),
-            global_table,
-            open_upvalues: BTreeMap::new(),
-            tag_method_names: TagMethod::allocate_names(heap),
+            main_thread: gc.allocate_cell(LuaThread::new()),
+            global_table: gc.allocate_cell(Table::new()),
+            tag_method_names: TagMethod::allocate_names(gc),
         }
-    }
-
-    pub fn heap(&self) -> &'gc GcHeap {
-        self.heap
     }
 
     pub fn global_table(&self) -> GcCell<'gc, Table<'gc>> {
         self.global_table
     }
 
-    pub fn stack(&self, window: StackWindow) -> &[Value<'gc>] {
-        &self.stack[window.0]
+    pub fn load_stdlib(&self, gc: &'gc GcContext) {
+        crate::stdlib::load(gc, self.global_table);
     }
 
-    pub fn stack_mut(&mut self, window: StackWindow) -> &mut [Value<'gc>] {
-        &mut self.stack[window.0]
-    }
+    fn execute_main(
+        &self,
+        gc: &'gc GcContext,
+        mut closure: LuaClosure<'gc>,
+    ) -> Result<(), RuntimeError> {
+        assert!(closure.upvalues.is_empty());
+        closure
+            .upvalues
+            .push(gc.allocate_cell(Value::Table(self.global_table).into()));
 
-    pub fn ensure_stack(&mut self, old_window: StackWindow, len: usize) -> StackWindow {
-        if old_window.0.len() >= len {
-            old_window
-        } else {
-            let new_end = old_window.0.start + len;
-            self.stack.resize(new_end, Value::Nil);
-            StackWindow(old_window.0.start..new_end)
-        }
-    }
-
-    pub fn execute(&mut self, mut closure: LuaClosure<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        assert!(self.stack.is_empty());
-        assert!(self.frames.is_empty());
-        assert!(self.open_upvalues.is_empty());
-
-        if closure.upvalues.is_empty() {
-            closure.upvalues.push(
-                self.heap
-                    .allocate_cell(Value::Table(self.global_table).into()),
-            );
+        {
+            let thread = self.main_thread.borrow();
+            assert!(thread.stack.is_empty());
+            assert!(thread.frames.is_empty());
+            assert!(thread.open_upvalues.is_empty());
         }
 
-        let callee = self.heap.allocate(closure).into();
-        match self.execute_inner(callee, &[]) {
-            Ok(result) => Ok(result),
+        let result =
+            unsafe { self.execute_value(gc, self.main_thread, gc.allocate(closure).into(), &[]) };
+        match result {
+            Ok(_) => Ok(()),
             Err(kind) => {
-                let traceback = self
-                    .frames
-                    .drain(..)
+                let mut thread = self.main_thread.borrow_mut(gc);
+                let frames = std::mem::take(&mut thread.frames);
+                let traceback = frames
+                    .into_iter()
                     .rev()
                     .map(|frame| {
-                        let value = self.stack[frame.bottom];
+                        let value = thread.stack[frame.bottom];
                         let proto = value.as_lua_closure().unwrap().proto;
                         TracebackFrame {
                             source: String::from_utf8_lossy(&proto.source).to_string(),
@@ -180,50 +173,76 @@ impl<'gc> Vm<'gc> {
                         }
                     })
                     .collect();
-                self.stack.clear();
-                self.open_upvalues.clear();
+                thread.stack.clear();
+                thread.open_upvalues.clear();
                 Err(RuntimeError { kind, traceback })
             }
         }
     }
 
-    pub(crate) fn execute_inner(
-        &mut self,
+    pub(crate) unsafe fn execute_value(
+        &self,
+        gc: &'gc GcContext,
+        thread: GcCell<'gc, LuaThread<'gc>>,
         callee: Value<'gc>,
         args: &[Value<'gc>],
     ) -> Result<Value<'gc>, ErrorKind> {
-        let bottom = self.stack.len();
-        self.stack.reserve(args.len() + 1);
-        self.stack.push(callee);
-        self.stack.extend_from_slice(args);
+        let mut thread_ref = thread.borrow_mut(gc);
+        let bottom = thread_ref.stack.len();
+        thread_ref.stack.reserve(args.len() + 1);
+        thread_ref.stack.push(callee);
+        thread_ref.stack.extend_from_slice(args);
 
-        let frame_level = self.frames.len();
-        self.frames.push(Frame::new(bottom));
+        let frame_level = thread_ref.frames.len();
+        thread_ref.frames.push(Frame::new(bottom));
+        drop(thread_ref);
 
-        while self.frames.len() > frame_level {
-            self.execute_frame()?;
+        loop {
+            self.execute_frame(gc, thread)?;
+            if thread.borrow().frames.len() <= frame_level {
+                break;
+            }
+            if gc.debt() > 0 {
+                gc.step_unguarded();
+            }
         }
 
-        self.stack.truncate(bottom + 1);
-        unsafe { self.heap.step(self) };
+        thread.borrow_mut(gc).stack.truncate(bottom + 1);
+        if gc.debt() > 0 {
+            gc.step_unguarded();
+        }
 
-        let result = self.stack.drain(bottom..).next().unwrap_or_default();
+        let result = thread
+            .borrow_mut(gc)
+            .stack
+            .drain(bottom..)
+            .next()
+            .unwrap_or_default();
         Ok(result)
     }
 
     fn call_value(
-        &mut self,
-        callee: Value<'gc>,
+        &self,
+        gc: &'gc GcContext,
+        thread: GcCell<'gc, LuaThread<'gc>>,
+        callee: Value,
         stack_range: Range<usize>,
         window_len: Option<NonZeroUsize>,
     ) -> Result<(), ErrorKind> {
         match callee {
-            Value::NativeFunction(func) => self.call_native(func.0, stack_range, window_len),
+            Value::NativeFunction(func) => {
+                self.call_native(gc, thread, func.0, stack_range, window_len)
+            }
             Value::LuaClosure(_) => {
-                self.frames.push(Frame::new(stack_range.start));
+                thread
+                    .borrow_mut(gc)
+                    .frames
+                    .push(Frame::new(stack_range.start));
                 Ok(())
             }
-            Value::NativeClosure(closure) => self.call_native(&closure.0, stack_range, window_len),
+            Value::NativeClosure(closure) => {
+                self.call_native(gc, thread, &closure.0, stack_range, window_len)
+            }
             value => Err(ErrorKind::TypeError {
                 operation: Operation::Call,
                 ty: value.ty(),
@@ -232,35 +251,38 @@ impl<'gc> Vm<'gc> {
     }
 
     fn call_native<F>(
-        &mut self,
+        &self,
+        gc: &'gc GcContext,
+        thread: GcCell<'gc, LuaThread<'gc>>,
         callee: F,
         stack_range: Range<usize>,
         window_len: Option<NonZeroUsize>,
     ) -> Result<(), ErrorKind>
     where
-        F: Fn(&mut Vm, StackWindow) -> Result<usize, ErrorKind>,
+        F: for<'a> Fn(
+            &'a GcContext,
+            &Vm<'a>,
+            GcCell<'a, LuaThread<'a>>,
+            StackWindow,
+        ) -> Result<usize, ErrorKind>,
     {
         let range = if let Some(window_len) = window_len {
             stack_range.start..stack_range.start + window_len.get() // fixed number of args
         } else {
             stack_range.clone() // variable number of args
         };
-        let num_results = callee(self, StackWindow(range))?;
-        self.stack.truncate(stack_range.start + num_results);
+        let num_results = callee(gc, self, thread, StackWindow(range))?;
+        thread
+            .borrow_mut(gc)
+            .stack
+            .truncate(stack_range.start + num_results);
         Ok(())
     }
 
-    fn close_upvalues(&mut self, boundary: usize) {
-        for (_, upvalue) in self.open_upvalues.split_off(&boundary) {
-            let mut upvalue = upvalue.borrow_mut(self.heap);
-            if let Upvalue::Open(i) = *upvalue {
-                *upvalue = Upvalue::Closed(self.stack[i]);
-            }
-        }
-    }
-
-    fn call_index_metamethod<K>(
-        &mut self,
+    unsafe fn call_index_metamethod<K>(
+        &self,
+        gc: &'gc GcContext,
+        thread: GcCell<'gc, LuaThread<'gc>>,
         mut table: GcCell<'gc, Table<'gc>>,
         key: K,
     ) -> Result<Value<'gc>, ErrorKind>
@@ -278,7 +300,7 @@ impl<'gc> Vm<'gc> {
             match metamethod_value {
                 Value::Nil => return Ok(Value::Nil),
                 Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
-                    return self.execute_inner(metamethod_value, &[table.into(), key])
+                    return self.execute_value(gc, thread, metamethod_value, &[table.into(), key])
                 }
                 Value::Table(next_table) => {
                     let value = next_table.borrow().get(key);

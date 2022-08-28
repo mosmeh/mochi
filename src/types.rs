@@ -1,15 +1,17 @@
 mod function;
 mod string;
 mod table;
+mod thread;
 
 pub use function::{
     LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeClosureFn, NativeFunction,
-    NativeFunctionPtr, RegisterIndex, StackWindow, Upvalue, UpvalueDescription, UpvalueIndex,
+    NativeFunctionPtr, RegisterIndex, Upvalue, UpvalueDescription, UpvalueIndex,
 };
 pub use string::LuaString;
 pub use table::Table;
+pub use thread::{LuaThread, StackWindow};
 
-use crate::gc::{GarbageCollect, Gc, GcCell, GcHeap, Tracer};
+use crate::gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer};
 use std::{
     borrow::Cow,
     cell::{Ref, RefMut},
@@ -279,9 +281,9 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_table_mut(&self, heap: &GcHeap) -> Option<RefMut<Table<'gc>>> {
+    pub fn as_table_mut(&self, gc: &'gc GcContext) -> Option<RefMut<Table<'gc>>> {
         if let Self::Table(x) = self {
-            Some(x.borrow_mut(heap))
+            Some(x.borrow_mut(gc))
         } else {
             None
         }

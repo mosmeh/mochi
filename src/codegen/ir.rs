@@ -1,6 +1,6 @@
 use super::{instruction::Address, CodegenError, Frame};
 use crate::{
-    gc::GcHeap,
+    gc::GcContext,
     parser::ast::{BinaryOp, UnaryOp},
     types::{Integer, LuaClosureProto, LuaString, RegisterIndex, UpvalueIndex},
     vm::{
@@ -284,7 +284,7 @@ pub enum IrInstruction {
 pub struct Label(pub usize);
 
 pub(super) fn lower_ir<'gc>(
-    heap: &'gc GcHeap,
+    gc: &'gc GcContext,
     source: LuaString<'gc>,
     frame: Frame<'gc>,
 ) -> Result<LuaClosureProto<'gc>, CodegenError> {
@@ -725,7 +725,7 @@ pub(super) fn lower_ir<'gc>(
         protos: frame
             .protos
             .into_iter()
-            .map(|proto| heap.allocate(proto))
+            .map(|proto| gc.allocate(proto))
             .collect::<Vec<_>>()
             .into(),
         upvalues: frame.upvalues.into(),

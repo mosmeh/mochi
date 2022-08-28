@@ -1,5 +1,5 @@
 use crate::{
-    gc::GcHeap,
+    gc::GcContext,
     types::{Integer, Number, Table, Value},
     vm::ErrorKind,
 };
@@ -68,8 +68,8 @@ impl<'gc> Argument<'gc> {
         self.to_type("table", Value::as_table)
     }
 
-    pub fn as_table_mut(&self, heap: &'gc GcHeap) -> Result<RefMut<'_, Table<'gc>>, ErrorKind> {
-        self.to_type("table", |value| value.as_table_mut(heap))
+    pub fn as_table_mut(&self, gc: &'gc GcContext) -> Result<RefMut<'_, Table<'gc>>, ErrorKind> {
+        self.to_type("table", |value| value.as_table_mut(gc))
     }
 
     fn to_type<'a, F, T>(&'a self, name: &'static str, convert: F) -> Result<T, ErrorKind>

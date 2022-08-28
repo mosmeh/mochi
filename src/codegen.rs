@@ -3,7 +3,7 @@ mod instruction;
 mod ir;
 
 use crate::{
-    gc::GcHeap,
+    gc::GcContext,
     parser::ast::{
         BinaryOp, Block, Chunk, Expression, FunctionArguments, FunctionParameter, UnaryOp,
     },
@@ -35,11 +35,11 @@ pub enum CodegenError {
 }
 
 pub fn codegen<'gc>(
-    heap: &'gc GcHeap,
+    gc: &'gc GcContext,
     source: LuaString<'gc>,
     chunk: Chunk<'gc>,
 ) -> Result<LuaClosureProto<'gc>, CodegenError> {
-    let mut generator = CodeGenerator::new(heap, source);
+    let mut generator = CodeGenerator::new(gc, source);
     generator.enter_frame();
     generator.codegen_chunk(chunk)?;
     let proto = generator.finish_frame()?;
@@ -200,15 +200,15 @@ impl Frame<'_> {
 }
 
 struct CodeGenerator<'gc> {
-    heap: &'gc GcHeap,
+    gc: &'gc GcContext,
     source: LuaString<'gc>,
     frames: Vec<Frame<'gc>>,
 }
 
 impl<'gc> CodeGenerator<'gc> {
-    fn new(heap: &'gc GcHeap, source: LuaString<'gc>) -> Self {
+    fn new(gc: &'gc GcContext, source: LuaString<'gc>) -> Self {
         Self {
-            heap,
+            gc,
             source,
             frames: Default::default(),
         }
@@ -219,7 +219,7 @@ impl<'gc> CodeGenerator<'gc> {
     }
 
     fn finish_frame(&mut self) -> Result<LuaClosureProto<'gc>, CodegenError> {
-        ir::lower_ir(self.heap, self.source, self.frames.pop().unwrap())
+        ir::lower_ir(self.gc, self.source, self.frames.pop().unwrap())
     }
 
     fn current_frame(&mut self) -> &mut Frame<'gc> {
@@ -248,7 +248,7 @@ impl<'gc> CodeGenerator<'gc> {
             Some(LValue::Upvalue(u)) => Ok(u.into()),
             None => {
                 let env = if let Some(LValue::Upvalue(upvalue)) =
-                    self.try_resolve_name(self.heap.allocate_string(LUA_ENV))?
+                    self.try_resolve_name(self.gc.allocate_string(LUA_ENV))?
                 {
                     upvalue
                 } else {

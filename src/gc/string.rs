@@ -1,15 +1,26 @@
 use super::{Finalizer, GarbageCollect, GcPtr};
 use hashbrown::HashMap;
 use rustc_hash::FxHasher;
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    ops::Deref,
+};
 
 pub(super) type StringPool = HashMap<GcPtr<BoxedString>, (), ()>;
 
 #[derive(Hash, PartialEq, Eq)]
-pub struct BoxedString(pub(crate) Box<[u8]>);
+pub struct BoxedString(pub(super) Box<[u8]>);
 
 impl AsRef<[u8]> for BoxedString {
     fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl Deref for BoxedString {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
         self.as_bytes()
     }
 }

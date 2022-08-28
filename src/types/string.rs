@@ -7,7 +7,7 @@ pub struct LuaString<'gc>(pub(crate) Gc<'gc, BoxedString>);
 impl std::fmt::Debug for LuaString<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_tuple("LuaString")
-            .field(&String::from_utf8_lossy(&self.0 .0))
+            .field(&String::from_utf8_lossy(&self.0))
             .finish()
     }
 }
@@ -58,7 +58,7 @@ unsafe impl GarbageCollect for LuaString<'_> {
 
 impl LuaString<'_> {
     pub fn as_bytes(&self) -> &[u8] {
-        &self.0 .0
+        self.0.as_bytes()
     }
 
     pub fn as_str(&self) -> Result<&str, Utf8Error> {

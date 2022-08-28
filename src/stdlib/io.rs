@@ -1,26 +1,37 @@
 use super::StackExt;
 use crate::{
-    gc::GcHeap,
-    types::{NativeFunction, StackWindow, Table},
+    gc::{GcCell, GcContext},
+    types::{LuaThread, NativeFunction, StackWindow, Table},
     vm::{ErrorKind, Vm},
 };
 use bstr::B;
 use std::io::Write;
 
-pub fn create_table(heap: &GcHeap) -> Table {
+pub fn create_table(gc: &GcContext) -> Table {
     let mut table = Table::new();
-    table.set_field(heap.allocate_string(B("flush")), NativeFunction::new(flush));
-    table.set_field(heap.allocate_string(B("write")), NativeFunction::new(write));
+    table.set_field(gc.allocate_string(B("flush")), NativeFunction::new(flush));
+    table.set_field(gc.allocate_string(B("write")), NativeFunction::new(write));
     table
 }
 
-fn flush(_: &mut Vm, _: StackWindow) -> Result<usize, ErrorKind> {
+fn flush<'gc>(
+    _: &'gc GcContext,
+    _: &Vm<'gc>,
+    _: GcCell<LuaThread<'gc>>,
+    _: StackWindow,
+) -> Result<usize, ErrorKind> {
     std::io::stdout().flush()?;
     Ok(0)
 }
 
-fn write(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack(window);
+fn write<'gc>(
+    _: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(window);
     let mut stdout = std::io::stdout().lock();
     for i in 0..stack.args().len() {
         stdout.write_all(stack.arg(i).to_string()?.as_ref())?;

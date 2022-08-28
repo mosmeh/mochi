@@ -1,36 +1,29 @@
 use super::StackExt;
 use crate::{
-    gc::GcHeap,
-    types::{Integer, NativeFunction, StackWindow, Table, Value},
+    gc::{GcCell, GcContext},
+    types::{Integer, LuaThread, NativeFunction, StackWindow, Table, Value},
     vm::{ErrorKind, Vm},
 };
 use bstr::B;
 
-pub fn create_table(heap: &GcHeap) -> Table {
+pub fn create_table(gc: &GcContext) -> Table {
     let mut table = Table::new();
-    table.set_field(
-        heap.allocate_string(B("concat")),
-        NativeFunction::new(concat),
-    );
-    table.set_field(
-        heap.allocate_string(B("insert")),
-        NativeFunction::new(insert),
-    );
-    table.set_field(heap.allocate_string(B("pack")), NativeFunction::new(pack));
-    table.set_field(
-        heap.allocate_string(B("remove")),
-        NativeFunction::new(remove),
-    );
-    table.set_field(
-        heap.allocate_string(B("unpack")),
-        NativeFunction::new(unpack),
-    );
+    table.set_field(gc.allocate_string(B("concat")), NativeFunction::new(concat));
+    table.set_field(gc.allocate_string(B("insert")), NativeFunction::new(insert));
+    table.set_field(gc.allocate_string(B("pack")), NativeFunction::new(pack));
+    table.set_field(gc.allocate_string(B("remove")), NativeFunction::new(remove));
+    table.set_field(gc.allocate_string(B("unpack")), NativeFunction::new(unpack));
     table
 }
 
-fn concat(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let heap = vm.heap();
-    let stack = vm.stack_mut(window);
+fn concat<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
 
     let table = stack.arg(0);
     let table = table.as_table()?;
@@ -54,16 +47,21 @@ fn concat(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     }
 
     let concatenated = strings.join(sep.as_ref());
-    stack[0] = heap.allocate_string(concatenated).into();
+    stack[0] = gc.allocate_string(concatenated).into();
     Ok(1)
 }
 
-fn insert(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let heap = vm.heap();
-    let stack = vm.stack_mut(window);
+fn insert<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(window);
 
     let table = stack.arg(0);
-    let mut table = table.as_table_mut(heap)?;
+    let mut table = table.as_table_mut(gc)?;
     let len = table.lua_len();
 
     match stack.args().len() {
@@ -91,21 +89,31 @@ fn insert(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(0)
 }
 
-fn pack(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let heap = vm.heap();
-    let stack = vm.stack_mut(window);
+fn pack<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
     let mut table = Table::from(stack.args().to_vec());
-    table.set_field(heap.allocate_string(B("n")), stack.args().len() as Integer);
-    stack[0] = heap.allocate_cell(table).into();
+    table.set_field(gc.allocate_string(B("n")), stack.args().len() as Integer);
+    stack[0] = gc.allocate_cell(table).into();
     Ok(1)
 }
 
-fn remove(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let heap = vm.heap();
-    let stack = vm.stack_mut(window);
+fn remove<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
 
     let table = stack.arg(0);
-    let mut table = table.as_table_mut(heap)?;
+    let mut table = table.as_table_mut(gc)?;
     let len = table.lua_len();
 
     let pos = stack.arg(1).to_integer_or(len)?;
@@ -125,16 +133,22 @@ fn remove(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
     Ok(1)
 }
 
-fn unpack(vm: &mut Vm, window: StackWindow) -> Result<usize, ErrorKind> {
-    let stack = vm.stack(window.clone());
+fn unpack<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack(window.clone());
     let table = stack.arg(0);
     let table = table.as_table()?;
     let start = stack.arg(1).to_integer_or(1)?;
     let end = stack.arg(2).to_integer_or_else(|| table.lua_len())?;
 
     let n = (end - start + 1) as usize;
-    let window = vm.ensure_stack(window, n);
-    for (dest, src) in vm.stack_mut(window).iter_mut().zip(start..=end) {
+    let window = thread.ensure_stack(window, n);
+    for (dest, src) in thread.stack_mut(window).iter_mut().zip(start..=end) {
         *dest = table.get(src);
     }
     Ok(n)

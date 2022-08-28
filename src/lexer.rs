@@ -2,7 +2,7 @@ mod token;
 
 pub use token::Token;
 
-use crate::{gc::GcHeap, types::Integer};
+use crate::{gc::GcContext, types::Integer};
 use std::{
     collections::VecDeque,
     io::{Bytes, Read},
@@ -41,9 +41,9 @@ pub struct Lexer<'gc, R: Read> {
 }
 
 impl<'gc, R: Read> Lexer<'gc, R> {
-    pub fn new(heap: &'gc GcHeap, reader: R) -> Result<Self, LexerError> {
+    pub fn new(gc: &'gc GcContext, reader: R) -> Result<Self, LexerError> {
         Ok(Self {
-            inner: LexerInner::new(heap, reader)?,
+            inner: LexerInner::new(gc, reader)?,
             peeked: VecDeque::with_capacity(2),
         })
     }
@@ -92,15 +92,15 @@ impl<'gc, R: Read> Lexer<'gc, R> {
 }
 
 struct LexerInner<'gc, R: Read> {
-    heap: &'gc GcHeap,
+    gc: &'gc GcContext,
     bytes: Bytes<R>,
     peeked: Option<u8>,
 }
 
 impl<'gc, R: Read> LexerInner<'gc, R> {
-    fn new(heap: &'gc GcHeap, reader: R) -> std::io::Result<LexerInner<'gc, R>> {
+    fn new(gc: &'gc GcContext, reader: R) -> std::io::Result<LexerInner<'gc, R>> {
         let mut lexer = Self {
-            heap,
+            gc,
             bytes: reader.bytes(),
             peeked: None,
         };
@@ -223,9 +223,10 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
                 _ if is_lua_alphabetic(ch) => {
                     let mut string = Vec::new();
                     self.consume_while(is_lua_alphanumeric, &mut string)?;
-                    return Ok(Some(Token::from_reserved_word(&string).unwrap_or_else(
-                        || Token::Name(self.heap.allocate_string(string)),
-                    )));
+                    return Ok(Some(
+                        Token::from_reserved_word(&string)
+                            .unwrap_or_else(|| Token::Name(self.gc.allocate_string(string))),
+                    ));
                 }
                 ch => {
                     self.consume()?;
@@ -366,9 +367,7 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
                     };
                     string.push(unescaped);
                 }
-                _ if ch == delimiter => {
-                    return Ok(Token::String(self.heap.allocate_string(string)))
-                }
+                _ if ch == delimiter => return Ok(Token::String(self.gc.allocate_string(string))),
                 _ => string.push(ch),
             }
         }
@@ -436,7 +435,7 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
             }
             let has_second_bracket = self.consume_if_eq(b']')?;
             if has_second_bracket && closing_level == opening_level {
-                return Ok(Token::String(self.heap.allocate_string(buf)));
+                return Ok(Token::String(self.gc.allocate_string(buf)));
             }
             buf.push(b']');
             buf.resize(buf.len() + closing_level, b'=');

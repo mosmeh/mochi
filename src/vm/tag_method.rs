@@ -1,4 +1,4 @@
-use crate::{gc::GcHeap, types::LuaString};
+use crate::{gc::GcContext, types::LuaString};
 use bstr::B;
 
 macro_rules! count  {
@@ -17,9 +17,9 @@ macro_rules! tag_methods {
         impl TagMethod {
             pub const COUNT: usize = count!($($variant)*);
 
-            pub fn allocate_names(heap: &GcHeap) -> [LuaString; TagMethod::COUNT] {
+            pub fn allocate_names(gc: &GcContext) -> [LuaString; TagMethod::COUNT] {
                 [
-                    $(heap.allocate_string(B($name)),)*
+                    $(gc.allocate_string(B($name)),)*
                 ]
             }
         }
