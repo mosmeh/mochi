@@ -6,8 +6,8 @@ use crate::{
 };
 use bstr::{ByteSlice, B};
 
-pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
-    let mut table = global_table.borrow_mut(gc);
+pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
+    let mut table = globals.borrow_mut(gc);
     table.set_field(
         gc.allocate_string(B("require")),
         NativeFunction::new(require),
@@ -35,7 +35,7 @@ fn require<'gc>(
     let module_name = gc.allocate_string(module_name);
 
     let package_key = gc.allocate_string(B("package"));
-    let package_table = vm.global_table().borrow().get_field(package_key);
+    let package_table = vm.globals().borrow().get_field(package_key);
     let package_table = package_table.as_table().unwrap();
 
     let loaded_key = gc.allocate_string(B("loaded"));
@@ -58,7 +58,7 @@ fn require<'gc>(
     let mut closure = LuaClosure::from(gc.allocate(proto));
     closure
         .upvalues
-        .push(gc.allocate_cell(Value::Table(vm.global_table()).into()));
+        .push(gc.allocate_cell(Value::Table(vm.globals()).into()));
 
     root_gc!(gc, module_name.0);
     root_gc!(gc, lua_filename.0);

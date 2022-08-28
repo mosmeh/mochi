@@ -6,7 +6,7 @@ use crate::{
 };
 use bstr::{ByteSlice, ByteVec, B};
 
-pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
+pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("clock")), NativeFunction::new(clock));
     table.set_field(
@@ -14,7 +14,7 @@ pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
         NativeFunction::new(difftime),
     );
     table.set_field(gc.allocate_string(B("getenv")), NativeFunction::new(getenv));
-    global_table
+    globals
         .borrow_mut(gc)
         .set_field(gc.allocate_string(B("os")), gc.allocate_cell(table));
 }

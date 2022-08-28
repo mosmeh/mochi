@@ -9,7 +9,7 @@ use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use std::{cell::RefCell, ops::DerefMut, rc::Rc, time::SystemTime};
 
-pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
+pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("abs")), NativeFunction::new(abs));
     table.set_field(gc.allocate_string(B("acos")), NativeFunction::new(acos));
@@ -103,7 +103,7 @@ pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
     );
     table.set_field(gc.allocate_string(B("type")), NativeFunction::new(ty));
     table.set_field(gc.allocate_string(B("ult")), NativeFunction::new(ult));
-    global_table
+    globals
         .borrow_mut(gc)
         .set_field(gc.allocate_string(B("math")), gc.allocate_cell(table));
 }

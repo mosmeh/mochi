@@ -8,15 +8,15 @@ use crate::{
 use bstr::{ByteSlice, B};
 use std::io::Write;
 
-pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
-    let mut table = global_table.borrow_mut(gc);
+pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
+    let mut table = globals.borrow_mut(gc);
     table.set_field(gc.allocate_string(B("assert")), NativeFunction::new(assert));
     table.set_field(
         gc.allocate_string(B("collectgarbage")),
         NativeFunction::new(collectgarbage),
     );
     table.set_field(gc.allocate_string(B("error")), NativeFunction::new(error));
-    table.set_field(gc.allocate_string(B("_G")), global_table);
+    table.set_field(gc.allocate_string(B("_G")), globals);
     table.set_field(
         gc.allocate_string(B("getmetatable")),
         NativeFunction::new(getmetatable),

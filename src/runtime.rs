@@ -108,14 +108,14 @@ impl<'gc, 'stack> ExecutionState<'gc, 'stack> {
 
 pub struct Vm<'gc> {
     main_thread: GcCell<'gc, LuaThread<'gc>>,
-    global_table: GcCell<'gc, Table<'gc>>,
+    globals: GcCell<'gc, Table<'gc>>,
     tag_method_names: [LuaString<'gc>; TagMethod::COUNT],
 }
 
 unsafe impl GarbageCollect for Vm<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.main_thread.trace(tracer);
-        self.global_table.trace(tracer);
+        self.globals.trace(tracer);
         self.tag_method_names.as_ref().trace(tracer);
     }
 }
@@ -124,17 +124,17 @@ impl<'gc> Vm<'gc> {
     pub(crate) fn new(gc: &'gc GcContext) -> Self {
         Self {
             main_thread: gc.allocate_cell(LuaThread::new()),
-            global_table: gc.allocate_cell(Table::new()),
+            globals: gc.allocate_cell(Table::new()),
             tag_method_names: TagMethod::allocate_names(gc),
         }
     }
 
-    pub fn global_table(&self) -> GcCell<'gc, Table<'gc>> {
-        self.global_table
+    pub fn globals(&self) -> GcCell<'gc, Table<'gc>> {
+        self.globals
     }
 
     pub fn load_stdlib(&self, gc: &'gc GcContext) {
-        crate::stdlib::load(gc, self.global_table);
+        crate::stdlib::load(gc, self.globals);
     }
 
     fn execute_main(
@@ -145,7 +145,7 @@ impl<'gc> Vm<'gc> {
         assert!(closure.upvalues.is_empty());
         closure
             .upvalues
-            .push(gc.allocate_cell(Value::Table(self.global_table).into()));
+            .push(gc.allocate_cell(Value::Table(self.globals).into()));
 
         {
             let thread = self.main_thread.borrow();

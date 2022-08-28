@@ -12,12 +12,12 @@ use crate::{
     types::Table,
 };
 
-pub fn load<'gc>(gc: &'gc GcContext, global_table: GcCell<'gc, Table<'gc>>) {
-    base::load(gc, global_table);
-    package::load(gc, global_table);
-    string::load(gc, global_table);
-    table::load(gc, global_table);
-    math::load(gc, global_table);
-    io::load(gc, global_table);
-    os::load(gc, global_table);
+pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
+    base::load(gc, globals);
+    package::load(gc, globals);
+    string::load(gc, globals);
+    table::load(gc, globals);
+    math::load(gc, globals);
+    io::load(gc, globals);
+    os::load(gc, globals);
 }

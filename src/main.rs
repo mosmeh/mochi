@@ -75,7 +75,7 @@ fn main() -> Result<()> {
         for (i, x) in args.args.into_iter().enumerate() {
             arg.set((i + 1) as Integer, gc.allocate_string(x.into_bytes()));
         }
-        vm.global_table()
+        vm.globals()
             .borrow_mut(gc)
             .set_field(gc.allocate_string(B("arg")), gc.allocate_cell(arg));
     });
