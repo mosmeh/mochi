@@ -473,6 +473,12 @@ fn require<'gc>(
         )?
     };
 
+    let value = if value.is_nil() {
+        Value::Boolean(true)
+    } else {
+        value
+    };
+
     loaded_table
         .as_table_mut(gc)
         .unwrap()
