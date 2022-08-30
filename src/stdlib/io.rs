@@ -7,11 +7,11 @@ use crate::{
 use bstr::B;
 use std::io::Write;
 
-pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
+pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("flush")), NativeFunction::new(flush));
     table.set_field(gc.allocate_string(B("write")), NativeFunction::new(write));
-    globals
+    vm.globals()
         .borrow_mut(gc)
         .set_field(gc.allocate_string(B("io")), gc.allocate_cell(table));
 }

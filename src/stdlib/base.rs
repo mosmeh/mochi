@@ -2,49 +2,50 @@ use super::helpers::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Integer, LuaThread, NativeFunction, Number, StackWindow, Table, Value},
+    types::{Integer, LuaThread, NativeFunction, Number, StackWindow, Value},
     LUA_VERSION,
 };
 use bstr::{ByteSlice, B};
 use std::io::Write;
 
-pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
-    let mut table = globals.borrow_mut(gc);
-    table.set_field(gc.allocate_string(B("assert")), NativeFunction::new(assert));
-    table.set_field(
+pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
+    let globals = vm.globals();
+    let mut globals = globals.borrow_mut(gc);
+    globals.set_field(gc.allocate_string(B("assert")), NativeFunction::new(assert));
+    globals.set_field(
         gc.allocate_string(B("collectgarbage")),
         NativeFunction::new(collectgarbage),
     );
-    table.set_field(gc.allocate_string(B("error")), NativeFunction::new(error));
-    table.set_field(gc.allocate_string(B("_G")), globals);
-    table.set_field(
+    globals.set_field(gc.allocate_string(B("error")), NativeFunction::new(error));
+    globals.set_field(gc.allocate_string(B("_G")), vm.globals());
+    globals.set_field(
         gc.allocate_string(B("getmetatable")),
         NativeFunction::new(getmetatable),
     );
-    table.set_field(gc.allocate_string(B("ipairs")), NativeFunction::new(ipairs));
-    table.set_field(gc.allocate_string(B("print")), NativeFunction::new(print));
-    table.set_field(
+    globals.set_field(gc.allocate_string(B("ipairs")), NativeFunction::new(ipairs));
+    globals.set_field(gc.allocate_string(B("print")), NativeFunction::new(print));
+    globals.set_field(
         gc.allocate_string(B("rawequal")),
         NativeFunction::new(rawequal),
     );
-    table.set_field(gc.allocate_string(B("rawget")), NativeFunction::new(rawget));
-    table.set_field(gc.allocate_string(B("rawlen")), NativeFunction::new(rawlen));
-    table.set_field(gc.allocate_string(B("rawset")), NativeFunction::new(rawset));
-    table.set_field(gc.allocate_string(B("select")), NativeFunction::new(select));
-    table.set_field(
+    globals.set_field(gc.allocate_string(B("rawget")), NativeFunction::new(rawget));
+    globals.set_field(gc.allocate_string(B("rawlen")), NativeFunction::new(rawlen));
+    globals.set_field(gc.allocate_string(B("rawset")), NativeFunction::new(rawset));
+    globals.set_field(gc.allocate_string(B("select")), NativeFunction::new(select));
+    globals.set_field(
         gc.allocate_string(B("setmetatable")),
         NativeFunction::new(setmetatable),
     );
-    table.set_field(
+    globals.set_field(
         gc.allocate_string(B("tonumber")),
         NativeFunction::new(tonumber),
     );
-    table.set_field(
+    globals.set_field(
         gc.allocate_string(B("tostring")),
         NativeFunction::new(tostring),
     );
-    table.set_field(gc.allocate_string(B("type")), NativeFunction::new(ty));
-    table.set_field(
+    globals.set_field(gc.allocate_string(B("type")), NativeFunction::new(ty));
+    globals.set_field(
         gc.allocate_string(B("_VERSION")),
         gc.allocate_string(format!("Lua {}.{}", LUA_VERSION.0, LUA_VERSION.1).into_bytes()),
     );

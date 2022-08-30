@@ -137,7 +137,7 @@ impl<'gc> Vm<'gc> {
     }
 
     pub fn load_stdlib(&self, gc: &'gc GcContext) {
-        crate::stdlib::load(gc, self.globals);
+        crate::stdlib::load(gc, self);
     }
 
     pub fn tag_method_name(&self, tag_method: TagMethod) -> LuaString<'gc> {

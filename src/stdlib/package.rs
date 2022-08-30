@@ -6,9 +6,10 @@ use crate::{
 };
 use bstr::{ByteSlice, B};
 
-pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
-    let mut table = globals.borrow_mut(gc);
-    table.set_field(
+pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
+    let globals = vm.globals();
+    let mut globals = globals.borrow_mut(gc);
+    globals.set_field(
         gc.allocate_string(B("require")),
         NativeFunction::new(require),
     );
@@ -18,7 +19,7 @@ pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
         gc.allocate_string(B("loaded")),
         gc.allocate_cell(Table::new()),
     );
-    table.set_field(gc.allocate_string(B("package")), gc.allocate_cell(package));
+    globals.set_field(gc.allocate_string(B("package")), gc.allocate_cell(package));
 }
 
 fn require<'gc>(

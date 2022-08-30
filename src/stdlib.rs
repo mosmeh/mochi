@@ -7,17 +7,14 @@ mod package;
 mod string;
 mod table;
 
-use crate::{
-    gc::{GcCell, GcContext},
-    types::Table,
-};
+use crate::{gc::GcContext, runtime::Vm};
 
-pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
-    base::load(gc, globals);
-    package::load(gc, globals);
-    string::load(gc, globals);
-    table::load(gc, globals);
-    math::load(gc, globals);
-    io::load(gc, globals);
-    os::load(gc, globals);
+pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
+    base::load(gc, vm);
+    package::load(gc, vm);
+    string::load(gc, vm);
+    table::load(gc, vm);
+    math::load(gc, vm);
+    io::load(gc, vm);
+    os::load(gc, vm);
 }

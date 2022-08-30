@@ -8,7 +8,7 @@ use crate::{
 use bstr::B;
 use std::ops::Range;
 
-pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
+pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("byte")), NativeFunction::new(byte));
     table.set_field(gc.allocate_string(B("char")), NativeFunction::new(char));
@@ -22,7 +22,7 @@ pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
         NativeFunction::new(reverse),
     );
     table.set_field(gc.allocate_string(B("upper")), NativeFunction::new(upper));
-    globals
+    vm.globals()
         .borrow_mut(gc)
         .set_field(gc.allocate_string(B("string")), gc.allocate_cell(table));
 }
