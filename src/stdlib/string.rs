@@ -2,7 +2,7 @@ use super::helpers::StackExt;
 use crate::{
     binary_chunk,
     gc::{GcCell, GcContext},
-    runtime::{ErrorKind, Vm},
+    runtime::{ErrorKind, TagMethod, Vm},
     types::{Integer, LuaThread, NativeFunction, StackWindow, Table, Type, Value},
 };
 use bstr::B;
@@ -22,9 +22,15 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
         NativeFunction::new(reverse),
     );
     table.set_field(gc.allocate_string(B("upper")), NativeFunction::new(upper));
+
+    let table = Value::from(gc.allocate_cell(table));
     vm.globals()
         .borrow_mut(gc)
-        .set_field(gc.allocate_string(B("string")), gc.allocate_cell(table));
+        .set_field(gc.allocate_string(B("string")), table);
+
+    let mut metatable = Table::new();
+    metatable.set_field(vm.tag_method_name(TagMethod::Index), table);
+    vm.set_metatable_of_type(gc, Type::String, gc.allocate_cell(metatable));
 }
 
 fn byte<'gc>(
