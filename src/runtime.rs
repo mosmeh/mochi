@@ -1,22 +1,22 @@
 pub(crate) mod instruction;
-pub(crate) mod tag_method;
 
 mod error;
 mod main_loop;
 mod opcode;
 mod ops;
+mod tag_method;
 
 pub use error::{ErrorKind, Operation, RuntimeError, TracebackFrame};
 pub use instruction::Instruction;
 pub use opcode::OpCode;
+pub(crate) use tag_method::TagMethod;
 
 use crate::{
     gc::{GarbageCollect, GcCell, GcContext, GcHeap, Tracer},
-    types::{LuaClosureProto, LuaString, LuaThread, StackWindow, Table, Upvalue, Value},
+    types::{LuaClosureProto, LuaString, LuaThread, StackWindow, Table, Type, Upvalue, Value},
     Error, LuaClosure,
 };
 use std::{num::NonZeroUsize, ops::Range};
-use tag_method::TagMethod;
 
 #[derive(Default)]
 pub struct Runtime {
@@ -110,13 +110,15 @@ pub struct Vm<'gc> {
     main_thread: GcCell<'gc, LuaThread<'gc>>,
     globals: GcCell<'gc, Table<'gc>>,
     tag_method_names: [LuaString<'gc>; TagMethod::COUNT],
+    metatables: GcCell<'gc, [Option<GcCell<'gc, Table<'gc>>>; Type::COUNT]>,
 }
 
 unsafe impl GarbageCollect for Vm<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.main_thread.trace(tracer);
         self.globals.trace(tracer);
-        self.tag_method_names.as_ref().trace(tracer);
+        self.tag_method_names.trace(tracer);
+        self.metatables.trace(tracer);
     }
 }
 
@@ -126,6 +128,7 @@ impl<'gc> Vm<'gc> {
             main_thread: gc.allocate_cell(LuaThread::new()),
             globals: gc.allocate_cell(Table::new()),
             tag_method_names: TagMethod::allocate_names(gc),
+            metatables: gc.allocate_cell(Default::default()),
         }
     }
 
@@ -135,6 +138,23 @@ impl<'gc> Vm<'gc> {
 
     pub fn load_stdlib(&self, gc: &'gc GcContext) {
         crate::stdlib::load(gc, self.globals);
+    }
+
+    pub fn tag_method_name(&self, tag_method: TagMethod) -> LuaString<'gc> {
+        self.tag_method_names[tag_method as usize]
+    }
+
+    pub fn metatable_of_object(&self, object: Value<'gc>) -> Option<GcCell<'gc, Table<'gc>>> {
+        object
+            .metatable()
+            .or_else(|| self.metatables.borrow()[object.ty() as usize])
+    }
+
+    pub fn set_metatable_of_type<T>(&self, gc: &'gc GcContext, ty: Type, metatable: T)
+    where
+        T: Into<Option<GcCell<'gc, Table<'gc>>>>,
+    {
+        self.metatables.borrow_mut(gc)[ty as usize] = metatable.into();
     }
 
     fn execute_main(
@@ -283,39 +303,52 @@ impl<'gc> Vm<'gc> {
         &self,
         gc: &'gc GcContext,
         thread: GcCell<'gc, LuaThread<'gc>>,
-        mut table: GcCell<'gc, Table<'gc>>,
+        mut table_like: Value<'gc>,
         key: K,
     ) -> Result<Value<'gc>, ErrorKind>
     where
         K: Into<Value<'gc>>,
     {
         let key = key.into();
-        let index_key = self.tag_method_names[TagMethod::Index as usize];
+        let index_key = self.tag_method_name(TagMethod::Index);
         loop {
-            let metamethod_value = table
-                .borrow()
-                .metatable()
-                .map(|metatable| metatable.borrow().get_field(index_key))
-                .unwrap_or_default();
-            match metamethod_value {
-                Value::Nil => return Ok(Value::Nil),
-                Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
-                    return self.execute_value(gc, thread, metamethod_value, &[table.into(), key])
+            let metamethod = if let Value::Table(table) = table_like {
+                let metamethod = table
+                    .borrow()
+                    .metatable()
+                    .map(|metatable| metatable.borrow().get_field(index_key))
+                    .unwrap_or_default();
+                if metamethod.is_nil() {
+                    return Ok(Value::Nil);
                 }
-                Value::Table(next_table) => {
-                    let value = next_table.borrow().get(key);
+                metamethod
+            } else {
+                let metamethod = self
+                    .metatable_of_object(table_like)
+                    .map(|metatable| metatable.borrow().get_field(index_key))
+                    .unwrap_or_default();
+                if metamethod.is_nil() {
+                    return Err(ErrorKind::TypeError {
+                        operation: Operation::Index,
+                        ty: table_like.ty(),
+                    });
+                }
+                metamethod
+            };
+            match metamethod {
+                Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
+                    return self.execute_value(gc, thread, metamethod, &[table_like, key])
+                }
+                Value::Table(table) => {
+                    let value = table.borrow().get(key);
                     if !value.is_nil() {
                         return Ok(value);
                     }
-                    table = next_table;
                 }
-                _ => {
-                    return Err(ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: metamethod_value.ty(),
-                    })
-                }
+                Value::Nil => unreachable!(),
+                _ => (),
             }
+            table_like = metamethod;
         }
     }
 }

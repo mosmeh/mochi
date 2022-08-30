@@ -78,59 +78,41 @@ impl<'gc> Vm<'gc> {
                     } else {
                         unreachable!();
                     };
-                    if let Value::Table(table) = table_value {
-                        let raw_value = table.borrow().get_field(rc);
-                        if raw_value.is_nil() {
-                            thread_ref.current_frame().pc = state.pc;
-                            thread_ref.stack[saved_current_frame.base + insn.a()] =
-                                unsafe { self.call_index_metamethod(gc, thread, table, rc)? };
-                            return Ok(());
-                        }
-                        state.stack[insn.a()] = raw_value;
-                    } else {
-                        return Err(ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: table_value.ty(),
-                        });
-                    };
+                    let raw_value = table_value
+                        .as_table()
+                        .map(|table| table.get_field(rc))
+                        .unwrap_or_default();
+                    if raw_value.is_nil() {
+                        thread_ref.current_frame().pc = state.pc;
+                        thread_ref.stack[saved_current_frame.base + insn.a()] =
+                            unsafe { self.call_index_metamethod(gc, thread, table_value, rc)? };
+                        return Ok(());
+                    }
+                    state.stack[insn.a()] = raw_value;
                 }
                 OpCode::GetTable => {
                     let rb = state.stack[insn.b()];
                     let rc = state.stack[insn.c() as usize];
-                    if let Value::Table(table) = rb {
-                        let raw_value = table.borrow().get(rc);
-                        if raw_value.is_nil() {
-                            thread_ref.current_frame().pc = state.pc;
-                            thread_ref.stack[saved_current_frame.base + insn.a()] =
-                                unsafe { self.call_index_metamethod(gc, thread, table, rc)? };
-                            return Ok(());
-                        }
-                        state.stack[insn.a()] = raw_value;
-                    } else {
-                        return Err(ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: rb.ty(),
-                        });
-                    };
+                    let raw_value = rb.as_table().map(|table| table.get(rc)).unwrap_or_default();
+                    if raw_value.is_nil() {
+                        thread_ref.current_frame().pc = state.pc;
+                        thread_ref.stack[saved_current_frame.base + insn.a()] =
+                            unsafe { self.call_index_metamethod(gc, thread, rb, rc)? };
+                        return Ok(());
+                    }
+                    state.stack[insn.a()] = raw_value;
                 }
                 OpCode::GetI => {
                     let rb = state.stack[insn.b()];
                     let c = insn.c() as Integer;
-                    if let Value::Table(table) = rb {
-                        let raw_value = table.borrow().get(c);
-                        if raw_value.is_nil() {
-                            thread_ref.current_frame().pc = state.pc;
-                            thread_ref.stack[saved_current_frame.base + insn.a()] =
-                                unsafe { self.call_index_metamethod(gc, thread, table, c)? };
-                            return Ok(());
-                        }
-                        state.stack[insn.a()] = raw_value;
-                    } else {
-                        return Err(ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: rb.ty(),
-                        });
+                    let raw_value = rb.as_table().map(|table| table.get(c)).unwrap_or_default();
+                    if raw_value.is_nil() {
+                        thread_ref.current_frame().pc = state.pc;
+                        thread_ref.stack[saved_current_frame.base + insn.a()] =
+                            unsafe { self.call_index_metamethod(gc, thread, rb, c)? };
+                        return Ok(());
                     }
+                    state.stack[insn.a()] = raw_value;
                 }
                 OpCode::GetField => {
                     let rb = state.stack[insn.b()];
@@ -139,21 +121,17 @@ impl<'gc> Vm<'gc> {
                     } else {
                         unreachable!();
                     };
-                    if let Value::Table(table) = rb {
-                        let raw_value = table.borrow().get_field(rc);
-                        if raw_value.is_nil() {
-                            thread_ref.current_frame().pc = state.pc;
-                            thread_ref.stack[saved_current_frame.base + insn.a()] =
-                                unsafe { self.call_index_metamethod(gc, thread, table, rc)? };
-                            return Ok(());
-                        }
-                        state.stack[insn.a()] = raw_value;
-                    } else {
-                        return Err(ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: rb.ty(),
-                        });
+                    let raw_value = rb
+                        .as_table()
+                        .map(|table| table.get_field(rc))
+                        .unwrap_or_default();
+                    if raw_value.is_nil() {
+                        thread_ref.current_frame().pc = state.pc;
+                        thread_ref.stack[saved_current_frame.base + insn.a()] =
+                            unsafe { self.call_index_metamethod(gc, thread, rb, rc)? };
+                        return Ok(());
                     }
+                    state.stack[insn.a()] = raw_value;
                 }
                 OpCode::SetTabUp => {
                     let kb = if let Value::String(s) = closure.proto.constants[insn.b()] {
@@ -256,21 +234,17 @@ impl<'gc> Vm<'gc> {
                     } else {
                         unreachable!();
                     };
-                    if let Value::Table(table) = rb {
-                        let raw_value = table.borrow().get_field(rkc);
-                        if raw_value.is_nil() {
-                            thread_ref.current_frame().pc = state.pc;
-                            thread_ref.stack[saved_current_frame.base + insn.a()] =
-                                unsafe { self.call_index_metamethod(gc, thread, table, rkc)? };
-                            return Ok(());
-                        }
-                        state.stack[insn.a()] = raw_value;
-                    } else {
-                        return Err(ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: rb.ty(),
-                        });
+                    let raw_value = rb
+                        .as_table()
+                        .map(|table| table.get_field(rkc))
+                        .unwrap_or_default();
+                    if raw_value.is_nil() {
+                        thread_ref.current_frame().pc = state.pc;
+                        thread_ref.stack[saved_current_frame.base + insn.a()] =
+                            unsafe { self.call_index_metamethod(gc, thread, rb, rkc)? };
+                        return Ok(());
                     }
+                    state.stack[insn.a()] = raw_value;
                 }
                 OpCode::AddI => ops::do_arithmetic_with_immediate(
                     &mut state,
@@ -371,12 +345,13 @@ impl<'gc> Vm<'gc> {
                     thread_ref.current_frame().pc = state.pc;
                     drop(thread_ref);
 
-                    let metatable = ra.metatable().or_else(|| rb.metatable()).ok_or_else(|| {
-                        ErrorKind::TypeError {
+                    let metatable = self
+                        .metatable_of_object(ra)
+                        .or_else(|| self.metatable_of_object(rb))
+                        .ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Arithmetic,
                             ty: rb.ty(),
-                        }
-                    })?;
+                        })?;
 
                     let tag_method_name = self.tag_method_names[insn.c() as usize];
                     let tag_method_value = metatable.borrow().get_field(tag_method_name);

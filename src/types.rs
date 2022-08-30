@@ -19,32 +19,37 @@ use std::{
     io::Write,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Type {
-    Nil,
-    Boolean,
-    Number,
-    String,
-    Table,
-    Function,
+macro_rules! types {
+    ($($variant:ident => $name:tt,)*) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Type {
+            $($variant,)*
+        }
+
+        impl Type {
+            pub const COUNT: usize = crate::count!($($variant)*);
+
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)*
+                }
+            }
+        }
+    }
+}
+
+types! {
+    Nil => "nil",
+    Boolean => "boolean",
+    Number => "number",
+    String => "string",
+    Table => "table",
+    Function => "function",
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name())
-    }
-}
-
-impl Type {
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::Nil => "nil",
-            Self::Boolean => "boolean",
-            Self::Number => "number",
-            Self::String => "string",
-            Self::Table => "table",
-            Self::Function => "function",
-        }
     }
 }
 
@@ -301,7 +306,7 @@ impl<'gc> Value<'gc> {
         if let Self::Table(table) = self {
             table.borrow().metatable()
         } else {
-            todo!("metatable for non-table type")
+            None
         }
     }
 }

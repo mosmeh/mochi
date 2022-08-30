@@ -4,8 +4,7 @@ use crate::{
     parser::ast::{BinaryOp, UnaryOp},
     runtime::{
         instruction::{OFFSET_SBX, OFFSET_SC, OFFSET_SJ, UINT17_MAX, UINT25_MAX},
-        tag_method::TagMethod,
-        Instruction, OpCode,
+        Instruction, OpCode, TagMethod,
     },
     types::{Integer, LuaClosureProto, LuaString, RegisterIndex, UpvalueIndex},
 };

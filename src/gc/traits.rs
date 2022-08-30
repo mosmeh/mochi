@@ -44,6 +44,30 @@ unsafe impl GarbageCollect for usize {
     }
 }
 
+unsafe impl<T: GarbageCollect, const N: usize> GarbageCollect for [T; N] {
+    fn needs_trace() -> bool {
+        T::needs_trace()
+    }
+
+    fn trace(&self, tracer: &mut Tracer) {
+        for x in self {
+            x.trace(tracer)
+        }
+    }
+}
+
+unsafe impl<T: GarbageCollect> GarbageCollect for Option<T> {
+    fn needs_trace() -> bool {
+        T::needs_trace()
+    }
+
+    fn trace(&self, tracer: &mut Tracer) {
+        if let Some(x) = self {
+            x.trace(tracer);
+        }
+    }
+}
+
 unsafe impl<T: GarbageCollect> GarbageCollect for &[T] {
     fn needs_trace() -> bool {
         T::needs_trace()

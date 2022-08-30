@@ -153,8 +153,11 @@ impl<'gc> Table<'gc> {
         self.metatable
     }
 
-    pub fn set_metatable(&mut self, metatable: Option<GcCell<'gc, Table<'gc>>>) {
-        self.metatable = metatable;
+    pub fn set_metatable<T>(&mut self, metatable: T)
+    where
+        T: Into<Option<GcCell<'gc, Table<'gc>>>>,
+    {
+        self.metatable = metatable.into();
     }
 
     fn try_set_no_grow(&mut self, key: Value<'gc>, value: Value<'gc>) -> Result<(), u64> {
