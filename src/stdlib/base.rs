@@ -98,21 +98,17 @@ fn error<'gc>(
 
 fn getmetatable<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    vm: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(window);
-    stack[0] = if let Value::Table(table) = stack.arg(0).to_value()? {
-        table
-            .borrow()
-            .metatable()
-            .map(Value::from)
-            .unwrap_or_default()
-    } else {
-        Value::Nil
-    };
+    let object = stack.arg(0).to_value()?;
+    stack[0] = vm
+        .metatable_of_object(object)
+        .map(Value::from)
+        .unwrap_or_default();
     Ok(1)
 }
 
