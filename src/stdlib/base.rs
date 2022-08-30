@@ -50,15 +50,6 @@ pub fn load<'gc>(gc: &'gc GcContext, globals: GcCell<'gc, Table<'gc>>) {
     );
 }
 
-fn error_obj_to_error_kind(error_obj: Value) -> ErrorKind {
-    let msg = if let Some(s) = error_obj.to_string() {
-        String::from_utf8_lossy(&s).to_string()
-    } else {
-        format!("(error object is a {} value", error_obj.ty().name())
-    };
-    ErrorKind::ExplicitError(msg)
-}
-
 fn assert<'gc>(
     gc: &'gc GcContext,
     _: &Vm<'gc>,
@@ -71,7 +62,7 @@ fn assert<'gc>(
         stack.copy_within(1..stack.len(), 0);
         Ok(stack.args().len())
     } else if let Some(error_obj) = stack.arg(1).get() {
-        Err(error_obj_to_error_kind(error_obj))
+        Err(ErrorKind::from_error_object(error_obj))
     } else {
         Err(ErrorKind::ExplicitError("assertion failed!".to_owned()))
     }
@@ -101,7 +92,7 @@ fn error<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(window);
     let error_obj = stack.arg(0).get().unwrap_or_default();
-    Err(error_obj_to_error_kind(error_obj))
+    Err(ErrorKind::from_error_object(error_obj))
 }
 
 fn getmetatable<'gc>(

@@ -1,4 +1,4 @@
-use crate::types::{LineRange, Type};
+use crate::types::{LineRange, Type, Value};
 use std::fmt::Display;
 
 #[derive(Debug)]
@@ -59,6 +59,17 @@ pub enum ErrorKind {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+impl ErrorKind {
+    pub fn from_error_object(error_object: Value) -> Self {
+        let msg = if let Some(s) = error_object.to_string() {
+            String::from_utf8_lossy(&s).to_string()
+        } else {
+            format!("(error object is a {} value)", error_object.ty().name())
+        };
+        ErrorKind::ExplicitError(msg)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
