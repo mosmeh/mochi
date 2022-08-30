@@ -84,3 +84,10 @@ pub fn load_file<P: AsRef<Path>>(gc: &GcContext, path: P) -> Result<LuaClosurePr
     let source = Vec::from_path_lossy(path.as_ref());
     load(gc, bytes, source)
 }
+
+macro_rules! count  {
+    () => (0);
+    ($x:tt $($xs:tt)*) => (1 + crate::count!($($xs)*));
+}
+
+pub(crate) use count;

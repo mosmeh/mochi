@@ -1,11 +1,6 @@
 use crate::{gc::GcContext, types::LuaString};
 use bstr::B;
 
-macro_rules! count  {
-    () => (0);
-    ($x:tt $($xs:tt)*) => (1 + count!($($xs)*));
-}
-
 macro_rules! tag_methods {
     ($($variant:ident => $name:tt,)*) => {
         #[allow(dead_code)]
@@ -15,7 +10,7 @@ macro_rules! tag_methods {
         }
 
         impl TagMethod {
-            pub const COUNT: usize = count!($($variant)*);
+            pub const COUNT: usize = crate::count!($($variant)*);
 
             pub fn allocate_names(gc: &GcContext) -> [LuaString; TagMethod::COUNT] {
                 [
