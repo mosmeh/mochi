@@ -1,8 +1,10 @@
 pub mod ast;
 
+pub use crate::lexer::LexerError;
+
 use crate::{
     gc::GcContext,
-    lexer::{Lexer, LexerError, Token},
+    lexer::{Lexer, Token},
     types::LuaString,
 };
 use ast::{

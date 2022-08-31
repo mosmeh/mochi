@@ -4,11 +4,11 @@ pub mod runtime;
 pub mod types;
 
 #[cfg(not(feature = "luac"))]
-mod codegen;
+pub mod codegen;
 #[cfg(not(feature = "luac"))]
 mod lexer;
 #[cfg(not(feature = "luac"))]
-mod parser;
+pub mod parser;
 
 mod stdlib;
 
