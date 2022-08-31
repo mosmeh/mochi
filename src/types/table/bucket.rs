@@ -1,7 +1,7 @@
 use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Table, Value};
 use crate::{
     gc::{Gc, GcCell},
-    types::LuaClosure,
+    types::{LuaClosure, UserData},
 };
 
 // for tighter packing,
@@ -91,6 +91,7 @@ enum Tag {
     Table,
     LuaClosure,
     NativeClosure,
+    UserData,
 }
 
 impl Default for Tag {
@@ -109,6 +110,7 @@ union Payload<'gc> {
     table: GcCell<'gc, Table<'gc>>,
     lua_closure: Gc<'gc, LuaClosure<'gc>>,
     native_closure: Gc<'gc, NativeClosure>,
+    user_data: GcCell<'gc, UserData<'gc>>,
 }
 
 impl Default for Payload<'_> {
@@ -129,6 +131,7 @@ impl<'gc> Value<'gc> {
             Tag::Table => Self::Table(payload.table),
             Tag::LuaClosure => Self::LuaClosure(payload.lua_closure),
             Tag::NativeClosure => Self::NativeClosure(payload.native_closure),
+            Tag::UserData => Self::UserData(payload.user_data),
         }
     }
 
@@ -145,6 +148,7 @@ impl<'gc> Value<'gc> {
             Value::NativeClosure(n) => {
                 tag == Tag::NativeClosure && Gc::ptr_eq(n, &payload.native_closure)
             }
+            Value::UserData(u) => tag == Tag::UserData && GcCell::ptr_eq(u, &payload.user_data),
         }
     }
 
@@ -159,6 +163,7 @@ impl<'gc> Value<'gc> {
             Self::Table(table) => (Tag::Table, Payload { table }),
             Self::LuaClosure(lua_closure) => (Tag::LuaClosure, Payload { lua_closure }),
             Self::NativeClosure(native_closure) => (Tag::NativeClosure, Payload { native_closure }),
+            Self::UserData(user_data) => (Tag::UserData, Payload { user_data }),
         }
     }
 }

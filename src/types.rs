@@ -2,6 +2,7 @@ mod function;
 mod string;
 mod table;
 mod thread;
+mod user_data;
 
 pub use function::{
     LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeClosureFn, NativeFunction,
@@ -10,6 +11,7 @@ pub use function::{
 pub use string::LuaString;
 pub use table::{Table, TableError};
 pub use thread::{LuaThread, StackWindow};
+pub use user_data::UserData;
 
 use crate::gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer};
 use std::{
@@ -45,6 +47,7 @@ types! {
     String => "string",
     Table => "table",
     Function => "function",
+    UserData => "userdata",
 }
 
 impl Display for Type {
@@ -67,6 +70,7 @@ pub enum Value<'gc> {
     Table(GcCell<'gc, Table<'gc>>),
     LuaClosure(Gc<'gc, LuaClosure<'gc>>),
     NativeClosure(Gc<'gc, NativeClosure>),
+    UserData(GcCell<'gc, UserData<'gc>>),
 }
 
 impl Default for Value<'_> {
@@ -123,6 +127,12 @@ impl<'gc> From<Gc<'gc, NativeClosure>> for Value<'gc> {
     }
 }
 
+impl<'gc> From<GcCell<'gc, UserData<'gc>>> for Value<'gc> {
+    fn from(x: GcCell<'gc, UserData<'gc>>) -> Self {
+        Self::UserData(x)
+    }
+}
+
 impl PartialEq for Value<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -137,6 +147,7 @@ impl PartialEq for Value<'_> {
             (Self::Table(lhs), Self::Table(rhs)) => GcCell::ptr_eq(lhs, rhs),
             (Self::LuaClosure(lhs), Self::LuaClosure(rhs)) => Gc::ptr_eq(lhs, rhs),
             (Self::NativeClosure(lhs), Self::NativeClosure(rhs)) => Gc::ptr_eq(lhs, rhs),
+            (Self::UserData(lhs), Self::UserData(rhs)) => GcCell::ptr_eq(lhs, rhs),
             _ => false,
         }
     }
@@ -157,6 +168,7 @@ impl std::hash::Hash for Value<'_> {
             Self::Table(x) => x.as_ptr().hash(state),
             Self::LuaClosure(x) => x.as_ptr().hash(state),
             Self::NativeClosure(x) => x.as_ptr().hash(state),
+            Self::UserData(x) => x.as_ptr().hash(state),
         }
     }
 }
@@ -168,6 +180,7 @@ unsafe impl GarbageCollect for Value<'_> {
             Self::Table(x) => x.trace(tracer),
             Self::LuaClosure(x) => x.trace(tracer),
             Self::NativeClosure(x) => x.trace(tracer),
+            Self::UserData(x) => x.trace(tracer),
             _ => (),
         }
     }
@@ -189,6 +202,9 @@ impl<'gc> Value<'gc> {
             Self::NativeClosure(x) => {
                 write!(f, "function: {:?}", x.as_ptr())
             }
+            Self::UserData(x) => {
+                write!(f, "userdata: {:?}", x.as_ptr())
+            }
         }
     }
 
@@ -202,6 +218,7 @@ impl<'gc> Value<'gc> {
             Self::NativeFunction(_) | Self::LuaClosure(_) | Self::NativeClosure(_) => {
                 Type::Function
             }
+            Self::UserData(_) => Type::UserData,
         }
     }
 
@@ -311,10 +328,10 @@ impl<'gc> Value<'gc> {
     }
 
     pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
-        if let Self::Table(table) = self {
-            table.borrow().metatable()
-        } else {
-            None
+        match self {
+            Self::Table(table) => table.borrow().metatable(),
+            Self::UserData(ud) => ud.borrow().metatable(),
+            _ => None,
         }
     }
 }
