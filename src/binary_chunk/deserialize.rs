@@ -30,12 +30,6 @@ pub enum DeserializeError {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    FromUtf8(#[from] std::string::FromUtf8Error),
-
-    #[error(transparent)]
-    TryFromInt(#[from] std::num::TryFromIntError),
 }
 
 pub fn load<'gc, R: Read>(
@@ -197,9 +191,10 @@ fn load_str<'gc, R: Read>(
 }
 
 fn load_int<R: Read>(reader: &mut R) -> Result<u32, DeserializeError> {
-    load_unsigned(reader, u32::MAX as usize)?
+    let int = load_unsigned(reader, u32::MAX as usize)?
         .try_into()
-        .map_err(Into::into)
+        .unwrap();
+    Ok(int)
 }
 
 fn load_code<R: Read>(reader: &mut R) -> Result<Vec<Instruction>, DeserializeError> {
