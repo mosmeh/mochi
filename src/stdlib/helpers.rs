@@ -64,12 +64,15 @@ impl<'gc> Argument<'gc> {
         }
     }
 
-    pub fn as_table(&self) -> Result<Ref<'_, Table<'gc>>, ErrorKind> {
-        self.to_type("table", Value::as_table)
+    pub fn borrow_as_table(&self) -> Result<Ref<'_, Table<'gc>>, ErrorKind> {
+        self.to_type("table", Value::borrow_as_table)
     }
 
-    pub fn as_table_mut(&self, gc: &'gc GcContext) -> Result<RefMut<'_, Table<'gc>>, ErrorKind> {
-        self.to_type("table", |value| value.as_table_mut(gc))
+    pub fn borrow_as_table_mut(
+        &self,
+        gc: &'gc GcContext,
+    ) -> Result<RefMut<'_, Table<'gc>>, ErrorKind> {
+        self.to_type("table", |value| value.borrow_as_table_mut(gc))
     }
 
     fn to_type<'a, F, T>(&'a self, name: &'static str, convert: F) -> Result<T, ErrorKind>

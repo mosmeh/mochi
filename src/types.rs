@@ -278,7 +278,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_table(&self) -> Option<Ref<Table<'gc>>> {
+    pub fn borrow_as_table(&self) -> Option<Ref<Table<'gc>>> {
         if let Self::Table(x) = self {
             Some(x.borrow())
         } else {
@@ -286,7 +286,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_table_mut(&self, gc: &'gc GcContext) -> Option<RefMut<Table<'gc>>> {
+    pub fn borrow_as_table_mut(&self, gc: &'gc GcContext) -> Option<RefMut<Table<'gc>>> {
         if let Self::Table(x) = self {
             Some(x.borrow_mut(gc))
         } else {

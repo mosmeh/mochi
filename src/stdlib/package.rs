@@ -37,11 +37,14 @@ fn require<'gc>(
 
     let package_key = gc.allocate_string(B("package"));
     let package_table = vm.globals().borrow().get_field(package_key);
-    let package_table = package_table.as_table().unwrap();
+    let package_table = package_table.borrow_as_table().unwrap();
 
     let loaded_key = gc.allocate_string(B("loaded"));
     let loaded_table = package_table.get_field(loaded_key);
-    let maybe_loaded_value = loaded_table.as_table().unwrap().get_field(module_name);
+    let maybe_loaded_value = loaded_table
+        .borrow_as_table()
+        .unwrap()
+        .get_field(module_name);
 
     if !maybe_loaded_value.is_nil() {
         stack[0] = maybe_loaded_value;
@@ -80,7 +83,7 @@ fn require<'gc>(
     };
 
     loaded_table
-        .as_table_mut(gc)
+        .borrow_as_table_mut(gc)
         .unwrap()
         .set_field(module_name, value);
 

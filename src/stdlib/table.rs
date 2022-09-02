@@ -28,7 +28,7 @@ fn concat<'gc>(
     let stack = thread.stack_mut(window);
 
     let table = stack.arg(0);
-    let table = table.as_table()?;
+    let table = table.borrow_as_table()?;
     let sep = stack.arg(1);
     let sep = sep.to_string_or(b"".to_vec())?;
     let i = stack.arg(2).to_integer_or(1)?;
@@ -63,7 +63,7 @@ fn insert<'gc>(
     let stack = thread.stack(window);
 
     let table = stack.arg(0);
-    let mut table = table.as_table_mut(gc)?;
+    let mut table = table.borrow_as_table_mut(gc)?;
     let len = table.lua_len();
 
     match stack.args().len() {
@@ -115,7 +115,7 @@ fn remove<'gc>(
     let stack = thread.stack_mut(window);
 
     let table = stack.arg(0);
-    let mut table = table.as_table_mut(gc)?;
+    let mut table = table.borrow_as_table_mut(gc)?;
     let len = table.lua_len();
 
     let pos = stack.arg(1).to_integer_or(len)?;
@@ -144,7 +144,7 @@ fn unpack<'gc>(
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack(window.clone());
     let table = stack.arg(0);
-    let table = table.as_table()?;
+    let table = table.borrow_as_table()?;
     let start = stack.arg(1).to_integer_or(1)?;
     let end = stack.arg(2).to_integer_or_else(|| table.lua_len())?;
 

@@ -79,7 +79,7 @@ impl<'gc> Vm<'gc> {
                         unreachable!();
                     };
                     let raw_value = table_value
-                        .as_table()
+                        .borrow_as_table()
                         .map(|table| table.get_field(rc))
                         .unwrap_or_default();
                     if raw_value.is_nil() {
@@ -93,7 +93,10 @@ impl<'gc> Vm<'gc> {
                 OpCode::GetTable => {
                     let rb = state.stack[insn.b()];
                     let rc = state.stack[insn.c() as usize];
-                    let raw_value = rb.as_table().map(|table| table.get(rc)).unwrap_or_default();
+                    let raw_value = rb
+                        .borrow_as_table()
+                        .map(|table| table.get(rc))
+                        .unwrap_or_default();
                     if raw_value.is_nil() {
                         thread_ref.current_frame().pc = state.pc;
                         thread_ref.stack[saved_current_frame.base + insn.a()] =
@@ -105,7 +108,10 @@ impl<'gc> Vm<'gc> {
                 OpCode::GetI => {
                     let rb = state.stack[insn.b()];
                     let c = insn.c() as Integer;
-                    let raw_value = rb.as_table().map(|table| table.get(c)).unwrap_or_default();
+                    let raw_value = rb
+                        .borrow_as_table()
+                        .map(|table| table.get(c))
+                        .unwrap_or_default();
                     if raw_value.is_nil() {
                         thread_ref.current_frame().pc = state.pc;
                         thread_ref.stack[saved_current_frame.base + insn.a()] =
@@ -122,7 +128,7 @@ impl<'gc> Vm<'gc> {
                         unreachable!();
                     };
                     let raw_value = rb
-                        .as_table()
+                        .borrow_as_table()
                         .map(|table| table.get_field(rc))
                         .unwrap_or_default();
                     if raw_value.is_nil() {
@@ -141,13 +147,12 @@ impl<'gc> Vm<'gc> {
                     };
                     let upvalue = closure.upvalues[insn.a()].borrow();
                     let table_value = state.resolve_upvalue(&upvalue);
-                    let mut table =
-                        table_value
-                            .as_table_mut(gc)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: table_value.ty(),
-                            })?;
+                    let mut table = table_value.borrow_as_table_mut(gc).ok_or_else(|| {
+                        ErrorKind::TypeError {
+                            operation: Operation::Index,
+                            ty: table_value.ty(),
+                        }
+                    })?;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
                         closure.proto.constants[c]
@@ -158,10 +163,12 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetTable => {
                     let ra = state.stack[insn.a()];
-                    let mut table = ra.as_table_mut(gc).ok_or_else(|| ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: ra.ty(),
-                    })?;
+                    let mut table =
+                        ra.borrow_as_table_mut(gc)
+                            .ok_or_else(|| ErrorKind::TypeError {
+                                operation: Operation::Index,
+                                ty: ra.ty(),
+                            })?;
                     let rb = state.stack[insn.b()];
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
@@ -173,10 +180,12 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetI => {
                     let ra = state.stack[insn.a()];
-                    let mut table = ra.as_table_mut(gc).ok_or_else(|| ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: ra.ty(),
-                    })?;
+                    let mut table =
+                        ra.borrow_as_table_mut(gc)
+                            .ok_or_else(|| ErrorKind::TypeError {
+                                operation: Operation::Index,
+                                ty: ra.ty(),
+                            })?;
                     let b = insn.b() as Integer;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() {
@@ -188,10 +197,12 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetField => {
                     let ra = state.stack[insn.a()];
-                    let mut table = ra.as_table_mut(gc).ok_or_else(|| ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: ra.ty(),
-                    })?;
+                    let mut table =
+                        ra.borrow_as_table_mut(gc)
+                            .ok_or_else(|| ErrorKind::TypeError {
+                                operation: Operation::Index,
+                                ty: ra.ty(),
+                            })?;
                     let kb = if let Value::String(s) = closure.proto.constants[insn.b()] {
                         s
                     } else {
@@ -235,7 +246,7 @@ impl<'gc> Vm<'gc> {
                         unreachable!();
                     };
                     let raw_value = rb
-                        .as_table()
+                        .borrow_as_table()
                         .map(|table| table.get_field(rkc))
                         .unwrap_or_default();
                     if raw_value.is_nil() {
@@ -663,10 +674,12 @@ impl<'gc> Vm<'gc> {
                         state.pc += 1;
                     }
 
-                    let mut table = ra.as_table_mut(gc).ok_or_else(|| ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: ra.ty(),
-                    })?;
+                    let mut table =
+                        ra.borrow_as_table_mut(gc)
+                            .ok_or_else(|| ErrorKind::TypeError {
+                                operation: Operation::Index,
+                                ty: ra.ty(),
+                            })?;
                     let new_array_len = offset + n;
                     if new_array_len > table.array().len() {
                         table.resize_array(new_array_len);

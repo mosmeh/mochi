@@ -127,7 +127,7 @@ fn ipairs<'gc>(
         let mut thread = thread.borrow_mut(gc);
         let stack = thread.stack_mut(window);
         let i = stack.arg(1).to_integer()? + 1;
-        let value = stack.arg(0).as_table()?.get(i);
+        let value = stack.arg(0).borrow_as_table()?.get(i);
 
         if value.is_nil() {
             stack[0] = Value::Nil;
@@ -188,7 +188,7 @@ fn rawget<'gc>(
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(window);
     let index = stack.arg(1).to_value()?;
-    stack[0] = stack.arg(0).as_table()?.get(index);
+    stack[0] = stack.arg(0).borrow_as_table()?.get(index);
     Ok(1)
 }
 
@@ -228,7 +228,7 @@ fn rawset<'gc>(
     let index = stack.arg(1).to_value()?;
     let value = stack.arg(2).to_value()?;
 
-    table.as_table_mut(gc)?.set(index, value);
+    table.borrow_as_table_mut(gc)?.set(index, value);
 
     stack[0] = table.to_value()?;
     Ok(1)
@@ -278,7 +278,7 @@ fn setmetatable<'gc>(
     let stack = thread.stack_mut(window);
     let table = {
         let table_arg = stack.arg(0);
-        let mut table = table_arg.as_table_mut(gc)?;
+        let mut table = table_arg.borrow_as_table_mut(gc)?;
         let metatable = match stack.arg(1).get() {
             Some(Value::Nil) => None,
             Some(Value::Table(table)) => Some(table),
