@@ -72,10 +72,6 @@ impl GcHeap {
     pub fn step(&mut self) {
         self.gc.step();
     }
-
-    pub fn leak_all(self) {
-        self.gc.leak_all();
-    }
 }
 
 const GCSWEEPMAX: i32 = 100;
@@ -196,10 +192,6 @@ impl GcContext {
         self.allocated_bytes
             .set((self.allocated_bytes.get() as isize + self.debt.get() - debt) as usize);
         self.debt.set(debt);
-    }
-
-    fn leak_all(mut self) {
-        self.all = Default::default();
     }
 
     fn write_barrier<T: GarbageCollect>(&self, ptr: GcPtr<T>) {

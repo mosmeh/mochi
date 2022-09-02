@@ -84,7 +84,6 @@ fn main() -> Result<()> {
         runtime.execute(|gc, _| mochi_lua::load_file(gc, script))?;
 
         if !args.interactive {
-            runtime.into_heap().leak_all();
             return Ok(());
         }
     }
