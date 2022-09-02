@@ -13,7 +13,9 @@ pub(crate) use tag_method::TagMethod;
 
 use crate::{
     gc::{GarbageCollect, GcCell, GcContext, GcHeap, Tracer},
-    types::{LuaClosureProto, LuaString, LuaThread, StackWindow, Table, Type, Upvalue, Value},
+    types::{
+        Integer, LuaClosureProto, LuaString, LuaThread, StackWindow, Table, Type, Upvalue, Value,
+    },
     Error, LuaClosure,
 };
 use std::{num::NonZeroUsize, ops::Range};
@@ -107,6 +109,7 @@ impl<'gc, 'stack> ExecutionState<'gc, 'stack> {
 }
 
 pub struct Vm<'gc> {
+    registry: GcCell<'gc, Table<'gc>>,
     main_thread: GcCell<'gc, LuaThread<'gc>>,
     globals: GcCell<'gc, Table<'gc>>,
     tag_method_names: [LuaString<'gc>; TagMethod::COUNT],
@@ -115,6 +118,7 @@ pub struct Vm<'gc> {
 
 unsafe impl GarbageCollect for Vm<'_> {
     fn trace(&self, tracer: &mut Tracer) {
+        self.registry.trace(tracer);
         self.main_thread.trace(tracer);
         self.globals.trace(tracer);
         self.tag_method_names.trace(tracer);
@@ -124,12 +128,22 @@ unsafe impl GarbageCollect for Vm<'_> {
 
 impl<'gc> Vm<'gc> {
     pub(crate) fn new(gc: &'gc GcContext) -> Self {
+        let mut registry = Table::new();
+        const LUA_RIDX_GLOBALS: Integer = 2;
+        let globals = gc.allocate_cell(Table::new());
+        registry.set(LUA_RIDX_GLOBALS, globals);
+
         Self {
+            registry: gc.allocate_cell(registry),
             main_thread: gc.allocate_cell(LuaThread::new()),
-            globals: gc.allocate_cell(Table::new()),
+            globals,
             tag_method_names: TagMethod::allocate_names(gc),
             metatables: gc.allocate_cell(Default::default()),
         }
+    }
+
+    pub fn registry(&self) -> GcCell<'gc, Table<'gc>> {
+        self.registry
     }
 
     pub fn globals(&self) -> GcCell<'gc, Table<'gc>> {
