@@ -24,6 +24,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
     );
     globals.set_field(gc.allocate_string(B("ipairs")), NativeFunction::new(ipairs));
     globals.set_field(gc.allocate_string(B("next")), NativeFunction::new(next));
+    globals.set_field(gc.allocate_string(B("pairs")), NativeFunction::new(pairs));
     globals.set_field(gc.allocate_string(B("print")), NativeFunction::new(print));
     globals.set_field(
         gc.allocate_string(B("rawequal")),
@@ -169,6 +170,22 @@ fn next<'gc>(
         stack[0] = Value::Nil;
         Ok(1)
     }
+}
+
+fn pairs<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    thread.stack(window.clone()).arg(0).to_value()?;
+
+    let window = thread.ensure_stack(window, 3);
+    let stack = thread.stack_mut(window);
+    stack[0] = NativeFunction::new(next).into();
+    stack[2] = Value::Nil;
+    Ok(3)
 }
 
 fn print<'gc>(
