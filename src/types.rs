@@ -278,6 +278,14 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    pub fn as_table(&self) -> Option<GcCell<'gc, Table<'gc>>> {
+        if let Self::Table(x) = self {
+            Some(*x)
+        } else {
+            None
+        }
+    }
+
     pub fn borrow_as_table(&self) -> Option<Ref<Table<'gc>>> {
         if let Self::Table(x) = self {
             Some(x.borrow())
