@@ -363,7 +363,14 @@ macro_rules! root_gc {
     )*}
 }
 
+macro_rules! root_gc_cell {
+    ($($gc:expr, $x:expr)*) => {$(
+        let _ = $crate::gc::Root::from_gc_cell($gc, $x);
+    )*}
+}
+
 pub(crate) use root_gc;
+pub(crate) use root_gc_cell;
 
 #[doc(hidden)]
 pub(crate) struct Root<'gc> {
@@ -378,7 +385,15 @@ impl Drop for Root<'_> {
 
 impl Root<'_> {
     pub fn from_gc<T: GarbageCollect>(gc: &GcContext, x: Gc<T>) -> Self {
-        gc.root_stack.borrow_mut().push(into_ptr_to_static(x.ptr));
+        Self::from_ptr(gc, x.ptr)
+    }
+
+    pub fn from_gc_cell<T: GarbageCollect>(gc: &GcContext, x: GcCell<T>) -> Self {
+        Self::from_ptr(gc, x.0.ptr)
+    }
+
+    fn from_ptr<T: GarbageCollect>(gc: &GcContext, ptr: GcPtr<T>) -> Self {
+        gc.root_stack.borrow_mut().push(into_ptr_to_static(ptr));
         unsafe { std::mem::transmute(Root { gc }) }
     }
 }
