@@ -1,7 +1,10 @@
 mod bucket;
 
 use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Value};
-use crate::gc::{GarbageCollect, GcCell, Tracer};
+use crate::{
+    gc::{GarbageCollect, GcCell, Tracer},
+    runtime::ErrorKind,
+};
 use bucket::Bucket;
 use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
@@ -192,6 +195,34 @@ impl<'gc> Table<'gc> {
             }
         }
         i
+    }
+
+    pub fn next(&self, key: Value<'gc>) -> Result<Option<(Value<'gc>, Value<'gc>)>, ErrorKind> {
+        let next_array_index = match key {
+            Value::Nil => Some(0),
+            Value::Integer(i) if 1 <= i && i as usize <= self.array.len() => Some(i as usize),
+            _ => None,
+        };
+        let next_bucket_index = if let Some(start) = next_array_index {
+            if let Some(index) = self.array[start..].iter().position(|value| !value.is_nil()) {
+                let index = start + index;
+                let key = (index + 1) as Integer;
+                return Ok(Some((key.into(), self.array[index])));
+            }
+            0
+        } else if let Some(index) = self.find_bucket(key) {
+            index + 1
+        } else {
+            return Err(ErrorKind::ExplicitError("invalid key to 'next'".to_owned()));
+        };
+        if let Some(bucket) = self.buckets[next_bucket_index..]
+            .iter()
+            .find(|bucket| bucket.has_value())
+        {
+            debug_assert!(bucket.has_key());
+            return Ok(Some((bucket.key(), bucket.value())));
+        }
+        Ok(None)
     }
 
     unsafe fn set_new_hashtable_key(&mut self, key: Value<'gc>, value: Value<'gc>) {

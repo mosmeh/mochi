@@ -23,6 +23,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
         NativeFunction::new(getmetatable),
     );
     globals.set_field(gc.allocate_string(B("ipairs")), NativeFunction::new(ipairs));
+    globals.set_field(gc.allocate_string(B("next")), NativeFunction::new(next));
     globals.set_field(gc.allocate_string(B("print")), NativeFunction::new(print));
     globals.set_field(
         gc.allocate_string(B("rawequal")),
@@ -145,6 +146,29 @@ fn ipairs<'gc>(
     stack[0] = NativeFunction::new(iterate).into();
     stack[2] = 0.into();
     Ok(3)
+}
+
+fn next<'gc>(
+    gc: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
+
+    let table = stack.arg(0);
+    let table = table.borrow_as_table()?;
+    let index = stack.arg(1).get().unwrap_or_default();
+
+    if let Some((key, value)) = table.next(index)? {
+        stack[0] = key;
+        stack[1] = value;
+        Ok(2)
+    } else {
+        stack[0] = Value::Nil;
+        Ok(1)
+    }
 }
 
 fn print<'gc>(
