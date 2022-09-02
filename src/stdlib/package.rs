@@ -1,10 +1,12 @@
 use super::helpers::StackExt;
 use crate::{
-    gc::{root_gc, GcCell, GcContext},
+    gc::{root_gc, root_gc_cell, GcCell, GcContext},
     runtime::{ErrorKind, Vm},
     types::{LuaClosure, LuaThread, NativeFunction, StackWindow, Table, Value},
 };
 use bstr::{ByteSlice, B};
+
+const LUA_LOADED_TABLE: &[u8] = b"_LOADED";
 
 pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
     let globals = vm.globals();
@@ -14,11 +16,13 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
         NativeFunction::new(require),
     );
 
+    let loaded = gc.allocate_cell(Table::new());
+    vm.registry()
+        .borrow_mut(gc)
+        .set_field(gc.allocate_string(LUA_LOADED_TABLE), loaded);
+
     let mut package = Table::new();
-    package.set_field(
-        gc.allocate_string(B("loaded")),
-        gc.allocate_cell(Table::new()),
-    );
+    package.set_field(gc.allocate_string(B("loaded")), loaded);
     globals.set_field(gc.allocate_string(B("package")), gc.allocate_cell(package));
 }
 
@@ -35,19 +39,16 @@ fn require<'gc>(
     let module_name = module_name.to_string()?;
     let module_name = gc.allocate_string(module_name);
 
-    let package_key = gc.allocate_string(B("package"));
-    let package_table = vm.globals().borrow().get_field(package_key);
-    let package_table = package_table.borrow_as_table().unwrap();
+    let loaded = vm
+        .registry()
+        .borrow()
+        .get_field(gc.allocate_string(LUA_LOADED_TABLE))
+        .as_table()
+        .unwrap();
+    let value = loaded.borrow().get_field(module_name);
 
-    let loaded_key = gc.allocate_string(B("loaded"));
-    let loaded_table = package_table.get_field(loaded_key);
-    let maybe_loaded_value = loaded_table
-        .borrow_as_table()
-        .unwrap()
-        .get_field(module_name);
-
-    if !maybe_loaded_value.is_nil() {
-        stack[0] = maybe_loaded_value;
+    if !value.is_nil() {
+        stack[0] = value;
         return Ok(1);
     }
     drop(thread_ref);
@@ -64,6 +65,7 @@ fn require<'gc>(
         .upvalues
         .push(gc.allocate_cell(Value::Table(vm.globals()).into()));
 
+    root_gc_cell!(gc, loaded);
     root_gc!(gc, module_name.0);
     root_gc!(gc, lua_filename.0);
 
@@ -75,17 +77,12 @@ fn require<'gc>(
             &[module_name.into(), lua_filename.into()],
         )?
     };
-
     let value = if value.is_nil() {
         Value::Boolean(true)
     } else {
         value
     };
-
-    loaded_table
-        .borrow_as_table_mut(gc)
-        .unwrap()
-        .set_field(module_name, value);
+    loaded.borrow_mut(gc).set_field(module_name, value);
 
     let mut thread_ref = thread.borrow_mut(gc);
     let stack = thread_ref.stack_mut(window);
