@@ -48,6 +48,7 @@ types! {
     Table => "table",
     Function => "function",
     UserData => "userdata",
+    Thread => "thread",
 }
 
 impl Display for Type {
@@ -71,6 +72,7 @@ pub enum Value<'gc> {
     LuaClosure(Gc<'gc, LuaClosure<'gc>>),
     NativeClosure(Gc<'gc, NativeClosure>),
     UserData(GcCell<'gc, UserData<'gc>>),
+    Thread(GcCell<'gc, LuaThread<'gc>>),
 }
 
 impl Default for Value<'_> {
@@ -133,6 +135,12 @@ impl<'gc> From<GcCell<'gc, UserData<'gc>>> for Value<'gc> {
     }
 }
 
+impl<'gc> From<GcCell<'gc, LuaThread<'gc>>> for Value<'gc> {
+    fn from(x: GcCell<'gc, LuaThread<'gc>>) -> Self {
+        Self::Thread(x)
+    }
+}
+
 impl PartialEq for Value<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -148,6 +156,7 @@ impl PartialEq for Value<'_> {
             (Self::LuaClosure(lhs), Self::LuaClosure(rhs)) => Gc::ptr_eq(lhs, rhs),
             (Self::NativeClosure(lhs), Self::NativeClosure(rhs)) => Gc::ptr_eq(lhs, rhs),
             (Self::UserData(lhs), Self::UserData(rhs)) => GcCell::ptr_eq(lhs, rhs),
+            (Self::Thread(lhs), Self::Thread(rhs)) => GcCell::ptr_eq(lhs, rhs),
             _ => false,
         }
     }
@@ -169,6 +178,7 @@ impl std::hash::Hash for Value<'_> {
             Self::LuaClosure(x) => x.as_ptr().hash(state),
             Self::NativeClosure(x) => x.as_ptr().hash(state),
             Self::UserData(x) => x.as_ptr().hash(state),
+            Self::Thread(x) => x.as_ptr().hash(state),
         }
     }
 }
@@ -181,6 +191,7 @@ unsafe impl GarbageCollect for Value<'_> {
             Self::LuaClosure(x) => x.trace(tracer),
             Self::NativeClosure(x) => x.trace(tracer),
             Self::UserData(x) => x.trace(tracer),
+            Self::Thread(x) => x.trace(tracer),
             _ => (),
         }
     }
@@ -205,6 +216,9 @@ impl<'gc> Value<'gc> {
             Self::UserData(x) => {
                 write!(f, "userdata: {:?}", x.as_ptr())
             }
+            Self::Thread(x) => {
+                write!(f, "thread: {:?}", x.as_ptr())
+            }
         }
     }
 
@@ -219,6 +233,7 @@ impl<'gc> Value<'gc> {
                 Type::Function
             }
             Self::UserData(_) => Type::UserData,
+            Self::Thread(_) => Type::Thread,
         }
     }
 

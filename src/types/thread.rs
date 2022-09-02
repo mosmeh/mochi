@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, ops::Range};
 #[derive(Clone)]
 pub struct StackWindow(pub(crate) Range<usize>);
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct LuaThread<'gc> {
     pub(crate) stack: Vec<Value<'gc>>,
     pub(crate) frames: Vec<Frame>,

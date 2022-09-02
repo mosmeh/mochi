@@ -13,9 +13,7 @@ pub(crate) use tag_method::TagMethod;
 
 use crate::{
     gc::{GarbageCollect, GcCell, GcContext, GcHeap, Tracer},
-    types::{
-        Integer, LuaClosureProto, LuaString, LuaThread, StackWindow, Table, Type, Upvalue, Value,
-    },
+    types::{LuaClosureProto, LuaString, LuaThread, StackWindow, Table, Type, Upvalue, Value},
     LuaClosure,
 };
 use std::{num::NonZeroUsize, ops::Range};
@@ -134,14 +132,12 @@ unsafe impl GarbageCollect for Vm<'_> {
 
 impl<'gc> Vm<'gc> {
     pub(crate) fn new(gc: &'gc GcContext) -> Self {
-        let mut registry = Table::new();
-        const LUA_RIDX_GLOBALS: Integer = 2;
+        let main_thread = gc.allocate_cell(LuaThread::new());
         let globals = gc.allocate_cell(Table::new());
-        registry.set(LUA_RIDX_GLOBALS, globals).unwrap();
-
+        let registry = Table::from(vec![main_thread.into(), globals.into()]);
         Self {
             registry: gc.allocate_cell(registry),
-            main_thread: gc.allocate_cell(LuaThread::new()),
+            main_thread,
             globals,
             tag_method_names: TagMethod::allocate_names(gc),
             metatables: gc.allocate_cell(Default::default()),

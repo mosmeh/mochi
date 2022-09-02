@@ -1,7 +1,7 @@
 use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Table, Value};
 use crate::{
     gc::{Gc, GcCell},
-    types::{LuaClosure, UserData},
+    types::{LuaClosure, LuaThread, UserData},
 };
 
 // for tighter packing,
@@ -92,6 +92,7 @@ enum Tag {
     LuaClosure,
     NativeClosure,
     UserData,
+    Thread,
 }
 
 impl Default for Tag {
@@ -111,6 +112,7 @@ union Payload<'gc> {
     lua_closure: Gc<'gc, LuaClosure<'gc>>,
     native_closure: Gc<'gc, NativeClosure>,
     user_data: GcCell<'gc, UserData<'gc>>,
+    thread: GcCell<'gc, LuaThread<'gc>>,
 }
 
 impl Default for Payload<'_> {
@@ -132,6 +134,7 @@ impl<'gc> Value<'gc> {
             Tag::LuaClosure => Self::LuaClosure(payload.lua_closure),
             Tag::NativeClosure => Self::NativeClosure(payload.native_closure),
             Tag::UserData => Self::UserData(payload.user_data),
+            Tag::Thread => Self::Thread(payload.thread),
         }
     }
 
@@ -149,6 +152,7 @@ impl<'gc> Value<'gc> {
                 tag == Tag::NativeClosure && Gc::ptr_eq(n, &payload.native_closure)
             }
             Value::UserData(u) => tag == Tag::UserData && GcCell::ptr_eq(u, &payload.user_data),
+            Value::Thread(t) => tag == Tag::Thread && GcCell::ptr_eq(t, &payload.thread),
         }
     }
 
@@ -164,6 +168,7 @@ impl<'gc> Value<'gc> {
             Self::LuaClosure(lua_closure) => (Tag::LuaClosure, Payload { lua_closure }),
             Self::NativeClosure(native_closure) => (Tag::NativeClosure, Payload { native_closure }),
             Self::UserData(user_data) => (Tag::UserData, Payload { user_data }),
+            Self::Thread(thread) => (Tag::Thread, Payload { thread }),
         }
     }
 }
