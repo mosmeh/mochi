@@ -16,7 +16,7 @@ use crate::{
     types::{
         Integer, LuaClosureProto, LuaString, LuaThread, StackWindow, Table, Type, Upvalue, Value,
     },
-    Error, LuaClosure,
+    LuaClosure,
 };
 use std::{num::NonZeroUsize, ops::Range};
 
@@ -38,14 +38,20 @@ impl Runtime {
         self.heap
     }
 
-    pub fn execute<F>(&mut self, f: F) -> Result<(), Error>
+    pub fn execute<F>(
+        &mut self,
+        f: F,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
     where
         F: for<'gc> FnOnce(
             &'gc GcContext,
             GcCell<'gc, Vm<'gc>>,
-        ) -> Result<LuaClosureProto<'gc>, Error>,
+        ) -> Result<
+            LuaClosureProto<'gc>,
+            Box<dyn std::error::Error + Send + Sync + 'static>,
+        >,
     {
-        self.heap.with(|gc, vm| -> Result<(), Error> {
+        self.heap.with(|gc, vm| {
             let proto = f(gc, vm)?;
             let closure = gc.allocate(proto).into();
             vm.borrow().execute_main(gc, closure)?;

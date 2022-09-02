@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Error, Result};
 use bstr::{ByteSlice, ByteVec, B};
 use clap::{Parser, Subcommand};
 use mochi_lua::{
@@ -81,7 +81,9 @@ fn main() -> Result<()> {
     });
 
     if let Some(script) = args.script {
-        runtime.execute(|gc, _| mochi_lua::load_file(gc, script))?;
+        runtime
+            .execute(|gc, _| mochi_lua::load_file(gc, script).map_err(Into::into))
+            .map_err(Error::msg)?;
 
         if !args.interactive {
             return Ok(());
@@ -105,14 +107,15 @@ fn main() -> Result<()> {
 
 fn evaluate(runtime: &mut Runtime, line: &str) -> Result<()> {
     const SOURCE: &str = "stdin";
-    runtime.execute(|gc, _| {
-        if let Ok(proto) = mochi_lua::load(gc, format!("print({})", line), SOURCE) {
-            Ok(proto)
-        } else {
-            mochi_lua::load(gc, line, SOURCE)
-        }
-    })?;
-    Ok(())
+    runtime
+        .execute(|gc, _| {
+            if let Ok(proto) = mochi_lua::load(gc, format!("print({})", line), SOURCE) {
+                Ok(proto)
+            } else {
+                mochi_lua::load(gc, line, SOURCE).map_err(Into::into)
+            }
+        })
+        .map_err(Error::msg)
 }
 
 impl CompileCommand {
