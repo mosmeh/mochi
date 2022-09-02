@@ -1,13 +1,22 @@
 mod bucket;
 
 use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Value};
-use crate::{
-    gc::{GarbageCollect, GcCell, Tracer},
-    runtime::ErrorKind,
-};
+use crate::gc::{GarbageCollect, GcCell, Tracer};
 use bucket::Bucket;
 use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
+
+#[derive(Debug, thiserror::Error)]
+pub enum TableError {
+    #[error("table index is nil")]
+    IndexIsNil,
+
+    #[error("table index is NaN")]
+    IndexIsNaN,
+
+    #[error("invalid key to 'next'")]
+    InvalidKeyToNext,
+}
 
 #[derive(Clone, Default)]
 pub struct Table<'gc> {
@@ -94,27 +103,31 @@ impl<'gc> Table<'gc> {
         self.get_hashtable_key(field.into())
     }
 
-    pub fn set<K, V>(&mut self, key: K, value: V)
+    pub fn set<K, V>(&mut self, key: K, value: V) -> Result<(), TableError>
     where
         K: Into<Value<'gc>>,
         V: Into<Value<'gc>>,
     {
-        let key = key.into();
         let value = value.into();
-
-        let key = if let Some(i) = key.to_integer_without_string_coercion() {
-            if i >= 1 {
-                if let Some(slot) = self.array.get_mut((i - 1) as usize) {
-                    *slot = value;
-                    return;
+        let key = match key.into() {
+            Value::Nil => return Err(TableError::IndexIsNil),
+            Value::Number(x) if x.is_nan() => return Err(TableError::IndexIsNaN),
+            key => {
+                if let Some(i) = key.to_integer_without_string_coercion() {
+                    if i >= 1 {
+                        if let Some(slot) = self.array.get_mut((i - 1) as usize) {
+                            *slot = value;
+                            return Ok(());
+                        }
+                    }
+                    Value::Integer(i)
+                } else {
+                    key
                 }
             }
-            Value::Integer(i)
-        } else {
-            key
         };
-
         self.set_hashtable_key(key, value);
+        Ok(())
     }
 
     pub fn set_field<V>(&mut self, field: LuaString<'gc>, value: V)
@@ -173,7 +186,7 @@ impl<'gc> Table<'gc> {
         i
     }
 
-    pub fn next(&self, key: Value<'gc>) -> Result<Option<(Value<'gc>, Value<'gc>)>, ErrorKind> {
+    pub fn next(&self, key: Value<'gc>) -> Result<Option<(Value<'gc>, Value<'gc>)>, TableError> {
         let next_array_index = match key {
             Value::Nil => Some(0),
             Value::Integer(i) if 1 <= i && i as usize <= self.array.len() => Some(i as usize),
@@ -189,7 +202,7 @@ impl<'gc> Table<'gc> {
         } else if let Some(index) = self.find_bucket(key) {
             index + 1
         } else {
-            return Err(ErrorKind::ExplicitError("invalid key to 'next'".to_owned()));
+            return Err(TableError::InvalidKeyToNext);
         };
         if let Some(bucket) = self.buckets[next_bucket_index..]
             .iter()
@@ -221,7 +234,7 @@ impl<'gc> Table<'gc> {
     unsafe fn set_new_hashtable_key(&mut self, key: Value<'gc>, value: Value<'gc>) {
         if self.buckets.is_empty() {
             self.rehash(key);
-            self.set(key, value);
+            self.set(key, value).unwrap();
             return;
         }
 
@@ -231,7 +244,7 @@ impl<'gc> Table<'gc> {
                 free_index
             } else {
                 self.rehash(key);
-                self.set(key, value);
+                self.set(key, value).unwrap();
                 return;
             };
 
@@ -421,7 +434,7 @@ impl<'gc> Table<'gc> {
         if new_array_len < self.array.len() {
             let excess_items = self.array.split_off(new_array_len);
             for (i, x) in excess_items.into_iter().enumerate() {
-                self.set((new_array_len + 1 + i) as Integer, x);
+                self.set((new_array_len + 1 + i) as Integer, x).unwrap();
             }
         } else {
             self.array.resize(new_array_len, Default::default());
@@ -439,7 +452,7 @@ impl<'gc> Table<'gc> {
                     }
                 }
             }
-            self.set(key, value);
+            self.set(key, value).unwrap();
         }
     }
 }

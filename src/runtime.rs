@@ -137,7 +137,7 @@ impl<'gc> Vm<'gc> {
         let mut registry = Table::new();
         const LUA_RIDX_GLOBALS: Integer = 2;
         let globals = gc.allocate_cell(Table::new());
-        registry.set(LUA_RIDX_GLOBALS, globals);
+        registry.set(LUA_RIDX_GLOBALS, globals).unwrap();
 
         Self {
             registry: gc.allocate_cell(registry),

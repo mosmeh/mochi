@@ -67,7 +67,7 @@ fn insert<'gc>(
     let len = table.lua_len();
 
     match stack.args().len() {
-        2 => table.set(len + 1, stack.args()[1]),
+        2 => table.set(len + 1, stack.args()[1])?,
         3 => {
             let pos = stack.arg(1).to_integer()?;
             if pos > len + 1 {
@@ -78,9 +78,9 @@ fn insert<'gc>(
             }
             for i in (1..=len).rev() {
                 let value = table.get(i);
-                table.set(i + 1, value);
+                table.set(i + 1, value)?;
             }
-            table.set(pos, stack.args()[2]);
+            table.set(pos, stack.args()[2])?;
         }
         _ => {
             return Err(ErrorKind::ExplicitError(
@@ -129,9 +129,9 @@ fn remove<'gc>(
     stack[0] = table.get(pos);
     for i in pos..len {
         let value = table.get(i + 1);
-        table.set(i, value);
+        table.set(i, value)?;
     }
-    table.set(len, Value::Nil);
+    table.set(len, Value::Nil)?;
     Ok(1)
 }
 

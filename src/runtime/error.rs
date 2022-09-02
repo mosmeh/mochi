@@ -1,4 +1,4 @@
-use crate::types::{LineRange, Type, Value};
+use crate::types::{LineRange, TableError, Type, Value};
 use std::fmt::Display;
 
 #[derive(Debug)]
@@ -56,6 +56,9 @@ pub enum ErrorKind {
         expected_type: &'static str,
         got_type: Option<&'static str>,
     },
+
+    #[error(transparent)]
+    Table(#[from] TableError),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),

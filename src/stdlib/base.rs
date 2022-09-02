@@ -252,7 +252,7 @@ fn rawset<'gc>(
     let index = stack.arg(1).to_value()?;
     let value = stack.arg(2).to_value()?;
 
-    table.borrow_as_table_mut(gc)?.set(index, value);
+    table.borrow_as_table_mut(gc)?.set(index, value)?;
 
     stack[0] = table.to_value()?;
     Ok(1)

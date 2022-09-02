@@ -176,7 +176,7 @@ impl<'gc> Vm<'gc> {
                     } else {
                         state.stack[c]
                     };
-                    table.set(rb, rkc);
+                    table.set(rb, rkc)?;
                 }
                 OpCode::SetI => {
                     let ra = state.stack[insn.a()];
@@ -193,7 +193,7 @@ impl<'gc> Vm<'gc> {
                     } else {
                         state.stack[c]
                     };
-                    table.set(b, rkc);
+                    table.set(b, rkc)?;
                 }
                 OpCode::SetField => {
                     let ra = state.stack[insn.a()];
@@ -685,7 +685,7 @@ impl<'gc> Vm<'gc> {
                         table.resize_array(new_array_len);
                     }
                     for (i, x) in state.stack[a + 1..=a + n].iter().cloned().enumerate() {
-                        table.set((offset + i + 1) as Integer, x);
+                        table.set((offset + i + 1) as Integer, x)?;
                     }
                 }
                 OpCode::Closure => {

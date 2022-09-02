@@ -63,22 +63,24 @@ fn main() -> Result<()> {
     }
 
     let mut runtime = Runtime::new();
-    runtime.heap().with(|gc, vm| {
+    runtime.heap().with(|gc, vm| -> Result<()> {
         let vm = vm.borrow();
         vm.load_stdlib(gc);
 
         let mut arg = Table::new();
         if let Some(script) = &args.script {
             let script = Vec::from_path_lossy(script);
-            arg.set(0, gc.allocate_string(script));
+            arg.set(0, gc.allocate_string(script))?;
         }
         for (i, x) in args.args.into_iter().enumerate() {
-            arg.set((i + 1) as Integer, gc.allocate_string(x.into_bytes()));
+            arg.set((i + 1) as Integer, gc.allocate_string(x.into_bytes()))?;
         }
         vm.globals()
             .borrow_mut(gc)
             .set_field(gc.allocate_string(B("arg")), gc.allocate_cell(arg));
-    });
+
+        Ok(())
+    })?;
 
     if let Some(script) = args.script {
         runtime

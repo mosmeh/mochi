@@ -8,7 +8,7 @@ pub use function::{
     NativeFunctionPtr, RegisterIndex, Upvalue, UpvalueDescription, UpvalueIndex,
 };
 pub use string::LuaString;
-pub use table::Table;
+pub use table::{Table, TableError};
 pub use thread::{LuaThread, StackWindow};
 
 use crate::gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer};
