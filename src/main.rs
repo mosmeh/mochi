@@ -110,7 +110,7 @@ fn evaluate(runtime: &mut Runtime, line: &str) -> Result<()> {
         if let Ok(proto) = mochi_lua::load(gc, format!("print({})", line), SOURCE) {
             Ok(proto)
         } else {
-            mochi_lua::load(gc, &line, SOURCE)
+            mochi_lua::load(gc, line, SOURCE)
         }
     })?;
     Ok(())
