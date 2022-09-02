@@ -87,16 +87,11 @@ impl<'gc> Table<'gc> {
         } else {
             key
         };
-
-        self.find_bucket(key)
-            .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
-            .unwrap_or_default()
+        self.get_hashtable_key(key)
     }
 
     pub fn get_field(&self, field: LuaString<'gc>) -> Value<'gc> {
-        self.find_bucket(field.into())
-            .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
-            .unwrap_or_default()
+        self.get_hashtable_key(field.into())
     }
 
     pub fn set<K, V>(&mut self, key: K, value: V)
@@ -119,33 +114,14 @@ impl<'gc> Table<'gc> {
             key
         };
 
-        if let Some(index) = self.find_bucket(key) {
-            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
-            return;
-        }
-        if value.is_nil() {
-            return;
-        }
-
-        unsafe { self.set_new_hashtable_key(key, value) };
+        self.set_hashtable_key(key, value);
     }
 
     pub fn set_field<V>(&mut self, field: LuaString<'gc>, value: V)
     where
         V: Into<Value<'gc>>,
     {
-        let key = Value::String(field);
-        let value = value.into();
-
-        if let Some(index) = self.find_bucket(key) {
-            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
-            return;
-        }
-        if value.is_nil() {
-            return;
-        }
-
-        unsafe { self.set_new_hashtable_key(key, value) };
+        self.set_hashtable_key(Value::String(field), value.into());
     }
 
     pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
@@ -223,6 +199,23 @@ impl<'gc> Table<'gc> {
             return Ok(Some((bucket.key(), bucket.value())));
         }
         Ok(None)
+    }
+
+    fn get_hashtable_key(&self, key: Value<'gc>) -> Value<'gc> {
+        self.find_bucket(key)
+            .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
+            .unwrap_or_default()
+    }
+
+    fn set_hashtable_key(&mut self, key: Value<'gc>, value: Value<'gc>) {
+        if let Some(index) = self.find_bucket(key) {
+            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
+            return;
+        }
+        if value.is_nil() {
+            return;
+        }
+        unsafe { self.set_new_hashtable_key(key, value) };
     }
 
     unsafe fn set_new_hashtable_key(&mut self, key: Value<'gc>, value: Value<'gc>) {
