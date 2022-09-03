@@ -146,6 +146,8 @@ fn ipairs<'gc>(
     }
 
     let mut thread = thread.borrow_mut(gc);
+    thread.stack(window.clone()).arg(0).to_value()?;
+
     let window = thread.ensure_stack(window, 3);
     let stack = thread.stack_mut(window);
     stack[0] = NativeFunction::new(iterate).into();
