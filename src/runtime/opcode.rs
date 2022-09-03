@@ -8,7 +8,7 @@ macro_rules! impl_from_u8 {
 
         impl From<u8> for $name {
             fn from(i: u8) -> Self {
-                const OPCODES: [OpCode; crate::count!($($variant)*)] = [$($name::$variant,)*];
+                const OPCODES: [$name; crate::count!($($variant)*)] = [$($name::$variant,)*];
                 OPCODES[i as usize]
             }
         }

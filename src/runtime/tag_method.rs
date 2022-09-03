@@ -12,7 +12,7 @@ macro_rules! tag_methods {
         impl TagMethod {
             pub const COUNT: usize = crate::count!($($variant)*);
 
-            pub fn allocate_names(gc: &GcContext) -> [LuaString; TagMethod::COUNT] {
+            pub fn allocate_names(gc: &GcContext) -> [LuaString; Self::COUNT] {
                 [
                     $(gc.allocate_string(B($name)),)*
                 ]
