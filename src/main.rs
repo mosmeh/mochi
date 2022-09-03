@@ -108,7 +108,7 @@ fn main() -> Result<()> {
 }
 
 fn evaluate(runtime: &mut Runtime, line: &str) -> Result<()> {
-    const SOURCE: &str = "stdin";
+    const SOURCE: &str = "=stdin";
     runtime
         .execute(|gc, _| {
             if let Ok(proto) = mochi_lua::load(gc, format!("print({})", line), SOURCE) {

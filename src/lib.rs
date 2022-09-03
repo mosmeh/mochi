@@ -81,7 +81,8 @@ pub fn load_file<P: AsRef<Path>>(gc: &GcContext, path: P) -> Result<LuaClosurePr
     let mut reader = BufReader::new(File::open(&path)?);
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes)?;
-    let source = Vec::from_path_lossy(path.as_ref());
+    let mut source = b"@".to_vec();
+    source.extend_from_slice(&Vec::from_path_lossy(path.as_ref()));
     load(gc, bytes, source)
 }
 
