@@ -16,7 +16,6 @@ use crate::{
     types::{LuaClosureProto, LuaString, LuaThread, StackWindow, Table, Type, Upvalue, Value},
     LuaClosure,
 };
-use std::{num::NonZeroUsize, ops::Range};
 
 #[derive(Default)]
 pub struct Runtime {
@@ -262,59 +261,25 @@ impl<'gc> Vm<'gc> {
         gc: &'gc GcContext,
         thread: GcCell<'gc, LuaThread<'gc>>,
         callee: Value,
-        stack_range: Range<usize>,
-        window_len: Option<NonZeroUsize>,
+        bottom: usize,
     ) -> Result<(), ErrorKind> {
         match callee {
+            Value::LuaClosure(_) => thread.borrow_mut(gc).frames.push(Frame::new(bottom)),
             Value::NativeFunction(func) => {
-                self.call_native(gc, thread, func.0, stack_range, window_len)
-            }
-            Value::LuaClosure(_) => {
-                let mut thread_ref = thread.borrow_mut(gc);
-                if let Some(window_len) = window_len {
-                    thread_ref
-                        .stack
-                        .truncate(stack_range.start + window_len.get());
-                }
-                thread_ref.frames.push(Frame::new(stack_range.start));
-                Ok(())
+                let num_results = func.0(gc, self, thread, StackWindow { bottom })?;
+                thread.borrow_mut(gc).stack.truncate(bottom + num_results);
             }
             Value::NativeClosure(closure) => {
-                self.call_native(gc, thread, &closure.0, stack_range, window_len)
+                let num_results = closure.0(gc, self, thread, StackWindow { bottom })?;
+                thread.borrow_mut(gc).stack.truncate(bottom + num_results);
             }
-            value => Err(ErrorKind::TypeError {
-                operation: Operation::Call,
-                ty: value.ty(),
-            }),
+            value => {
+                return Err(ErrorKind::TypeError {
+                    operation: Operation::Call,
+                    ty: value.ty(),
+                })
+            }
         }
-    }
-
-    fn call_native<F>(
-        &self,
-        gc: &'gc GcContext,
-        thread: GcCell<'gc, LuaThread<'gc>>,
-        callee: F,
-        stack_range: Range<usize>,
-        window_len: Option<NonZeroUsize>,
-    ) -> Result<(), ErrorKind>
-    where
-        F: for<'a> Fn(
-            &'a GcContext,
-            &Vm<'a>,
-            GcCell<'a, LuaThread<'a>>,
-            StackWindow,
-        ) -> Result<usize, ErrorKind>,
-    {
-        let range = if let Some(window_len) = window_len {
-            stack_range.start..stack_range.start + window_len.get() // fixed number of args
-        } else {
-            stack_range.clone() // variable number of args
-        };
-        let num_results = callee(gc, self, thread, StackWindow(range))?;
-        thread
-            .borrow_mut(gc)
-            .stack
-            .truncate(stack_range.start + num_results);
         Ok(())
     }
 

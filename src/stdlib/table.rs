@@ -25,7 +25,7 @@ fn concat<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
 
     let table = stack.arg(0);
     let table = table.borrow_as_table()?;
@@ -60,7 +60,7 @@ fn insert<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let thread = thread.borrow();
-    let stack = thread.stack(window);
+    let stack = thread.stack(&window);
 
     let table = stack.arg(0);
     let mut table = table.borrow_as_table_mut(gc)?;
@@ -98,7 +98,7 @@ fn pack<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let mut table = Table::from(stack.args().to_vec());
     table.set_field(gc.allocate_string(B("n")), stack.args().len() as Integer);
     stack[0] = gc.allocate_cell(table).into();
@@ -112,7 +112,7 @@ fn remove<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
 
     let table = stack.arg(0);
     let mut table = table.borrow_as_table_mut(gc)?;
@@ -139,18 +139,18 @@ fn unpack<'gc>(
     gc: &'gc GcContext,
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    mut window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack(window.clone());
+    let stack = thread.stack(&window);
     let table = stack.arg(0);
     let table = table.borrow_as_table()?;
     let start = stack.arg(1).to_integer_or(1)?;
     let end = stack.arg(2).to_integer_or_else(|| table.lua_len())?;
 
     let n = (end - start + 1) as usize;
-    let window = thread.ensure_stack(window, n);
-    for (dest, src) in thread.stack_mut(window).iter_mut().zip(start..=end) {
+    thread.ensure_stack(&mut window, n);
+    for (dest, src) in thread.stack_mut(&window).iter_mut().zip(start..=end) {
         *dest = table.get(src);
     }
     Ok(n)

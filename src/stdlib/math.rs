@@ -45,7 +45,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
             gc.allocate_string(B("random")),
             gc.allocate(NativeClosure::new(move |gc, _, thread, window| {
                 let mut thread = thread.borrow_mut(gc);
-                let stack = thread.stack_mut(window);
+                let stack = thread.stack_mut(&window);
                 let mut rng = rng.borrow_mut();
                 stack[0] = match stack.args().len() {
                     0 => rng.gen::<Number>().into(),
@@ -74,9 +74,9 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
     }
     table.set_field(
         gc.allocate_string(B("randomseed")),
-        gc.allocate(NativeClosure::new(move |gc, _, thread, window| {
+        gc.allocate(NativeClosure::new(move |gc, _, thread, mut window| {
             let mut thread = thread.borrow_mut(gc);
-            let stack = thread.stack(window.clone());
+            let stack = thread.stack(&window);
             let (x, y) = if stack.args().is_empty() {
                 (seed1(), seed2)
             } else {
@@ -86,8 +86,8 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
             };
             *rng.borrow_mut() = rng_from_seeds(x, y);
 
-            let window = thread.ensure_stack(window, 2);
-            let stack = thread.stack_mut(window);
+            thread.ensure_stack(&mut window, 2);
+            let stack = thread.stack_mut(&window);
             stack[0] = x.into();
             stack[1] = y.into();
             Ok(2)
@@ -115,7 +115,7 @@ fn abs<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let arg = stack.arg(0);
     stack[0] = if let Some(Value::Integer(x)) = arg.get() {
         x.abs().into()
@@ -132,7 +132,7 @@ fn acos<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.acos().into();
     Ok(1)
 }
@@ -144,7 +144,7 @@ fn asin<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.asin().into();
     Ok(1)
 }
@@ -156,7 +156,7 @@ fn atan<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let y = stack.arg(0).to_number()?;
     let x = stack.arg(1);
     let result = if x.get().is_some() {
@@ -175,7 +175,7 @@ fn ceil<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let arg = stack.arg(0);
     stack[0] = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
@@ -193,7 +193,7 @@ fn cos<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.cos().into();
     Ok(1)
 }
@@ -205,7 +205,7 @@ fn deg<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.to_degrees().into();
     Ok(1)
 }
@@ -217,7 +217,7 @@ fn exp<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.exp().into();
     Ok(1)
 }
@@ -229,7 +229,7 @@ fn floor<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let arg = stack.arg(0);
     stack[0] = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
@@ -247,7 +247,7 @@ fn fmod<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let x = stack.arg(0);
     let y = stack.arg(1);
     let result = if let (Value::Integer(x), Value::Integer(y)) = (x.to_value()?, y.to_value()?) {
@@ -272,7 +272,7 @@ fn log<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let x = stack.arg(0).to_number()?;
     let base = stack.arg(1);
     let result = if base.get().is_some() {
@@ -291,7 +291,7 @@ fn modf<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let x = stack.arg(0);
     let (trunc, fract) = if let Value::Integer(x) = x.to_value()? {
         (x.into(), 0.0.into())
@@ -311,7 +311,7 @@ fn rad<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.to_radians().into();
     Ok(1)
 }
@@ -359,7 +359,7 @@ fn sin<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.sin().into();
     Ok(1)
 }
@@ -371,7 +371,7 @@ fn sqrt<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.sqrt().into();
     Ok(1)
 }
@@ -383,7 +383,7 @@ fn tan<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.tan().into();
     Ok(1)
 }
@@ -395,7 +395,7 @@ fn tointeger<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack
         .arg(0)
         .to_value()?
@@ -412,7 +412,7 @@ fn ty<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let result = match stack.arg(0).to_value()? {
         Value::Integer(_) => gc.allocate_string(B("integer")).into(),
         Value::Number(_) => gc.allocate_string(B("float")).into(),
@@ -429,7 +429,7 @@ fn ult<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let m = stack.arg(0).to_integer()?;
     let n = stack.arg(1).to_integer()?;
     stack[0] = ((m as u64) < (n as u64)).into();

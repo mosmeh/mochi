@@ -25,7 +25,7 @@ fn clock<'gc>(
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
-    thread.borrow_mut(gc).stack_mut(window)[0] = cpu_time::ProcessTime::now()
+    thread.borrow_mut(gc).stack_mut(&window)[0] = cpu_time::ProcessTime::now()
         .as_duration()
         .as_secs_f64()
         .into();
@@ -39,7 +39,7 @@ fn difftime<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = (stack.arg(0).to_number()? - stack.arg(1).to_number()?).into();
     Ok(1)
 }
@@ -51,7 +51,7 @@ fn getenv<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = stack
         .arg(0)
         .to_string()?

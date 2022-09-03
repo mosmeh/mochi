@@ -6,7 +6,6 @@ use crate::{
 };
 use std::{
     cmp::PartialOrd,
-    num::NonZeroUsize,
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub},
 };
 
@@ -511,18 +510,18 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::Call => {
                     let a = insn.a();
+                    let b = insn.b();
                     let callee = state.stack[a];
 
                     thread_ref.current_frame().pc = state.pc;
+                    thread_ref.stack.truncate(if b > 0 {
+                        saved_current_frame.base + a + b
+                    } else {
+                        saved_stack_top
+                    });
                     drop(thread_ref);
 
-                    return self.call_value(
-                        gc,
-                        thread,
-                        callee,
-                        saved_current_frame.base + a..saved_stack_top,
-                        NonZeroUsize::new(insn.b()),
-                    );
+                    return self.call_value(gc, thread, callee, saved_current_frame.base + a);
                 }
                 OpCode::TailCall => {
                     let a = insn.a();
@@ -541,18 +540,16 @@ impl<'gc> Vm<'gc> {
                             ..saved_current_frame.base + a + num_results + 1,
                         saved_current_frame.bottom,
                     );
-                    let new_stack_len = saved_current_frame.bottom + num_results + 1;
-                    thread_ref.stack.truncate(new_stack_len);
+                    thread_ref
+                        .stack
+                        .truncate(saved_current_frame.bottom + num_results + 1);
+                    if b > 0 {
+                        thread_ref.stack.truncate(saved_current_frame.bottom + b);
+                    }
                     thread_ref.frames.pop().unwrap();
                     drop(thread_ref);
 
-                    return self.call_value(
-                        gc,
-                        thread,
-                        callee,
-                        saved_current_frame.bottom..new_stack_len,
-                        NonZeroUsize::new(insn.b()),
-                    );
+                    return self.call_value(gc, thread, callee, saved_current_frame.bottom);
                 }
                 OpCode::Return => {
                     if insn.k() {
@@ -634,22 +631,13 @@ impl<'gc> Vm<'gc> {
 
                     let arg_base = saved_current_frame.base + a;
                     let new_bottom = arg_base + 4;
-                    let new_stack_len = new_bottom + 3;
-                    if thread_ref.stack.len() < new_stack_len {
-                        thread_ref.stack.resize(new_stack_len, Value::Nil);
-                    }
+                    thread_ref.stack.resize(new_bottom + 3, Value::Nil);
                     thread_ref
                         .stack
                         .copy_within(arg_base..arg_base + 3, new_bottom);
                     drop(thread_ref);
 
-                    return self.call_value(
-                        gc,
-                        thread,
-                        callee,
-                        new_bottom..new_stack_len,
-                        NonZeroUsize::new(3),
-                    );
+                    return self.call_value(gc, thread, callee, new_bottom);
                 }
                 OpCode::TForLoop => {
                     let a = insn.a();

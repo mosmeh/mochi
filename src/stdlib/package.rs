@@ -33,7 +33,7 @@ fn require<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread_ref = thread.borrow_mut(gc);
-    let stack = thread_ref.stack_mut(window.clone());
+    let stack = thread_ref.stack_mut(&window);
 
     let module_name = stack.arg(0);
     let module_name = module_name.to_string()?;
@@ -85,7 +85,7 @@ fn require<'gc>(
     loaded.borrow_mut(gc).set_field(module_name, value);
 
     let mut thread_ref = thread.borrow_mut(gc);
-    let stack = thread_ref.stack_mut(window);
+    let stack = thread_ref.stack_mut(&window);
     stack[0] = value;
     stack[1] = lua_filename.into();
     Ok(2)

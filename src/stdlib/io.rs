@@ -33,7 +33,7 @@ fn write<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let thread = thread.borrow();
-    let stack = thread.stack(window);
+    let stack = thread.stack(&window);
     let mut stdout = std::io::stdout().lock();
     for i in 0..stack.args().len() {
         stdout.write_all(stack.arg(i).to_string()?.as_ref())?;

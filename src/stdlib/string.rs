@@ -37,10 +37,10 @@ fn byte<'gc>(
     gc: &'gc GcContext,
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    mut window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack(window.clone());
+    let stack = thread.stack(&window);
 
     let s = stack.arg(0);
     let s = s.to_string()?;
@@ -50,8 +50,8 @@ fn byte<'gc>(
     let range = indices_to_range(i, j, s.len() as Integer);
 
     let num_results = range.len();
-    let window = thread.ensure_stack(window, num_results);
-    let stack = thread.stack_mut(window);
+    thread.ensure_stack(&mut window, num_results);
+    let stack = thread.stack_mut(&window);
     for (x, b) in stack.iter_mut().zip(s[range].iter()) {
         *x = (*b as Integer).into();
     }
@@ -65,7 +65,7 @@ fn char<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
 
     let len = stack.args().len();
     let mut bytes = Vec::with_capacity(len);
@@ -92,7 +92,7 @@ fn dump<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     match stack.arg(0).get() {
         Some(Value::LuaClosure(closure)) => {
             let mut binary = Vec::new();
@@ -118,7 +118,7 @@ fn len<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let len = stack.arg(0).to_string()?.len() as Integer;
     stack[0] = len.into();
     Ok(1)
@@ -131,7 +131,7 @@ fn lower<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let lower = stack.arg(0).to_string()?.to_ascii_lowercase();
     let lower = gc.allocate_string(lower);
     stack[0] = lower.into();
@@ -145,7 +145,7 @@ fn sub<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
 
     let s = stack.arg(0);
     let s = s.to_string()?;
@@ -165,7 +165,7 @@ fn rep<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
 
     let s = stack.arg(0);
     let s = s.to_string()?;
@@ -197,7 +197,7 @@ fn reverse<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let mut string = stack.arg(0).to_string()?.to_vec();
     string.reverse();
     stack[0] = gc.allocate_string(string).into();
@@ -211,7 +211,7 @@ fn upper<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let upper = stack.arg(0).to_string()?.to_ascii_uppercase();
     let upper = gc.allocate_string(upper);
     stack[0] = upper.into();

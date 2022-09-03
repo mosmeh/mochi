@@ -64,7 +64,7 @@ fn assert<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     if stack.arg(0).to_value()?.to_boolean() {
         stack.copy_within(1..stack.len(), 0);
         Ok(stack.args().len())
@@ -82,7 +82,7 @@ fn collectgarbage<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = match stack.arg(0).to_string()?.as_ref() {
         b"count" => ((gc.total_bytes() as Number) / 1024.0).into(),
         opt => todo!("{}", opt.as_bstr()),
@@ -97,7 +97,7 @@ fn error<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let thread = thread.borrow();
-    let stack = thread.stack(window);
+    let stack = thread.stack(&window);
     let error_obj = stack.arg(0).get().unwrap_or_default();
     Err(ErrorKind::from_error_object(error_obj))
 }
@@ -109,7 +109,7 @@ fn getmetatable<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let object = stack.arg(0).to_value()?;
     stack[0] = vm
         .metatable_of_object(object)
@@ -122,7 +122,7 @@ fn ipairs<'gc>(
     gc: &'gc GcContext,
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    mut window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     fn iterate<'gc>(
         gc: &'gc GcContext,
@@ -131,7 +131,7 @@ fn ipairs<'gc>(
         window: StackWindow,
     ) -> Result<usize, ErrorKind> {
         let mut thread = thread.borrow_mut(gc);
-        let stack = thread.stack_mut(window);
+        let stack = thread.stack_mut(&window);
         let i = stack.arg(1).to_integer()? + 1;
         let value = stack.arg(0).borrow_as_table()?.get(i);
 
@@ -146,10 +146,10 @@ fn ipairs<'gc>(
     }
 
     let mut thread = thread.borrow_mut(gc);
-    thread.stack(window.clone()).arg(0).to_value()?;
+    thread.stack(&window).arg(0).to_value()?;
 
-    let window = thread.ensure_stack(window, 3);
-    let stack = thread.stack_mut(window);
+    thread.ensure_stack(&mut window, 3);
+    let stack = thread.stack_mut(&window);
     stack[0] = NativeFunction::new(iterate).into();
     stack[2] = 0.into();
     Ok(3)
@@ -162,7 +162,7 @@ fn base_load<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
 
     let mode = stack.arg(2);
     let mode = mode.to_string_or(b"bt".to_vec())?;
@@ -204,7 +204,7 @@ fn next<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
 
     let table = stack.arg(0);
     let table = table.borrow_as_table()?;
@@ -224,13 +224,13 @@ fn pairs<'gc>(
     gc: &'gc GcContext,
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    mut window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    thread.stack(window.clone()).arg(0).to_value()?;
+    thread.stack(&window).arg(0).to_value()?;
 
-    let window = thread.ensure_stack(window, 3);
-    let stack = thread.stack_mut(window);
+    thread.ensure_stack(&mut window, 3);
+    let stack = thread.stack_mut(&window);
     stack[0] = NativeFunction::new(next).into();
     stack[2] = Value::Nil;
     Ok(3)
@@ -243,7 +243,7 @@ fn print<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let thread = thread.borrow();
-    let stack = thread.stack(window);
+    let stack = thread.stack(&window);
     let mut stdout = std::io::stdout().lock();
     if let Some((last, xs)) = stack.args().split_last() {
         for x in xs {
@@ -263,7 +263,7 @@ fn rawequal<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = (stack.arg(0).to_value()? == stack.arg(1).to_value()?).into();
     Ok(1)
 }
@@ -275,7 +275,7 @@ fn rawget<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let index = stack.arg(1).to_value()?;
     stack[0] = stack.arg(0).borrow_as_table()?.get(index);
     Ok(1)
@@ -288,7 +288,7 @@ fn rawlen<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let len = match stack.arg(0).get() {
         Some(Value::Table(t)) => t.borrow().lua_len(),
         Some(Value::String(s)) => s.len() as Integer,
@@ -311,7 +311,7 @@ fn rawset<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
 
     let table = stack.arg(0);
     let index = stack.arg(1).to_value()?;
@@ -330,7 +330,7 @@ fn select<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
 
     let num_args = stack.args().len() as Integer;
     let index = stack.arg(0);
@@ -364,7 +364,7 @@ fn setmetatable<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let table = {
         let table_arg = stack.arg(0);
         let mut table = table_arg.borrow_as_table_mut(gc)?;
@@ -393,7 +393,7 @@ fn tonumber<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     stack[0] = match stack.arg(0).to_value()? {
         Value::Integer(x) => Value::Integer(x),
         Value::Number(x) => Value::Number(x),
@@ -436,7 +436,7 @@ fn tostring<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let mut string = Vec::new();
     stack.arg(0).to_value()?.fmt_bytes(&mut string)?;
     stack[0] = gc.allocate_string(string).into();
@@ -450,7 +450,7 @@ fn ty<'gc>(
     window: StackWindow,
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(window);
+    let stack = thread.stack_mut(&window);
     let string = stack.arg(0).to_value()?.ty().name().as_bytes();
     stack[0] = gc.allocate_string(string).into();
     Ok(1)
