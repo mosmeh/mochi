@@ -270,10 +270,13 @@ impl<'gc> Vm<'gc> {
                 self.call_native(gc, thread, func.0, stack_range, window_len)
             }
             Value::LuaClosure(_) => {
-                thread
-                    .borrow_mut(gc)
-                    .frames
-                    .push(Frame::new(stack_range.start));
+                let mut thread_ref = thread.borrow_mut(gc);
+                if let Some(window_len) = window_len {
+                    thread_ref
+                        .stack
+                        .truncate(stack_range.start + window_len.get());
+                }
+                thread_ref.frames.push(Frame::new(stack_range.start));
                 Ok(())
             }
             Value::NativeClosure(closure) => {
