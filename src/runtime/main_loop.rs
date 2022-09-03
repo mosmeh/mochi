@@ -724,10 +724,10 @@ impl<'gc> Vm<'gc> {
 
                         let a = insn.a();
 
-                        let new_stack_len = saved_current_frame.base + a + num_wanted;
-                        if thread_ref.stack.len() < new_stack_len {
-                            thread_ref.stack.resize(new_stack_len, Value::Nil);
-                        }
+                        thread_ref
+                            .stack
+                            .resize(saved_current_frame.base + a + num_wanted, Value::Nil);
+
                         let extra_args_bottom =
                             saved_current_frame.base - 1 - saved_current_frame.num_extra_args;
                         let num_copied = num_wanted.min(saved_current_frame.num_extra_args);
