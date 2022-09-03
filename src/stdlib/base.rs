@@ -2,7 +2,7 @@ use super::helpers::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Integer, LuaThread, NativeFunction, Number, StackWindow, Value},
+    types::{Integer, LuaClosure, LuaThread, NativeFunction, Number, StackWindow, Value},
     LUA_VERSION,
 };
 use bstr::{ByteSlice, B};
@@ -23,6 +23,10 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
         NativeFunction::new(getmetatable),
     );
     globals.set_field(gc.allocate_string(B("ipairs")), NativeFunction::new(ipairs));
+    globals.set_field(
+        gc.allocate_string(B("load")),
+        NativeFunction::new(base_load),
+    );
     globals.set_field(gc.allocate_string(B("next")), NativeFunction::new(next));
     globals.set_field(gc.allocate_string(B("pairs")), NativeFunction::new(pairs));
     globals.set_field(gc.allocate_string(B("print")), NativeFunction::new(print));
@@ -147,6 +151,48 @@ fn ipairs<'gc>(
     stack[0] = NativeFunction::new(iterate).into();
     stack[2] = 0.into();
     Ok(3)
+}
+
+fn base_load<'gc>(
+    gc: &'gc GcContext,
+    vm: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(window);
+
+    let mode = stack.arg(2);
+    let mode = mode.to_string_or(b"bt".to_vec())?;
+    if mode.as_ref() != b"bt" {
+        todo!("mode != \"bt\"")
+    }
+
+    let proto = if let Some(Value::String(bytes)) = stack.arg(0).get() {
+        let chunk_name = stack.arg(1);
+        let chunk_name = chunk_name.to_string_or(&*bytes)?;
+        match crate::load(gc, bytes, chunk_name) {
+            Ok(proto) => proto,
+            Err(err) => {
+                stack[0] = Value::Nil;
+                stack[1] = gc.allocate_string(err.to_string().into_bytes()).into();
+                return Ok(2);
+            }
+        }
+    } else {
+        todo!("load from function")
+    };
+
+    let mut closure = LuaClosure::from(gc.allocate(proto));
+    let upvalue = if let Some(upvalue) = stack.arg(3).get() {
+        upvalue.into()
+    } else {
+        Value::Table(vm.globals()).into()
+    };
+    closure.upvalues.push(gc.allocate_cell(upvalue));
+
+    stack[0] = gc.allocate(closure).into();
+    Ok(1)
 }
 
 fn next<'gc>(
