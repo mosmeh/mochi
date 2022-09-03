@@ -1,13 +1,13 @@
 use crate::types::{LineRange, TableError, Type, Value};
 use std::fmt::Display;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub struct RuntimeError {
+    #[source]
     pub kind: ErrorKind,
+
     pub traceback: Vec<TracebackFrame>,
 }
-
-impl std::error::Error for RuntimeError {}
 
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
