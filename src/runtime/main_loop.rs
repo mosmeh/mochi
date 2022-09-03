@@ -660,32 +660,33 @@ impl<'gc> Vm<'gc> {
                 }
                 OpCode::SetList => {
                     let a = insn.a();
-                    let ra = state.stack[a];
                     let n = if insn.b() > 0 {
-                        insn.b()
+                        Some(insn.b())
                     } else {
-                        saved_stack_top - a - 1
+                        saved_stack_top.checked_sub(a + saved_current_frame.base + 1)
                     };
+                    if let Some(n) = n {
+                        let mut offset = insn.c() as usize;
+                        if insn.k() {
+                            let next_insn = closure.proto.code[state.pc];
+                            offset += next_insn.ax() * (u8::MAX as usize + 1);
+                            state.pc += 1;
+                        }
 
-                    let mut offset = insn.c() as usize;
-                    if insn.k() {
-                        let next_insn = closure.proto.code[state.pc];
-                        offset += next_insn.ax() * (u8::MAX as usize + 1);
-                        state.pc += 1;
-                    }
-
-                    let mut table =
-                        ra.borrow_as_table_mut(gc)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: ra.ty(),
-                            })?;
-                    let new_array_len = offset + n;
-                    if new_array_len > table.array().len() {
-                        table.resize_array(new_array_len);
-                    }
-                    for (i, x) in state.stack[a + 1..=a + n].iter().cloned().enumerate() {
-                        table.set((offset + i + 1) as Integer, x)?;
+                        let ra = state.stack[a];
+                        let mut table =
+                            ra.borrow_as_table_mut(gc)
+                                .ok_or_else(|| ErrorKind::TypeError {
+                                    operation: Operation::Index,
+                                    ty: ra.ty(),
+                                })?;
+                        let new_array_len = offset + n;
+                        if new_array_len > table.array().len() {
+                            table.resize_array(new_array_len);
+                        }
+                        for (i, x) in state.stack[a + 1..=a + n].iter().cloned().enumerate() {
+                            table.set((offset + i + 1) as Integer, x)?;
+                        }
                     }
                 }
                 OpCode::Closure => {
