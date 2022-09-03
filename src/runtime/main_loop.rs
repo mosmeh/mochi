@@ -632,14 +632,15 @@ impl<'gc> Vm<'gc> {
                     let callee = state.stack[a];
                     thread_ref.current_frame().pc = state.pc;
 
-                    let new_bottom = saved_current_frame.base + a + 4;
+                    let arg_base = saved_current_frame.base + a;
+                    let new_bottom = arg_base + 4;
                     let new_stack_len = new_bottom + 3;
                     if thread_ref.stack.len() < new_stack_len {
                         thread_ref.stack.resize(new_stack_len, Value::Nil);
                     }
                     thread_ref
                         .stack
-                        .copy_within(saved_current_frame.base + a..new_bottom, new_bottom);
+                        .copy_within(arg_base..arg_base + 3, new_bottom);
                     drop(thread_ref);
 
                     return self.call_value(
