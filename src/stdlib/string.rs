@@ -66,11 +66,13 @@ fn char<'gc>(
 ) -> Result<usize, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(window);
-    let mut bytes = Vec::with_capacity(stack.args().len());
-    for nth in 0..bytes.len() {
-        let n = stack.arg(nth).to_integer()?;
-        if let Ok(n) = n.try_into() {
-            bytes.push(n);
+
+    let len = stack.args().len();
+    let mut bytes = Vec::with_capacity(len);
+    for nth in 0..len {
+        let ch = stack.arg(nth).to_integer()?;
+        if let Ok(ch) = ch.try_into() {
+            bytes.push(ch);
         } else {
             return Err(ErrorKind::ArgumentError {
                 nth,
@@ -78,6 +80,7 @@ fn char<'gc>(
             });
         }
     }
+
     stack[0] = gc.allocate_string(bytes).into();
     Ok(1)
 }
