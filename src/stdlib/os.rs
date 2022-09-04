@@ -2,7 +2,7 @@ use super::helpers::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Integer, LuaThread, NativeFunction, StackWindow, Table},
+    types::{Integer, LuaThread, NativeFunction, StackWindow, Table, Value},
 };
 use bstr::{ByteSlice, ByteVec, B};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
@@ -15,6 +15,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
         gc.allocate_string(B("difftime")),
         NativeFunction::new(difftime),
     );
+    table.set_field(gc.allocate_string(B("exit")), NativeFunction::new(exit));
     table.set_field(gc.allocate_string(B("getenv")), NativeFunction::new(getenv));
     table.set_field(gc.allocate_string(B("time")), NativeFunction::new(time));
     vm.globals()
@@ -115,6 +116,32 @@ fn difftime<'gc>(
     let stack = thread.stack_mut(&window);
     stack[0] = (stack.arg(0).to_number()? - stack.arg(1).to_number()?).into();
     Ok(1)
+}
+
+fn exit<'gc>(
+    _: &'gc GcContext,
+    _: &Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<usize, ErrorKind> {
+    // TODO: use std::process::ExitCode::exit_process once stabilized
+    const EXIT_SUCCESS: i32 = 0;
+    const EXIT_FAILURE: i32 = 1;
+
+    let code = thread.borrow().stack(&window).arg(0);
+    let code = match code.get() {
+        Some(Value::Boolean(success)) => {
+            if success {
+                EXIT_SUCCESS
+            } else {
+                EXIT_FAILURE
+            }
+        }
+        None => EXIT_SUCCESS,
+        _ => code.to_integer()? as i32,
+    };
+
+    std::process::exit(code)
 }
 
 fn getenv<'gc>(
