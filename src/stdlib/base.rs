@@ -165,7 +165,7 @@ fn base_load<'gc>(
     let stack = thread.stack_mut(&window);
 
     let mode = stack.arg(2);
-    let mode = mode.to_string_or(b"bt".to_vec())?;
+    let mode = mode.to_string_or(B("bt"))?;
     if mode.as_ref() != b"bt" {
         todo!("mode != \"bt\"")
     }

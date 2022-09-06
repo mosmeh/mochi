@@ -46,7 +46,7 @@ fn date<'gc>(
     let stack = thread.stack_mut(&window);
 
     let format = stack.arg(0);
-    let format = format.to_string_or(b"%c".to_vec())?;
+    let format = format.to_string_or(B("%c"))?;
 
     let time = stack.arg(1).to_integer_or_else(|| Utc::now().timestamp())?;
     if NaiveDateTime::from_timestamp_opt(time, 0).is_none() {

@@ -30,7 +30,7 @@ fn concat<'gc>(
     let table = stack.arg(0);
     let table = table.borrow_as_table()?;
     let sep = stack.arg(1);
-    let sep = sep.to_string_or(b"".to_vec())?;
+    let sep = sep.to_string_or(B(""))?;
     let i = stack.arg(2).to_integer_or(1)?;
     let j = stack.arg(3).to_integer_or_else(|| table.lua_len())?;
 

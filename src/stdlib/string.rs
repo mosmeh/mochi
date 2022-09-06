@@ -171,7 +171,7 @@ fn rep<'gc>(
     let s = s.to_string()?;
     let n = stack.arg(1).to_integer()?;
     let sep = stack.arg(2);
-    let sep = sep.to_string_or(b"".to_vec())?;
+    let sep = sep.to_string_or(B(""))?;
 
     let count = n.max(0) as usize;
     let string = if count > 0 {
