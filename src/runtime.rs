@@ -270,7 +270,7 @@ impl<'gc> Vm<'gc> {
                 thread.borrow_mut(gc).stack.truncate(bottom + num_results);
             }
             Value::NativeClosure(closure) => {
-                let num_results = closure.0(gc, self, thread, StackWindow { bottom })?;
+                let num_results = (closure.function())(gc, self, thread, StackWindow { bottom })?;
                 thread.borrow_mut(gc).stack.truncate(bottom + num_results);
             }
             value => {

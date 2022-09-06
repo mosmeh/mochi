@@ -70,7 +70,7 @@ pub enum Value<'gc> {
     String(LuaString<'gc>),
     Table(GcCell<'gc, Table<'gc>>),
     LuaClosure(Gc<'gc, LuaClosure<'gc>>),
-    NativeClosure(Gc<'gc, NativeClosure>),
+    NativeClosure(Gc<'gc, NativeClosure<'gc>>),
     UserData(GcCell<'gc, UserData<'gc>>),
     Thread(GcCell<'gc, LuaThread<'gc>>),
 }
@@ -123,8 +123,8 @@ impl<'gc> From<Gc<'gc, LuaClosure<'gc>>> for Value<'gc> {
     }
 }
 
-impl<'gc> From<Gc<'gc, NativeClosure>> for Value<'gc> {
-    fn from(x: Gc<'gc, NativeClosure>) -> Self {
+impl<'gc> From<Gc<'gc, NativeClosure<'gc>>> for Value<'gc> {
+    fn from(x: Gc<'gc, NativeClosure<'gc>>) -> Self {
         Self::NativeClosure(x)
     }
 }

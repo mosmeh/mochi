@@ -110,7 +110,7 @@ union Payload<'gc> {
     string: LuaString<'gc>,
     table: GcCell<'gc, Table<'gc>>,
     lua_closure: Gc<'gc, LuaClosure<'gc>>,
-    native_closure: Gc<'gc, NativeClosure>,
+    native_closure: Gc<'gc, NativeClosure<'gc>>,
     user_data: GcCell<'gc, UserData<'gc>>,
     thread: GcCell<'gc, LuaThread<'gc>>,
 }

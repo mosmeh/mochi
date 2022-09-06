@@ -100,32 +100,65 @@ pub type NativeClosureFn = dyn for<'gc> Fn(
     StackWindow,
 ) -> Result<usize, ErrorKind>;
 
-pub struct NativeClosure(pub Box<NativeClosureFn>);
+pub struct NativeClosure<'gc> {
+    func: Box<NativeClosureFn>,
+    upvalues: Box<[Value<'gc>]>,
+}
 
-impl std::fmt::Debug for NativeClosure {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct("NativeClosure").finish()
+impl std::fmt::Debug for NativeClosure<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeClosure")
+            .field("upvalues", &self.upvalues)
+            .finish()
     }
 }
 
-unsafe impl GarbageCollect for NativeClosure {
-    fn needs_trace() -> bool {
-        false
+unsafe impl GarbageCollect for NativeClosure<'_> {
+    fn trace(&self, tracer: &mut Tracer) {
+        self.upvalues.trace(tracer);
     }
 }
 
-impl NativeClosure {
+impl<'gc> NativeClosure<'gc> {
     pub fn new<T>(func: T) -> Self
     where
         T: 'static
-            + for<'gc> Fn(
-                &'gc GcContext,
-                &Vm<'gc>,
-                GcCell<'gc, LuaThread<'gc>>,
+            + for<'a> Fn(
+                &'a GcContext,
+                &Vm<'a>,
+                GcCell<'a, LuaThread<'a>>,
                 StackWindow,
             ) -> Result<usize, ErrorKind>,
     {
-        Self(Box::new(func))
+        Self {
+            func: Box::new(func),
+            upvalues: Default::default(),
+        }
+    }
+
+    pub fn with_upvalues<T, U>(func: T, upvalues: U) -> Self
+    where
+        T: 'static
+            + for<'a> Fn(
+                &'a GcContext,
+                &Vm<'a>,
+                GcCell<'a, LuaThread<'a>>,
+                StackWindow,
+            ) -> Result<usize, ErrorKind>,
+        U: Into<Box<[Value<'gc>]>>,
+    {
+        Self {
+            func: Box::new(func),
+            upvalues: upvalues.into(),
+        }
+    }
+
+    pub fn function(&self) -> &NativeClosureFn {
+        &self.func
+    }
+
+    pub fn upvalues(&self) -> &[Value<'gc>] {
+        &self.upvalues
     }
 }
 
