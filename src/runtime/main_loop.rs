@@ -363,11 +363,10 @@ impl<'gc> Vm<'gc> {
                             ty: rb.ty(),
                         })?;
 
-                    let tag_method_name = self.tag_method_names[insn.c() as usize];
-                    let tag_method_value = metatable.borrow().get_field(tag_method_name);
+                    let metamethod_name = self.metamethod_names[insn.c() as usize];
+                    let metamethod = metatable.borrow().get_field(metamethod_name);
 
-                    let result =
-                        unsafe { self.execute_value(gc, thread, tag_method_value, &[ra, rb])? };
+                    let result = unsafe { self.execute_value(gc, thread, metamethod, &[ra, rb])? };
                     thread.borrow_mut(gc).stack[saved_current_frame.base + prev_insn.a()] = result;
                     return Ok(());
                 }

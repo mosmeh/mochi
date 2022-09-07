@@ -4,7 +4,7 @@ use crate::{
     parser::ast::{BinaryOp, UnaryOp},
     runtime::{
         instruction::{OFFSET_SBX, OFFSET_SC, OFFSET_SJ, UINT17_MAX, UINT25_MAX},
-        Instruction, OpCode, TagMethod,
+        Instruction, Metamethod, OpCode,
     },
     types::{Integer, LuaClosureProto, LuaString, RegisterIndex, UpvalueIndex},
 };
@@ -484,7 +484,7 @@ pub(super) fn lower_ir<'gc>(
                     opcode, dest.0, lhs.0, rhs.0, false,
                 ));
 
-                let c = op.tag_method() as u8;
+                let c = op.metamethod() as u8;
                 code.push(Instruction::from_a_sb_c_k(
                     OpCode::MmBinI,
                     lhs.0,
@@ -505,7 +505,7 @@ pub(super) fn lower_ir<'gc>(
                     opcode, dest.0, lhs.0, rhs.0, false,
                 ));
 
-                let c = op.tag_method() as u8;
+                let c = op.metamethod() as u8;
                 code.push(Instruction::from_a_b_c_k(
                     OpCode::MmBinK,
                     lhs.0,
@@ -520,7 +520,7 @@ pub(super) fn lower_ir<'gc>(
                     opcode, dest.0, lhs.0, rhs.0, false,
                 ));
 
-                let c = op.tag_method() as u8;
+                let c = op.metamethod() as u8;
                 code.push(Instruction::from_a_b_c_k(
                     OpCode::MmBin,
                     lhs.0,
@@ -793,20 +793,20 @@ impl BinaryOp {
         }
     }
 
-    fn tag_method(&self) -> TagMethod {
+    fn metamethod(&self) -> Metamethod {
         match self {
-            Self::Add => TagMethod::Add,
-            Self::Sub => TagMethod::Sub,
-            Self::Mul => TagMethod::Mul,
-            Self::Div => TagMethod::Div,
-            Self::IDiv => TagMethod::IDiv,
-            Self::Pow => TagMethod::Pow,
-            Self::Mod => TagMethod::Mod,
-            Self::BAnd => TagMethod::BAnd,
-            Self::BXor => TagMethod::BXor,
-            Self::BOr => TagMethod::BOr,
-            Self::Shr => TagMethod::Shr,
-            Self::Shl => TagMethod::Shl,
+            Self::Add => Metamethod::Add,
+            Self::Sub => Metamethod::Sub,
+            Self::Mul => Metamethod::Mul,
+            Self::Div => Metamethod::Div,
+            Self::IDiv => Metamethod::IDiv,
+            Self::Pow => Metamethod::Pow,
+            Self::Mod => Metamethod::Mod,
+            Self::BAnd => Metamethod::BAnd,
+            Self::BXor => Metamethod::BXor,
+            Self::BOr => Metamethod::BOr,
+            Self::Shr => Metamethod::Shr,
+            Self::Shl => Metamethod::Shl,
             _ => unreachable!(),
         }
     }

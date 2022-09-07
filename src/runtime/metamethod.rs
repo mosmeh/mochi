@@ -1,15 +1,15 @@
 use crate::{gc::GcContext, types::LuaString};
 use bstr::B;
 
-macro_rules! tag_methods {
+macro_rules! metamethods {
     ($($variant:ident => $name:tt,)*) => {
         #[allow(dead_code)]
         #[derive(Clone, Copy)]
-        pub enum TagMethod {
+        pub enum Metamethod {
             $($variant,)*
         }
 
-        impl TagMethod {
+        impl Metamethod {
             pub const COUNT: usize = crate::count!($($variant)*);
 
             pub fn allocate_names(gc: &GcContext) -> [LuaString; Self::COUNT] {
@@ -21,7 +21,7 @@ macro_rules! tag_methods {
     }
 }
 
-tag_methods!(
+metamethods!(
     Index => "__index",
     NewIndex => "__newindex",
     Gc => "__gc",

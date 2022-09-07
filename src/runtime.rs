@@ -2,14 +2,14 @@ pub(crate) mod instruction;
 
 mod error;
 mod main_loop;
+mod metamethod;
 mod opcode;
 mod ops;
-mod tag_method;
 
 pub use error::{ErrorKind, Operation, RuntimeError, TracebackFrame};
 pub use instruction::Instruction;
+pub(crate) use metamethod::Metamethod;
 pub use opcode::OpCode;
-pub(crate) use tag_method::TagMethod;
 
 use crate::{
     gc::{GarbageCollect, GcCell, GcContext, GcHeap, Tracer},
@@ -115,7 +115,7 @@ pub struct Vm<'gc> {
     registry: GcCell<'gc, Table<'gc>>,
     main_thread: GcCell<'gc, LuaThread<'gc>>,
     globals: GcCell<'gc, Table<'gc>>,
-    tag_method_names: [LuaString<'gc>; TagMethod::COUNT],
+    metamethod_names: [LuaString<'gc>; Metamethod::COUNT],
     metatables: GcCell<'gc, [Option<GcCell<'gc, Table<'gc>>>; Type::COUNT]>,
 }
 
@@ -124,7 +124,7 @@ unsafe impl GarbageCollect for Vm<'_> {
         self.registry.trace(tracer);
         self.main_thread.trace(tracer);
         self.globals.trace(tracer);
-        self.tag_method_names.trace(tracer);
+        self.metamethod_names.trace(tracer);
         self.metatables.trace(tracer);
     }
 }
@@ -138,7 +138,7 @@ impl<'gc> Vm<'gc> {
             registry: gc.allocate_cell(registry),
             main_thread,
             globals,
-            tag_method_names: TagMethod::allocate_names(gc),
+            metamethod_names: Metamethod::allocate_names(gc),
             metatables: gc.allocate_cell(Default::default()),
         }
     }
@@ -155,8 +155,8 @@ impl<'gc> Vm<'gc> {
         crate::stdlib::load(gc, self);
     }
 
-    pub fn tag_method_name(&self, tag_method: TagMethod) -> LuaString<'gc> {
-        self.tag_method_names[tag_method as usize]
+    pub fn metamethod_name(&self, metamethod: Metamethod) -> LuaString<'gc> {
+        self.metamethod_names[metamethod as usize]
     }
 
     pub fn metatable_of_object(&self, object: Value<'gc>) -> Option<GcCell<'gc, Table<'gc>>> {
@@ -294,7 +294,7 @@ impl<'gc> Vm<'gc> {
         K: Into<Value<'gc>>,
     {
         let key = key.into();
-        let index_key = self.tag_method_name(TagMethod::Index);
+        let index_key = self.metamethod_name(Metamethod::Index);
         loop {
             let metamethod = if let Value::Table(table) = table_like {
                 let metamethod = table
