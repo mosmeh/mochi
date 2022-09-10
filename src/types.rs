@@ -5,7 +5,7 @@ mod thread;
 mod user_data;
 
 pub use function::{
-    LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeClosureFn, NativeFunction,
+    Action, LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeClosureFn, NativeFunction,
     NativeFunctionPtr, RegisterIndex, Upvalue, UpvalueDescription, UpvalueIndex,
 };
 pub use string::LuaString;

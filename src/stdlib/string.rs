@@ -3,7 +3,7 @@ use crate::{
     binary_chunk,
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Metamethod, Vm},
-    types::{Integer, LuaThread, NativeFunction, StackWindow, Table, Type, Value},
+    types::{Action, Integer, LuaThread, NativeFunction, StackWindow, Table, Type, Value},
 };
 use bstr::B;
 use std::ops::Range;
@@ -38,7 +38,7 @@ fn byte<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     mut window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack(&window);
 
@@ -55,7 +55,7 @@ fn byte<'gc>(
     for (x, b) in stack.iter_mut().zip(s[range].iter()) {
         *x = (*b as Integer).into();
     }
-    Ok(num_results)
+    Ok(Action::Return { num_results })
 }
 
 fn char<'gc>(
@@ -63,7 +63,7 @@ fn char<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
 
@@ -82,7 +82,7 @@ fn char<'gc>(
     }
 
     stack[0] = gc.allocate_string(bytes).into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn dump<'gc>(
@@ -90,7 +90,7 @@ fn dump<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     match stack.arg(0).get() {
@@ -98,7 +98,7 @@ fn dump<'gc>(
             let mut binary = Vec::new();
             binary_chunk::dump(&mut binary, &closure.proto)?;
             stack[0] = gc.allocate_string(binary).into();
-            Ok(1)
+            Ok(Action::Return { num_results: 1 })
         }
         Some(value) if value.ty() == Type::Function => Err(ErrorKind::ExplicitError(
             "unable to dump given function".to_owned(),
@@ -116,12 +116,12 @@ fn len<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let len = stack.arg(0).to_string()?.len() as Integer;
     stack[0] = len.into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn lower<'gc>(
@@ -129,13 +129,13 @@ fn lower<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let lower = stack.arg(0).to_string()?.to_ascii_lowercase();
     let lower = gc.allocate_string(lower);
     stack[0] = lower.into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn sub<'gc>(
@@ -143,7 +143,7 @@ fn sub<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
 
@@ -155,7 +155,7 @@ fn sub<'gc>(
     let range = indices_to_range(i, j, s.len() as Integer);
 
     stack[0] = gc.allocate_string(&s[range]).into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn rep<'gc>(
@@ -163,7 +163,7 @@ fn rep<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
 
@@ -187,7 +187,7 @@ fn rep<'gc>(
     };
 
     stack[0] = gc.allocate_string(string).into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn reverse<'gc>(
@@ -195,13 +195,13 @@ fn reverse<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let mut string = stack.arg(0).to_string()?.to_vec();
     string.reverse();
     stack[0] = gc.allocate_string(string).into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn upper<'gc>(
@@ -209,13 +209,13 @@ fn upper<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let upper = stack.arg(0).to_string()?.to_ascii_uppercase();
     let upper = gc.allocate_string(upper);
     stack[0] = upper.into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn indices_to_range(i: Integer, j: Integer, len: Integer) -> Range<usize> {

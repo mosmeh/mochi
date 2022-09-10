@@ -1,6 +1,6 @@
 use super::{Upvalue, Value};
 use crate::{
-    gc::{GarbageCollect, GcCell, GcContext, Tracer},
+    gc::{GarbageCollect, GcCell, Tracer},
     runtime::Frame,
 };
 use std::collections::BTreeMap;
@@ -39,19 +39,6 @@ impl<'gc> LuaThread<'gc> {
     pub fn ensure_stack(&mut self, window: &mut StackWindow, len: usize) {
         if self.stack.len() < window.bottom + len {
             self.stack.resize(window.bottom + len, Value::Nil);
-        }
-    }
-
-    pub(crate) fn current_frame(&mut self) -> &mut Frame {
-        self.frames.last_mut().unwrap()
-    }
-
-    pub(crate) fn close_upvalues(&mut self, gc: &'gc GcContext, boundary: usize) {
-        for (_, upvalue) in self.open_upvalues.split_off(&boundary) {
-            let mut upvalue = upvalue.borrow_mut(gc);
-            if let Upvalue::Open(i) = *upvalue {
-                *upvalue = Upvalue::Closed(self.stack[i]);
-            }
         }
     }
 }

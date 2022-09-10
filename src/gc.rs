@@ -27,7 +27,7 @@ pub struct GcHeap {
 
 impl Default for GcHeap {
     fn default() -> Self {
-        let gc = GcContext {
+        let mut gc = GcContext {
             pause: 200,
             step_multiplier: 100,
             step_size: 13,
@@ -38,7 +38,7 @@ impl Default for GcHeap {
             debt: Default::default(),
             estimate: Default::default(),
 
-            root_stack: Default::default(),
+            root: Default::default(),
 
             all: Default::default(),
             sweep: Default::default(),
@@ -51,7 +51,7 @@ impl Default for GcHeap {
 
         let vm = gc.allocate_cell(Vm::new(&gc));
         let vm: GcCell<Vm> = unsafe { std::mem::transmute(vm) };
-        gc.root_stack.borrow_mut().push(vm.0.ptr);
+        gc.root = Some(vm);
 
         Self { gc, vm }
     }
@@ -91,7 +91,7 @@ pub struct GcContext {
     debt: Cell<isize>,
     estimate: Cell<usize>,
 
-    root_stack: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
+    root: Option<GcCell<'static, Vm<'static>>>,
 
     all: Cell<Option<GcPtr<dyn GarbageCollect>>>,
     sweep: Cell<Option<GcPtr<dyn GarbageCollect>>>,
@@ -167,10 +167,6 @@ impl GcContext {
     }
 
     fn step(&mut self) {
-        unsafe { self.step_unguarded() };
-    }
-
-    pub(crate) unsafe fn step_unguarded(&self) {
         let mut debt = self.debt.get();
         let step_size = 1 << self.step_size;
         loop {
@@ -203,17 +199,6 @@ impl GcContext {
         if gc_box.color.get() == Color::Black {
             gc_box.color.set(Color::Gray);
             self.gray_again.borrow_mut().push(into_ptr_to_static(ptr));
-        }
-    }
-
-    fn trace_roots(&self, tracer: &mut Tracer) {
-        for root in self.root_stack.borrow().iter() {
-            let gc_box = unsafe { root.as_ref() };
-            let color = &gc_box.color;
-            if matches!(color.get(), Color::White(_)) {
-                color.set(Color::Gray);
-                tracer.gray.push(into_ptr_to_static(*root));
-            }
         }
     }
 
@@ -253,7 +238,7 @@ impl GcContext {
         let mut gray = self.gray.borrow_mut();
         gray.clear();
         self.gray_again.borrow_mut().clear();
-        self.trace_roots(&mut Tracer { gray: &mut gray });
+        self.root.unwrap().trace(&mut Tracer { gray: &mut gray });
     }
 
     fn do_propagate(&self) -> usize {
@@ -270,7 +255,7 @@ impl GcContext {
 
     fn do_atomic(&self) -> usize {
         let mut gray = self.gray.borrow_mut();
-        self.trace_roots(&mut Tracer { gray: &mut gray });
+        self.root.unwrap().trace(&mut Tracer { gray: &mut gray });
 
         let mut work = 0;
         while let Some(ptr) = gray.pop() {
@@ -355,47 +340,6 @@ enum Color {
     White(bool),
     Black,
     Gray,
-}
-
-macro_rules! root_gc {
-    ($($gc:expr, $x:expr)*) => {$(
-        let _ = $crate::gc::Root::from_gc($gc, $x);
-    )*}
-}
-
-macro_rules! root_gc_cell {
-    ($($gc:expr, $x:expr)*) => {$(
-        let _ = $crate::gc::Root::from_gc_cell($gc, $x);
-    )*}
-}
-
-pub(crate) use root_gc;
-pub(crate) use root_gc_cell;
-
-#[doc(hidden)]
-pub(crate) struct Root<'gc> {
-    gc: &'gc GcContext,
-}
-
-impl Drop for Root<'_> {
-    fn drop(&mut self) {
-        self.gc.root_stack.borrow_mut().pop().unwrap();
-    }
-}
-
-impl Root<'_> {
-    pub fn from_gc<T: GarbageCollect>(gc: &GcContext, x: Gc<T>) -> Self {
-        Self::from_ptr(gc, x.ptr)
-    }
-
-    pub fn from_gc_cell<T: GarbageCollect>(gc: &GcContext, x: GcCell<T>) -> Self {
-        Self::from_ptr(gc, x.0.ptr)
-    }
-
-    fn from_ptr<T: GarbageCollect>(gc: &GcContext, ptr: GcPtr<T>) -> Self {
-        gc.root_stack.borrow_mut().push(into_ptr_to_static(ptr));
-        unsafe { std::mem::transmute(Root { gc }) }
-    }
 }
 
 struct GcBox<T: ?Sized + GarbageCollect> {

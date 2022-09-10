@@ -2,7 +2,10 @@ use super::helpers::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Integer, LuaThread, NativeClosure, NativeFunction, Number, StackWindow, Table, Value},
+    types::{
+        Action, Integer, LuaThread, NativeClosure, NativeFunction, Number, StackWindow, Table,
+        Value,
+    },
 };
 use bstr::B;
 use rand::{Rng, RngCore, SeedableRng};
@@ -68,7 +71,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
                         ))
                     }
                 };
-                Ok(1)
+                Ok(Action::Return { num_results: 1 })
             })),
         );
     }
@@ -90,7 +93,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
             let stack = thread.stack_mut(&window);
             stack[0] = x.into();
             stack[1] = y.into();
-            Ok(2)
+            Ok(Action::Return { num_results: 2 })
         })),
     );
 
@@ -113,7 +116,7 @@ fn abs<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let arg = stack.arg(0);
@@ -122,7 +125,7 @@ fn abs<'gc>(
     } else {
         arg.to_number()?.abs().into()
     };
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn acos<'gc>(
@@ -130,11 +133,11 @@ fn acos<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.acos().into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn asin<'gc>(
@@ -142,11 +145,11 @@ fn asin<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.asin().into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn atan<'gc>(
@@ -154,7 +157,7 @@ fn atan<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let y = stack.arg(0).to_number()?;
@@ -165,7 +168,7 @@ fn atan<'gc>(
         y.atan()
     };
     stack[0] = result.into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn ceil<'gc>(
@@ -173,7 +176,7 @@ fn ceil<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let arg = stack.arg(0);
@@ -183,7 +186,7 @@ fn ceil<'gc>(
         let ceil = arg.to_number()?.ceil();
         number_to_value(ceil)
     };
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn cos<'gc>(
@@ -191,11 +194,11 @@ fn cos<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.cos().into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn deg<'gc>(
@@ -203,11 +206,11 @@ fn deg<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.to_degrees().into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn exp<'gc>(
@@ -215,11 +218,11 @@ fn exp<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.exp().into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn floor<'gc>(
@@ -227,7 +230,7 @@ fn floor<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let arg = stack.arg(0);
@@ -237,7 +240,7 @@ fn floor<'gc>(
         let floor = arg.to_number()?.floor();
         number_to_value(floor)
     };
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn fmod<'gc>(
@@ -245,7 +248,7 @@ fn fmod<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let x = stack.arg(0);
@@ -262,7 +265,7 @@ fn fmod<'gc>(
         (x.to_number()? % y.to_number()?).into()
     };
     stack[0] = result;
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn log<'gc>(
@@ -270,7 +273,7 @@ fn log<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let x = stack.arg(0).to_number()?;
@@ -281,7 +284,7 @@ fn log<'gc>(
         x.ln()
     };
     stack[0] = result.into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn modf<'gc>(
@@ -289,7 +292,7 @@ fn modf<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let x = stack.arg(0);
@@ -301,7 +304,7 @@ fn modf<'gc>(
     };
     stack[0] = trunc;
     stack[1] = fract;
-    Ok(2)
+    Ok(Action::Return { num_results: 2 })
 }
 
 fn rad<'gc>(
@@ -309,11 +312,11 @@ fn rad<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.to_radians().into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn rng_from_seeds(n1: i64, n2: i64) -> Xoshiro256StarStar {
@@ -357,11 +360,11 @@ fn sin<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.sin().into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn sqrt<'gc>(
@@ -369,11 +372,11 @@ fn sqrt<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.sqrt().into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn tan<'gc>(
@@ -381,11 +384,11 @@ fn tan<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.tan().into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn tointeger<'gc>(
@@ -393,7 +396,7 @@ fn tointeger<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack
@@ -402,7 +405,7 @@ fn tointeger<'gc>(
         .to_integer()
         .map(|i| i.into())
         .unwrap_or_default();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn ty<'gc>(
@@ -410,7 +413,7 @@ fn ty<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let result = match stack.arg(0).to_value()? {
@@ -419,7 +422,7 @@ fn ty<'gc>(
         _ => Value::Nil,
     };
     stack[0] = result;
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn ult<'gc>(
@@ -427,13 +430,13 @@ fn ult<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let m = stack.arg(0).to_integer()?;
     let n = stack.arg(1).to_integer()?;
     stack[0] = ((m as u64) < (n as u64)).into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn number_to_value<'gc>(x: Number) -> Value<'gc> {

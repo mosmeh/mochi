@@ -10,13 +10,13 @@ use std::{
 };
 
 impl<'gc> Vm<'gc> {
-    pub(super) fn execute_frame(
+    pub(super) fn execute_lua_frame(
         &self,
         gc: &'gc GcContext,
         thread: GcCell<'gc, LuaThread<'gc>>,
     ) -> Result<(), ErrorKind> {
         let mut thread_ref = thread.borrow_mut(gc);
-        let saved_current_frame = thread_ref.current_frame().clone();
+        let saved_current_frame = thread_ref.current_lua_frame().clone();
 
         let bottom_value = thread_ref.stack[saved_current_frame.bottom];
         let closure = bottom_value.as_lua_closure().unwrap();
@@ -82,10 +82,15 @@ impl<'gc> Vm<'gc> {
                         .map(|table| table.get_field(rc))
                         .unwrap_or_default();
                     if raw_value.is_nil() {
-                        thread_ref.current_frame().pc = state.pc;
-                        thread_ref.stack[saved_current_frame.base + insn.a()] =
-                            unsafe { self.call_index_metamethod(gc, thread, table_value, rc)? };
-                        return Ok(());
+                        thread_ref.current_lua_frame().pc = state.pc;
+                        drop(thread_ref);
+                        return self.deferred_call_index_metamethod(
+                            gc,
+                            thread,
+                            table_value,
+                            rc,
+                            saved_current_frame.base + insn.a(),
+                        );
                     }
                     state.stack[insn.a()] = raw_value;
                 }
@@ -97,10 +102,15 @@ impl<'gc> Vm<'gc> {
                         .map(|table| table.get(rc))
                         .unwrap_or_default();
                     if raw_value.is_nil() {
-                        thread_ref.current_frame().pc = state.pc;
-                        thread_ref.stack[saved_current_frame.base + insn.a()] =
-                            unsafe { self.call_index_metamethod(gc, thread, rb, rc)? };
-                        return Ok(());
+                        thread_ref.current_lua_frame().pc = state.pc;
+                        drop(thread_ref);
+                        return self.deferred_call_index_metamethod(
+                            gc,
+                            thread,
+                            rb,
+                            rc,
+                            saved_current_frame.base + insn.a(),
+                        );
                     }
                     state.stack[insn.a()] = raw_value;
                 }
@@ -112,10 +122,15 @@ impl<'gc> Vm<'gc> {
                         .map(|table| table.get(c))
                         .unwrap_or_default();
                     if raw_value.is_nil() {
-                        thread_ref.current_frame().pc = state.pc;
-                        thread_ref.stack[saved_current_frame.base + insn.a()] =
-                            unsafe { self.call_index_metamethod(gc, thread, rb, c)? };
-                        return Ok(());
+                        thread_ref.current_lua_frame().pc = state.pc;
+                        drop(thread_ref);
+                        return self.deferred_call_index_metamethod(
+                            gc,
+                            thread,
+                            rb,
+                            c,
+                            saved_current_frame.base + insn.a(),
+                        );
                     }
                     state.stack[insn.a()] = raw_value;
                 }
@@ -131,10 +146,15 @@ impl<'gc> Vm<'gc> {
                         .map(|table| table.get_field(rc))
                         .unwrap_or_default();
                     if raw_value.is_nil() {
-                        thread_ref.current_frame().pc = state.pc;
-                        thread_ref.stack[saved_current_frame.base + insn.a()] =
-                            unsafe { self.call_index_metamethod(gc, thread, rb, rc)? };
-                        return Ok(());
+                        thread_ref.current_lua_frame().pc = state.pc;
+                        drop(thread_ref);
+                        return self.deferred_call_index_metamethod(
+                            gc,
+                            thread,
+                            rb,
+                            rc,
+                            saved_current_frame.base + insn.a(),
+                        );
                     }
                     state.stack[insn.a()] = raw_value;
                 }
@@ -249,10 +269,15 @@ impl<'gc> Vm<'gc> {
                         .map(|table| table.get_field(rkc))
                         .unwrap_or_default();
                     if raw_value.is_nil() {
-                        thread_ref.current_frame().pc = state.pc;
-                        thread_ref.stack[saved_current_frame.base + insn.a()] =
-                            unsafe { self.call_index_metamethod(gc, thread, rb, rkc)? };
-                        return Ok(());
+                        thread_ref.current_lua_frame().pc = state.pc;
+                        drop(thread_ref);
+                        return self.deferred_call_index_metamethod(
+                            gc,
+                            thread,
+                            rb,
+                            rkc,
+                            saved_current_frame.base + insn.a(),
+                        );
                     }
                     state.stack[insn.a()] = raw_value;
                 }
@@ -352,9 +377,6 @@ impl<'gc> Vm<'gc> {
                     let rb = state.stack[insn.b()];
                     let prev_insn = closure.proto.code[state.pc - 2];
 
-                    thread_ref.current_frame().pc = state.pc;
-                    drop(thread_ref);
-
                     let metatable = self
                         .metatable_of_object(ra)
                         .or_else(|| self.metatable_of_object(rb))
@@ -366,8 +388,13 @@ impl<'gc> Vm<'gc> {
                     let metamethod_name = self.metamethod_names[insn.c() as usize];
                     let metamethod = metatable.borrow().get_field(metamethod_name);
 
-                    let result = unsafe { self.execute_value(gc, thread, metamethod, &[ra, rb])? };
-                    thread.borrow_mut(gc).stack[saved_current_frame.base + prev_insn.a()] = result;
+                    thread_ref.current_lua_frame().pc = state.pc;
+                    thread_ref.deferred_call_metamethod(
+                        metamethod,
+                        &[ra, rb],
+                        saved_current_frame.base + prev_insn.a(),
+                    );
+
                     return Ok(());
                 }
                 OpCode::MmBinI => todo!("MMBINI"),
@@ -421,7 +448,7 @@ impl<'gc> Vm<'gc> {
                     state.stack[a] = gc.allocate_string(strings.concat()).into();
                 }
                 OpCode::Close => {
-                    thread_ref.current_frame().pc = state.pc;
+                    thread_ref.current_lua_frame().pc = state.pc;
                     thread_ref.close_upvalues(gc, saved_current_frame.base + insn.a());
                     return Ok(());
                 }
@@ -510,22 +537,20 @@ impl<'gc> Vm<'gc> {
                 OpCode::Call => {
                     let a = insn.a();
                     let b = insn.b();
-                    let callee = state.stack[a];
 
-                    thread_ref.current_frame().pc = state.pc;
+                    thread_ref.current_lua_frame().pc = state.pc;
                     thread_ref.stack.truncate(if b > 0 {
                         saved_current_frame.base + a + b
                     } else {
                         saved_stack_top
                     });
-                    drop(thread_ref);
+                    thread_ref.deferred_call(saved_current_frame.base + a)?;
 
-                    return self.call_value(gc, thread, callee, saved_current_frame.base + a);
+                    return Ok(());
                 }
                 OpCode::TailCall => {
                     let a = insn.a();
                     let b = insn.b();
-                    let callee = state.stack[a];
                     if insn.k() {
                         thread_ref.close_upvalues(gc, saved_current_frame.bottom);
                     }
@@ -546,9 +571,9 @@ impl<'gc> Vm<'gc> {
                         thread_ref.stack.truncate(saved_current_frame.bottom + b);
                     }
                     thread_ref.frames.pop().unwrap();
-                    drop(thread_ref);
+                    thread_ref.deferred_call(saved_current_frame.bottom)?;
 
-                    return self.call_value(gc, thread, callee, saved_current_frame.bottom);
+                    return Ok(());
                 }
                 OpCode::Return => {
                     if insn.k() {
@@ -625,8 +650,7 @@ impl<'gc> Vm<'gc> {
                 OpCode::TForPrep => state.pc += insn.bx(),
                 OpCode::TForCall => {
                     let a = insn.a();
-                    let callee = state.stack[a];
-                    thread_ref.current_frame().pc = state.pc;
+                    thread_ref.current_lua_frame().pc = state.pc;
 
                     let arg_base = saved_current_frame.base + a;
                     let new_bottom = arg_base + 4;
@@ -634,9 +658,9 @@ impl<'gc> Vm<'gc> {
                     thread_ref
                         .stack
                         .copy_within(arg_base..arg_base + 3, new_bottom);
-                    drop(thread_ref);
+                    thread_ref.deferred_call(new_bottom)?;
 
-                    return self.call_value(gc, thread, callee, new_bottom);
+                    return Ok(());
                 }
                 OpCode::TForLoop => {
                     let a = insn.a();
@@ -678,7 +702,7 @@ impl<'gc> Vm<'gc> {
                     }
                 }
                 OpCode::Closure => {
-                    thread_ref.current_frame().pc = state.pc;
+                    thread_ref.current_lua_frame().pc = state.pc;
                     let proto = closure.proto.protos[insn.bx()];
                     let upvalues = proto
                         .upvalues
@@ -708,7 +732,7 @@ impl<'gc> Vm<'gc> {
                         saved_current_frame.num_extra_args
                     };
                     if num_wanted > 0 {
-                        thread_ref.current_frame().pc = state.pc;
+                        thread_ref.current_lua_frame().pc = state.pc;
 
                         let a = insn.a();
 
@@ -743,7 +767,7 @@ impl<'gc> Vm<'gc> {
                         let new_base = saved_stack_top + 1;
                         {
                             let pc = state.pc;
-                            let frame = thread_ref.current_frame();
+                            let frame = thread_ref.current_lua_frame();
                             frame.pc = pc;
                             frame.base = new_base;
                             frame.num_extra_args = num_extra_args;
@@ -770,7 +794,7 @@ impl<'gc> Vm<'gc> {
             }
 
             if gc.debt() > 0 {
-                thread_ref.current_frame().pc = state.pc;
+                thread_ref.current_lua_frame().pc = state.pc;
                 return Ok(());
             }
         }

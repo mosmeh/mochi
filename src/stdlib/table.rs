@@ -2,7 +2,7 @@ use super::helpers::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Integer, LuaThread, NativeFunction, StackWindow, Table, Value},
+    types::{Action, Integer, LuaThread, NativeFunction, StackWindow, Table, Value},
 };
 use bstr::B;
 
@@ -23,7 +23,7 @@ fn concat<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
 
@@ -50,7 +50,7 @@ fn concat<'gc>(
 
     let concatenated = strings.join(sep.as_ref());
     stack[0] = gc.allocate_string(concatenated).into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn insert<'gc>(
@@ -58,7 +58,7 @@ fn insert<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
@@ -88,7 +88,7 @@ fn insert<'gc>(
             ))
         }
     };
-    Ok(0)
+    Ok(Action::Return { num_results: 0 })
 }
 
 fn pack<'gc>(
@@ -96,13 +96,13 @@ fn pack<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let mut table = Table::from(stack.args().to_vec());
     table.set_field(gc.allocate_string(B("n")), stack.args().len() as Integer);
     stack[0] = gc.allocate_cell(table).into();
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn remove<'gc>(
@@ -110,7 +110,7 @@ fn remove<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
 
@@ -132,7 +132,7 @@ fn remove<'gc>(
         table.set(i, value)?;
     }
     table.set(len, Value::Nil)?;
-    Ok(1)
+    Ok(Action::Return { num_results: 1 })
 }
 
 fn unpack<'gc>(
@@ -140,7 +140,7 @@ fn unpack<'gc>(
     _: &Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     mut window: StackWindow,
-) -> Result<usize, ErrorKind> {
+) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack(&window);
     let table = stack.arg(0);
@@ -153,5 +153,5 @@ fn unpack<'gc>(
     for (dest, src) in thread.stack_mut(&window).iter_mut().zip(start..=end) {
         *dest = table.get(src);
     }
-    Ok(n)
+    Ok(Action::Return { num_results: n })
 }

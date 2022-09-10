@@ -6,12 +6,25 @@ use crate::{
 };
 use std::{fmt::Debug, hash::Hash, ops::RangeInclusive};
 
+pub enum Action {
+    Return {
+        num_results: usize,
+    },
+    Call {
+        callee_bottom: usize,
+        continuation: Box<NativeClosureFn>,
+    },
+    TailCall {
+        num_args: usize,
+    },
+}
+
 pub type NativeFunctionPtr = for<'gc> fn(
     &'gc GcContext,
     &Vm<'gc>,
     GcCell<'gc, LuaThread<'gc>>,
     StackWindow,
-) -> Result<usize, ErrorKind>;
+) -> Result<Action, ErrorKind>;
 
 #[derive(Clone, Copy)]
 pub struct NativeFunction(pub NativeFunctionPtr);
@@ -98,7 +111,7 @@ pub type NativeClosureFn = dyn for<'gc> Fn(
     &Vm<'gc>,
     GcCell<'gc, LuaThread<'gc>>,
     StackWindow,
-) -> Result<usize, ErrorKind>;
+) -> Result<Action, ErrorKind>;
 
 pub struct NativeClosure<'gc> {
     func: Box<NativeClosureFn>,
@@ -128,7 +141,7 @@ impl<'gc> NativeClosure<'gc> {
                 &Vm<'a>,
                 GcCell<'a, LuaThread<'a>>,
                 StackWindow,
-            ) -> Result<usize, ErrorKind>,
+            ) -> Result<Action, ErrorKind>,
     {
         Self {
             func: Box::new(func),
@@ -144,7 +157,7 @@ impl<'gc> NativeClosure<'gc> {
                 &Vm<'a>,
                 GcCell<'a, LuaThread<'a>>,
                 StackWindow,
-            ) -> Result<usize, ErrorKind>,
+            ) -> Result<Action, ErrorKind>,
         U: Into<Box<[Value<'gc>]>>,
     {
         Self {

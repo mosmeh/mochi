@@ -1,8 +1,8 @@
 use super::helpers::StackExt;
 use crate::{
-    gc::{root_gc, root_gc_cell, GcCell, GcContext},
+    gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{LuaClosure, LuaThread, NativeFunction, StackWindow, Table, Value},
+    types::{Action, LuaThread, NativeFunction, StackWindow, Table, Value},
 };
 use bstr::{ByteSlice, B};
 
@@ -30,14 +30,12 @@ fn require<'gc>(
     gc: &'gc GcContext,
     vm: &Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
-) -> Result<usize, ErrorKind> {
-    let mut thread_ref = thread.borrow_mut(gc);
-    let stack = thread_ref.stack_mut(&window);
+    mut window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
 
-    let module_name = stack.arg(0);
-    let module_name = module_name.to_string()?;
-    let module_name = gc.allocate_string(module_name);
+    let module_name = gc.allocate_string(stack.arg(0).to_string()?);
 
     let loaded = vm
         .registry()
@@ -49,44 +47,46 @@ fn require<'gc>(
 
     if !value.is_nil() {
         stack[0] = value;
-        return Ok(1);
+        return Ok(Action::Return { num_results: 1 });
     }
-    drop(thread_ref);
 
     let filename = format!("./{}.lua", module_name.as_bstr());
     let lua_filename = gc.allocate_string(filename.clone().into_bytes());
 
-    let proto = match crate::load_file(gc, &filename) {
-        Ok(proto) => proto,
+    let closure = match vm.load_file(gc, &filename) {
+        Ok(closure) => closure,
         Err(err) => return Err(ErrorKind::ExplicitError(err.to_string())),
     };
-    let mut closure = LuaClosure::from(gc.allocate(proto));
-    closure
-        .upvalues
-        .push(gc.allocate_cell(Value::Table(vm.globals()).into()));
 
-    root_gc_cell!(gc, loaded);
-    root_gc!(gc, module_name.0);
-    root_gc!(gc, lua_filename.0);
+    thread.ensure_stack(&mut window, 7);
+    let stack = thread.stack_mut(&window);
 
-    let value = unsafe {
-        vm.execute_value(
-            gc,
-            thread,
-            gc.allocate(closure).into(),
-            &[module_name.into(), lua_filename.into()],
-        )?
-    };
-    let value = if value.is_nil() {
-        Value::Boolean(true)
-    } else {
-        value
-    };
-    loaded.borrow_mut(gc).set_field(module_name, value);
-
-    let mut thread_ref = thread.borrow_mut(gc);
-    let stack = thread_ref.stack_mut(&window);
-    stack[0] = value;
     stack[1] = lua_filename.into();
-    Ok(2)
+    stack[2] = loaded.into();
+    stack[3] = module_name.into();
+
+    stack[4] = gc.allocate(closure).into();
+    stack[5] = module_name.into();
+    stack[6] = lua_filename.into();
+
+    Ok(Action::Call {
+        callee: 4,
+        continuation: Box::new(|gc, _, thread, window| {
+            let mut thread = thread.borrow_mut(gc);
+            let stack = thread.stack_mut(&window);
+
+            let value = match stack.arg(3).get() {
+                Some(Value::Nil) | None => Value::Boolean(true),
+                Some(value) => value,
+            };
+            let module_name = stack.arg(2).to_value()?;
+            stack
+                .arg(1)
+                .borrow_as_table_mut(gc)?
+                .set(module_name, value)?;
+
+            stack[0] = value;
+            Ok(Action::Return { num_results: 2 })
+        }),
+    })
 }

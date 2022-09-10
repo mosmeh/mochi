@@ -84,7 +84,10 @@ fn main() -> Result<()> {
 
     if let Some(script) = args.script {
         runtime
-            .execute(|gc, _| mochi_lua::load_file(gc, script).map_err(Into::into))
+            .execute(|gc, vm| {
+                let closure = vm.borrow().load_file(gc, script)?;
+                Ok(gc.allocate(closure).into())
+            })
             .map_err(Error::msg)?;
 
         if !args.interactive {
@@ -110,12 +113,14 @@ fn main() -> Result<()> {
 fn evaluate(runtime: &mut Runtime, line: &str) -> Result<()> {
     const SOURCE: &str = "=stdin";
     runtime
-        .execute(|gc, _| {
-            if let Ok(proto) = mochi_lua::load(gc, format!("print({})", line), SOURCE) {
-                Ok(proto)
+        .execute(|gc, vm| {
+            let vm = vm.borrow();
+            let closure = if let Ok(closure) = vm.load(gc, format!("print({})", line), SOURCE) {
+                closure
             } else {
-                mochi_lua::load(gc, line, SOURCE).map_err(Into::into)
-            }
+                vm.load(gc, line, SOURCE)?
+            };
+            Ok(gc.allocate(closure).into())
         })
         .map_err(Error::msg)
 }

@@ -11,24 +11,82 @@ pub struct RuntimeError {
 
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}\nstack traceback:\n{}",
-            self.kind,
-            self.traceback
-                .iter()
-                .map(|frame| {
-                    let source = format_source(&frame.source);
-                    match &frame.lines_defined {
-                        LineRange::File => format!("\t{}: in main chunk", source),
-                        LineRange::Lines(range) => {
-                            format!("\t{}: in function <{}:{}>", source, source, range.start())
-                        }
+        writeln!(f, "{}\nstack traceback:", self.kind,)?;
+        if let Some((last, frames)) = self.traceback.split_last() {
+            for frame in frames {
+                writeln!(f, "\t{}", frame)?;
+            }
+            write!(f, "\t{}", last)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ErrorKind {
+    #[error("{0}")]
+    ExplicitError(String),
+
+    #[error("attempt to {operation} a {ty} value")]
+    TypeError { operation: Operation, ty: Type },
+
+    #[error("bad argument #{nth} ({message})", nth = nth + 1)]
+    ArgumentError { nth: usize, message: &'static str },
+
+    #[error("bad argument #{nth} ({expected_type} expected, got {got})",
+        nth = nth + 1,
+        got = got_type.unwrap_or("no value")
+    )]
+    ArgumentTypeError {
+        nth: usize,
+        expected_type: &'static str,
+        got_type: Option<&'static str>,
+    },
+
+    #[error(transparent)]
+    Table(#[from] TableError),
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+impl ErrorKind {
+    pub fn from_error_object(error_object: Value) -> Self {
+        let msg = if let Some(s) = error_object.to_string() {
+            String::from_utf8_lossy(&s).to_string()
+        } else {
+            format!("(error object is a {} value)", error_object.ty().name())
+        };
+        Self::ExplicitError(msg)
+    }
+}
+
+#[derive(Debug)]
+pub enum TracebackFrame {
+    Lua {
+        source: String,
+        lines_defined: LineRange,
+    },
+    Native,
+}
+
+impl Display for TracebackFrame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Lua {
+                source,
+                lines_defined,
+            } => {
+                let source = format_source(source);
+                match &lines_defined {
+                    LineRange::File => write!(f, "{}: in main chunk", source),
+                    LineRange::Lines(range) => {
+                        write!(f, "{}: in function <{}:{}>", source, source, range.start())
                     }
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
+                }
+            }
+            Self::Native => f.write_str("[C]: in function"),
+        }
     }
 }
 
@@ -70,45 +128,6 @@ fn format_source(source: &str) -> Cow<str> {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ErrorKind {
-    #[error("{0}")]
-    ExplicitError(String),
-
-    #[error("attempt to {operation} a {ty} value")]
-    TypeError { operation: Operation, ty: Type },
-
-    #[error("bad argument #{nth} ({message})", nth = nth + 1)]
-    ArgumentError { nth: usize, message: &'static str },
-
-    #[error("bad argument #{nth} ({expected_type} expected, got {got})",
-        nth = nth + 1,
-        got = got_type.unwrap_or("no value")
-    )]
-    ArgumentTypeError {
-        nth: usize,
-        expected_type: &'static str,
-        got_type: Option<&'static str>,
-    },
-
-    #[error(transparent)]
-    Table(#[from] TableError),
-
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-}
-
-impl ErrorKind {
-    pub fn from_error_object(error_object: Value) -> Self {
-        let msg = if let Some(s) = error_object.to_string() {
-            String::from_utf8_lossy(&s).to_string()
-        } else {
-            format!("(error object is a {} value)", error_object.ty().name())
-        };
-        ErrorKind::ExplicitError(msg)
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum Operation {
     Index,
@@ -126,10 +145,4 @@ impl Display for Operation {
             Self::Arithmetic => f.write_str("perform arithmetic"),
         }
     }
-}
-
-#[derive(Debug)]
-pub struct TracebackFrame {
-    pub source: String,
-    pub lines_defined: LineRange,
 }
