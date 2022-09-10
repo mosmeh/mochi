@@ -2,13 +2,15 @@ use super::helpers::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Action, Integer, LuaClosure, LuaThread, NativeFunction, Number, StackWindow, Value},
+    types::{
+        Action, Integer, LuaClosure, LuaThread, NativeFunction, Number, StackWindow, Table, Value,
+    },
     LUA_VERSION,
 };
 use bstr::{ByteSlice, B};
 use std::io::Write;
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
+pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let globals = vm.globals();
     let mut globals = globals.borrow_mut(gc);
     globals.set_field(gc.allocate_string(B("assert")), NativeFunction::new(assert));
@@ -17,7 +19,6 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
         NativeFunction::new(collectgarbage),
     );
     globals.set_field(gc.allocate_string(B("error")), NativeFunction::new(error));
-    globals.set_field(gc.allocate_string(B("_G")), vm.globals());
     globals.set_field(
         gc.allocate_string(B("getmetatable")),
         NativeFunction::new(getmetatable),
@@ -55,6 +56,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
         gc.allocate_string(B("_VERSION")),
         gc.allocate_string(format!("Lua {}.{}", LUA_VERSION.0, LUA_VERSION.1).into_bytes()),
     );
+    vm.globals()
 }
 
 fn assert<'gc>(

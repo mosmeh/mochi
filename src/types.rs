@@ -342,6 +342,14 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    pub fn as_native_closure(&self) -> Option<&NativeClosure<'gc>> {
+        if let Self::NativeClosure(x) = self {
+            Some(x.as_ref())
+        } else {
+            None
+        }
+    }
+
     pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
         match self {
             Self::Table(table) => table.borrow().metatable(),

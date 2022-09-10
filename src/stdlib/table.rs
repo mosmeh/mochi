@@ -6,16 +6,14 @@ use crate::{
 };
 use bstr::B;
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
+pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("concat")), NativeFunction::new(concat));
     table.set_field(gc.allocate_string(B("insert")), NativeFunction::new(insert));
     table.set_field(gc.allocate_string(B("pack")), NativeFunction::new(pack));
     table.set_field(gc.allocate_string(B("remove")), NativeFunction::new(remove));
     table.set_field(gc.allocate_string(B("unpack")), NativeFunction::new(unpack));
-    vm.globals()
-        .borrow_mut(gc)
-        .set_field(gc.allocate_string(B("table")), gc.allocate_cell(table));
+    gc.allocate_cell(table)
 }
 
 fn concat<'gc>(

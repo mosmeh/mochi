@@ -7,7 +7,7 @@ use crate::{
 use bstr::{ByteSlice, ByteVec, B};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
+pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("clock")), NativeFunction::new(clock));
     table.set_field(gc.allocate_string(B("date")), NativeFunction::new(date));
@@ -18,9 +18,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
     table.set_field(gc.allocate_string(B("exit")), NativeFunction::new(exit));
     table.set_field(gc.allocate_string(B("getenv")), NativeFunction::new(getenv));
     table.set_field(gc.allocate_string(B("time")), NativeFunction::new(time));
-    vm.globals()
-        .borrow_mut(gc)
-        .set_field(gc.allocate_string(B("os")), gc.allocate_cell(table));
+    gc.allocate_cell(table)
 }
 
 fn clock<'gc>(

@@ -8,7 +8,7 @@ use crate::{
 use bstr::B;
 use std::ops::Range;
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
+pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("byte")), NativeFunction::new(byte));
     table.set_field(gc.allocate_string(B("char")), NativeFunction::new(char));
@@ -23,7 +23,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
     );
     table.set_field(gc.allocate_string(B("upper")), NativeFunction::new(upper));
 
-    let table = Value::from(gc.allocate_cell(table));
+    let table = gc.allocate_cell(table);
     vm.globals()
         .borrow_mut(gc)
         .set_field(gc.allocate_string(B("string")), table);
@@ -31,6 +31,8 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
     let mut metatable = Table::new();
     metatable.set_field(vm.metamethod_name(Metamethod::Index), table);
     vm.set_metatable_of_type(gc, Type::String, gc.allocate_cell(metatable));
+
+    table
 }
 
 fn byte<'gc>(
