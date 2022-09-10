@@ -96,6 +96,7 @@ impl<'gc> Argument<'gc> {
 }
 
 pub trait StackExt<'gc> {
+    fn callee(&self) -> Value<'gc>;
     fn args(&self) -> &[Value<'gc>];
     fn arg(&self, nth: usize) -> Argument<'gc>;
 }
@@ -104,6 +105,10 @@ impl<'gc, T> StackExt<'gc> for T
 where
     T: Borrow<[Value<'gc>]>,
 {
+    fn callee(&self) -> Value<'gc> {
+        self.borrow()[0]
+    }
+
     fn args(&self) -> &[Value<'gc>] {
         &self.borrow()[1..]
     }
