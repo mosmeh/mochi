@@ -8,7 +8,7 @@ use crate::{
 use bstr::B;
 use std::ops::Range;
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("byte")), NativeFunction::new(byte));
     table.set_field(gc.allocate_string(B("char")), NativeFunction::new(char));
@@ -30,14 +30,14 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
 
     let mut metatable = Table::new();
     metatable.set_field(vm.metamethod_name(Metamethod::Index), table);
-    vm.set_metatable_of_type(gc, Type::String, gc.allocate_cell(metatable));
+    vm.set_metatable_of_type(Type::String, gc.allocate_cell(metatable));
 
     table
 }
 
 fn byte<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     mut window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -62,7 +62,7 @@ fn byte<'gc>(
 
 fn char<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -89,7 +89,7 @@ fn char<'gc>(
 
 fn dump<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -115,7 +115,7 @@ fn dump<'gc>(
 
 fn len<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -128,7 +128,7 @@ fn len<'gc>(
 
 fn lower<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -142,7 +142,7 @@ fn lower<'gc>(
 
 fn sub<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -162,7 +162,7 @@ fn sub<'gc>(
 
 fn rep<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -194,7 +194,7 @@ fn rep<'gc>(
 
 fn reverse<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -208,7 +208,7 @@ fn reverse<'gc>(
 
 fn upper<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {

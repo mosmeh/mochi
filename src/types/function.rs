@@ -21,7 +21,7 @@ pub enum Action {
 
 pub type NativeFunctionPtr = for<'gc> fn(
     &'gc GcContext,
-    &Vm<'gc>,
+    &mut Vm<'gc>,
     GcCell<'gc, LuaThread<'gc>>,
     StackWindow,
 ) -> Result<Action, ErrorKind>;
@@ -108,7 +108,7 @@ impl<'gc> From<Gc<'gc, LuaClosureProto<'gc>>> for LuaClosure<'gc> {
 
 pub type NativeClosureFn = dyn for<'gc> Fn(
     &'gc GcContext,
-    &Vm<'gc>,
+    &mut Vm<'gc>,
     GcCell<'gc, LuaThread<'gc>>,
     StackWindow,
 ) -> Result<Action, ErrorKind>;
@@ -138,7 +138,7 @@ impl<'gc> NativeClosure<'gc> {
         T: 'static
             + for<'a> Fn(
                 &'a GcContext,
-                &Vm<'a>,
+                &mut Vm<'a>,
                 GcCell<'a, LuaThread<'a>>,
                 StackWindow,
             ) -> Result<Action, ErrorKind>,
@@ -154,7 +154,7 @@ impl<'gc> NativeClosure<'gc> {
         T: 'static
             + for<'a> Fn(
                 &'a GcContext,
-                &Vm<'a>,
+                &mut Vm<'a>,
                 GcCell<'a, LuaThread<'a>>,
                 StackWindow,
             ) -> Result<Action, ErrorKind>,

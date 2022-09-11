@@ -17,13 +17,13 @@ use bstr::B;
 const LUA_LOADED_TABLE: &[u8] = b"_LOADED";
 const LUA_PRELOAD_TABLE: &[u8] = b"_PRELOAD";
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) {
+pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) {
     let loaded = gc.allocate_cell(Table::new());
     vm.registry()
         .borrow_mut(gc)
         .set_field(gc.allocate_string(LUA_LOADED_TABLE), loaded);
 
-    type LoadFn = for<'a> fn(&'a GcContext, &Vm<'a>) -> GcCell<'a, Table<'a>>;
+    type LoadFn = for<'a> fn(&'a GcContext, &mut Vm<'a>) -> GcCell<'a, Table<'a>>;
 
     let libs: &[(_, LoadFn)] = &[
         (B("_G"), base::load),

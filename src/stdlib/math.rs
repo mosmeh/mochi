@@ -12,7 +12,7 @@ use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use std::{cell::RefCell, ops::DerefMut, rc::Rc, time::SystemTime};
 
-pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("abs")), NativeFunction::new(abs));
     table.set_field(gc.allocate_string(B("acos")), NativeFunction::new(acos));
@@ -111,7 +111,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
 
 fn abs<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -128,7 +128,7 @@ fn abs<'gc>(
 
 fn acos<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -140,7 +140,7 @@ fn acos<'gc>(
 
 fn asin<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -152,7 +152,7 @@ fn asin<'gc>(
 
 fn atan<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -171,7 +171,7 @@ fn atan<'gc>(
 
 fn ceil<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -189,7 +189,7 @@ fn ceil<'gc>(
 
 fn cos<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -201,7 +201,7 @@ fn cos<'gc>(
 
 fn deg<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -213,7 +213,7 @@ fn deg<'gc>(
 
 fn exp<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -225,7 +225,7 @@ fn exp<'gc>(
 
 fn floor<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -243,7 +243,7 @@ fn floor<'gc>(
 
 fn fmod<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -268,7 +268,7 @@ fn fmod<'gc>(
 
 fn log<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -287,7 +287,7 @@ fn log<'gc>(
 
 fn modf<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -307,7 +307,7 @@ fn modf<'gc>(
 
 fn rad<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -355,7 +355,7 @@ fn random_in_range<R: Rng>(rng: &mut R, lower: Integer, upper: Integer) -> Integ
 
 fn sin<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -367,7 +367,7 @@ fn sin<'gc>(
 
 fn sqrt<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -379,7 +379,7 @@ fn sqrt<'gc>(
 
 fn tan<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -391,7 +391,7 @@ fn tan<'gc>(
 
 fn tointeger<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -408,7 +408,7 @@ fn tointeger<'gc>(
 
 fn ty<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -425,7 +425,7 @@ fn ty<'gc>(
 
 fn ult<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {

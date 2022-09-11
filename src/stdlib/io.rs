@@ -7,7 +7,7 @@ use crate::{
 use bstr::B;
 use std::io::Write;
 
-pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("flush")), NativeFunction::new(flush));
     table.set_field(gc.allocate_string(B("write")), NativeFunction::new(write));
@@ -16,7 +16,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
 
 fn flush<'gc>(
     _: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     _: GcCell<LuaThread<'gc>>,
     _: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -26,7 +26,7 @@ fn flush<'gc>(
 
 fn write<'gc>(
     _: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {

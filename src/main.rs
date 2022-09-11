@@ -64,7 +64,7 @@ fn main() -> Result<()> {
 
     let mut runtime = Runtime::new();
     runtime.heap().with(|gc, vm| -> Result<()> {
-        let vm = vm.borrow();
+        let mut vm = vm.borrow_mut(gc);
         vm.load_stdlib(gc);
 
         let mut arg = Table::new();

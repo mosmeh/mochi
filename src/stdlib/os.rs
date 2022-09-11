@@ -7,7 +7,7 @@ use crate::{
 use bstr::{ByteSlice, ByteVec, B};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
 
-pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("clock")), NativeFunction::new(clock));
     table.set_field(gc.allocate_string(B("date")), NativeFunction::new(date));
@@ -23,7 +23,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
 
 fn clock<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -36,7 +36,7 @@ fn clock<'gc>(
 
 fn date<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -106,7 +106,7 @@ fn date<'gc>(
 
 fn difftime<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -118,7 +118,7 @@ fn difftime<'gc>(
 
 fn exit<'gc>(
     _: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -144,7 +144,7 @@ fn exit<'gc>(
 
 fn getenv<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -164,7 +164,7 @@ fn getenv<'gc>(
 
 fn time<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {

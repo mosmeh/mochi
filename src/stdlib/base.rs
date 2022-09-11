@@ -10,7 +10,7 @@ use crate::{
 use bstr::{ByteSlice, B};
 use std::io::Write;
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let globals = vm.globals();
     let mut globals = globals.borrow_mut(gc);
     globals.set_field(gc.allocate_string(B("assert")), NativeFunction::new(assert));
@@ -61,7 +61,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
 
 fn assert<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -81,7 +81,7 @@ fn assert<'gc>(
 
 fn collectgarbage<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -96,7 +96,7 @@ fn collectgarbage<'gc>(
 
 fn error<'gc>(
     _: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -108,7 +108,7 @@ fn error<'gc>(
 
 fn getmetatable<'gc>(
     gc: &'gc GcContext,
-    vm: &Vm<'gc>,
+    vm: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -124,13 +124,13 @@ fn getmetatable<'gc>(
 
 fn ipairs<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     mut window: StackWindow,
 ) -> Result<Action, ErrorKind> {
     fn iterate<'gc>(
         gc: &'gc GcContext,
-        _: &Vm<'gc>,
+        _: &mut Vm<'gc>,
         thread: GcCell<LuaThread<'gc>>,
         window: StackWindow,
     ) -> Result<Action, ErrorKind> {
@@ -161,7 +161,7 @@ fn ipairs<'gc>(
 
 fn base_load<'gc>(
     gc: &'gc GcContext,
-    vm: &Vm<'gc>,
+    vm: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -203,7 +203,7 @@ fn base_load<'gc>(
 
 fn next<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -226,7 +226,7 @@ fn next<'gc>(
 
 fn pairs<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     mut window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -242,7 +242,7 @@ fn pairs<'gc>(
 
 fn print<'gc>(
     _: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -262,7 +262,7 @@ fn print<'gc>(
 
 fn rawequal<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -274,7 +274,7 @@ fn rawequal<'gc>(
 
 fn rawget<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -287,7 +287,7 @@ fn rawget<'gc>(
 
 fn rawlen<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -310,7 +310,7 @@ fn rawlen<'gc>(
 
 fn rawset<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -329,7 +329,7 @@ fn rawset<'gc>(
 
 fn select<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -365,7 +365,7 @@ fn select<'gc>(
 
 fn setmetatable<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -394,7 +394,7 @@ fn setmetatable<'gc>(
 
 fn tonumber<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -437,7 +437,7 @@ fn tonumber<'gc>(
 
 fn tostring<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -451,7 +451,7 @@ fn tostring<'gc>(
 
 fn ty<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {

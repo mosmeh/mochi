@@ -6,7 +6,7 @@ use crate::{
 };
 use bstr::B;
 
-pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
     table.set_field(gc.allocate_string(B("concat")), NativeFunction::new(concat));
     table.set_field(gc.allocate_string(B("insert")), NativeFunction::new(insert));
@@ -18,7 +18,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
 
 fn concat<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -53,7 +53,7 @@ fn concat<'gc>(
 
 fn insert<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -91,7 +91,7 @@ fn insert<'gc>(
 
 fn pack<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -105,7 +105,7 @@ fn pack<'gc>(
 
 fn remove<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -135,7 +135,7 @@ fn remove<'gc>(
 
 fn unpack<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     mut window: StackWindow,
 ) -> Result<Action, ErrorKind> {

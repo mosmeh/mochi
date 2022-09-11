@@ -67,9 +67,10 @@ impl Runtime {
 
         let result = loop {
             let result = self.heap.with(|gc, vm| {
-                let vm = vm.borrow();
+                let mut vm = vm.borrow_mut(gc);
+                let thread = vm.main_thread;
                 loop {
-                    if vm.execute_frame(gc, vm.main_thread)?.is_break() {
+                    if vm.execute_frame(gc, thread)?.is_break() {
                         return Ok(ControlFlow::Break(()));
                     }
                     if gc.debt() > 0 {
@@ -207,7 +208,7 @@ pub struct Vm<'gc> {
     main_thread: GcCell<'gc, LuaThread<'gc>>,
     globals: GcCell<'gc, Table<'gc>>,
     metamethod_names: [LuaString<'gc>; Metamethod::COUNT],
-    metatables: GcCell<'gc, [Option<GcCell<'gc, Table<'gc>>>; Type::COUNT]>,
+    metatables: [Option<GcCell<'gc, Table<'gc>>>; Type::COUNT],
 }
 
 unsafe impl GarbageCollect for Vm<'_> {
@@ -230,7 +231,7 @@ impl<'gc> Vm<'gc> {
             main_thread,
             globals,
             metamethod_names: Metamethod::allocate_names(gc),
-            metatables: gc.allocate_cell(Default::default()),
+            metatables: Default::default(),
         }
     }
 
@@ -242,7 +243,7 @@ impl<'gc> Vm<'gc> {
         self.globals
     }
 
-    pub fn load_stdlib(&self, gc: &'gc GcContext) {
+    pub fn load_stdlib(&mut self, gc: &'gc GcContext) {
         crate::stdlib::load(gc, self);
     }
 
@@ -284,18 +285,18 @@ impl<'gc> Vm<'gc> {
     pub fn metatable_of_object(&self, object: Value<'gc>) -> Option<GcCell<'gc, Table<'gc>>> {
         object
             .metatable()
-            .or_else(|| self.metatables.borrow()[object.ty() as usize])
+            .or_else(|| self.metatables[object.ty() as usize])
     }
 
-    pub fn set_metatable_of_type<T>(&self, gc: &'gc GcContext, ty: Type, metatable: T)
+    pub fn set_metatable_of_type<T>(&mut self, ty: Type, metatable: T)
     where
         T: Into<Option<GcCell<'gc, Table<'gc>>>>,
     {
-        self.metatables.borrow_mut(gc)[ty as usize] = metatable.into();
+        self.metatables[ty as usize] = metatable.into();
     }
 
     fn execute_frame(
-        &self,
+        &mut self,
         gc: &'gc GcContext,
         thread: GcCell<'gc, LuaThread<'gc>>,
     ) -> Result<ControlFlow<(), ()>, ErrorKind> {

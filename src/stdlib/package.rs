@@ -30,7 +30,7 @@ const LUA_DIRSEP: &[u8] = {
 };
 const LUA_LSUBSEP: &[u8] = LUA_DIRSEP;
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     const LUA_EXEC_DIR: &[u8] = b"!";
     const LUA_IGMARK: &[u8] = b"-";
 
@@ -143,7 +143,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
 
 fn require<'gc>(
     gc: &'gc GcContext,
-    vm: &Vm<'gc>,
+    vm: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -282,7 +282,7 @@ fn require<'gc>(
 
 fn package_searchpath<'gc>(
     gc: &'gc GcContext,
-    _: &Vm<'gc>,
+    _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -339,7 +339,7 @@ where
 
 fn searcher_preload<'gc>(
     gc: &'gc GcContext,
-    vm: &Vm<'gc>,
+    vm: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
@@ -374,7 +374,7 @@ fn searcher_preload<'gc>(
 
 fn searcher_lua<'gc>(
     gc: &'gc GcContext,
-    vm: &Vm<'gc>,
+    vm: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action, ErrorKind> {
