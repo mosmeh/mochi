@@ -8,7 +8,7 @@ use crate::{
     LUA_VERSION,
 };
 use bstr::{ByteSlice, B};
-use std::io::Write;
+use std::io::{Read, Write};
 
 pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let globals = vm.globals();
@@ -20,6 +20,10 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     globals.set_field(
         gc.allocate_string(B("collectgarbage")),
         NativeFunction::new(base_collectgarbage),
+    );
+    globals.set_field(
+        gc.allocate_string(B("dofile")),
+        NativeFunction::new(base_dofile),
     );
     globals.set_field(
         gc.allocate_string(B("error")),
@@ -125,6 +129,34 @@ fn base_collectgarbage<'gc>(
         opt => todo!("{}", opt.as_bstr()),
     };
     Ok(Action::Return { num_results: 1 })
+}
+
+fn base_dofile<'gc>(
+    gc: &'gc GcContext,
+    vm: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+
+    let filename = stack.arg(0);
+    let closure = if filename.get().is_some() {
+        let filename = filename.to_string()?;
+        let path = filename
+            .to_path()
+            .map_err(|e| ErrorKind::ExplicitError(e.to_string()))?;
+        vm.load_file(gc, path)
+            .map_err(|e| ErrorKind::ExplicitError(e.to_string()))?
+    } else {
+        let mut bytes = Vec::new();
+        std::io::stdin().read_to_end(&mut bytes)?;
+        vm.load(gc, &bytes, B("=stdin"))
+            .map_err(|e| ErrorKind::ExplicitError(e.to_string()))?
+    };
+
+    stack[0] = gc.allocate(closure).into();
+    Ok(Action::TailCall { num_args: 0 })
 }
 
 fn base_error<'gc>(
