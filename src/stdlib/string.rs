@@ -10,18 +10,42 @@ use std::ops::Range;
 
 pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(gc.allocate_string(B("byte")), NativeFunction::new(byte));
-    table.set_field(gc.allocate_string(B("char")), NativeFunction::new(char));
-    table.set_field(gc.allocate_string(B("dump")), NativeFunction::new(dump));
-    table.set_field(gc.allocate_string(B("len")), NativeFunction::new(len));
-    table.set_field(gc.allocate_string(B("lower")), NativeFunction::new(lower));
-    table.set_field(gc.allocate_string(B("sub")), NativeFunction::new(sub));
-    table.set_field(gc.allocate_string(B("rep")), NativeFunction::new(rep));
+    table.set_field(
+        gc.allocate_string(B("byte")),
+        NativeFunction::new(string_byte),
+    );
+    table.set_field(
+        gc.allocate_string(B("char")),
+        NativeFunction::new(string_char),
+    );
+    table.set_field(
+        gc.allocate_string(B("dump")),
+        NativeFunction::new(string_dump),
+    );
+    table.set_field(
+        gc.allocate_string(B("len")),
+        NativeFunction::new(string_len),
+    );
+    table.set_field(
+        gc.allocate_string(B("lower")),
+        NativeFunction::new(string_lower),
+    );
+    table.set_field(
+        gc.allocate_string(B("sub")),
+        NativeFunction::new(string_sub),
+    );
+    table.set_field(
+        gc.allocate_string(B("rep")),
+        NativeFunction::new(string_rep),
+    );
     table.set_field(
         gc.allocate_string(B("reverse")),
-        NativeFunction::new(reverse),
+        NativeFunction::new(string_reverse),
     );
-    table.set_field(gc.allocate_string(B("upper")), NativeFunction::new(upper));
+    table.set_field(
+        gc.allocate_string(B("upper")),
+        NativeFunction::new(string_upper),
+    );
 
     let table = gc.allocate_cell(table);
     vm.globals()
@@ -35,7 +59,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     table
 }
 
-fn byte<'gc>(
+fn string_byte<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -60,7 +84,7 @@ fn byte<'gc>(
     Ok(Action::Return { num_results })
 }
 
-fn char<'gc>(
+fn string_char<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -87,7 +111,7 @@ fn char<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn dump<'gc>(
+fn string_dump<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -113,7 +137,7 @@ fn dump<'gc>(
     }
 }
 
-fn len<'gc>(
+fn string_len<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -126,7 +150,7 @@ fn len<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn lower<'gc>(
+fn string_lower<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -140,7 +164,7 @@ fn lower<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn sub<'gc>(
+fn string_sub<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -160,7 +184,7 @@ fn sub<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn rep<'gc>(
+fn string_rep<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -192,7 +216,7 @@ fn rep<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn reverse<'gc>(
+fn string_reverse<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -206,7 +230,7 @@ fn reverse<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn upper<'gc>(
+fn string_upper<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,

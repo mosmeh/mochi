@@ -14,23 +14,44 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc, time::SystemTime};
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(gc.allocate_string(B("abs")), NativeFunction::new(abs));
-    table.set_field(gc.allocate_string(B("acos")), NativeFunction::new(acos));
-    table.set_field(gc.allocate_string(B("asin")), NativeFunction::new(asin));
-    table.set_field(gc.allocate_string(B("atan")), NativeFunction::new(atan));
-    table.set_field(gc.allocate_string(B("ceil")), NativeFunction::new(ceil));
-    table.set_field(gc.allocate_string(B("cos")), NativeFunction::new(cos));
-    table.set_field(gc.allocate_string(B("deg")), NativeFunction::new(deg));
-    table.set_field(gc.allocate_string(B("exp")), NativeFunction::new(exp));
-    table.set_field(gc.allocate_string(B("floor")), NativeFunction::new(floor));
-    table.set_field(gc.allocate_string(B("fmod")), NativeFunction::new(fmod));
+    table.set_field(gc.allocate_string(B("abs")), NativeFunction::new(math_abs));
+    table.set_field(
+        gc.allocate_string(B("acos")),
+        NativeFunction::new(math_acos),
+    );
+    table.set_field(
+        gc.allocate_string(B("asin")),
+        NativeFunction::new(math_asin),
+    );
+    table.set_field(
+        gc.allocate_string(B("atan")),
+        NativeFunction::new(math_atan),
+    );
+    table.set_field(
+        gc.allocate_string(B("ceil")),
+        NativeFunction::new(math_ceil),
+    );
+    table.set_field(gc.allocate_string(B("cos")), NativeFunction::new(math_cos));
+    table.set_field(gc.allocate_string(B("deg")), NativeFunction::new(math_deg));
+    table.set_field(gc.allocate_string(B("exp")), NativeFunction::new(math_exp));
+    table.set_field(
+        gc.allocate_string(B("floor")),
+        NativeFunction::new(math_floor),
+    );
+    table.set_field(
+        gc.allocate_string(B("fmod")),
+        NativeFunction::new(math_fmod),
+    );
     table.set_field(gc.allocate_string(B("huge")), Number::INFINITY);
-    table.set_field(gc.allocate_string(B("log")), NativeFunction::new(log));
+    table.set_field(gc.allocate_string(B("log")), NativeFunction::new(math_log));
     table.set_field(gc.allocate_string(B("maxinteger")), Integer::MAX);
     table.set_field(gc.allocate_string(B("mininteger")), Integer::MIN);
-    table.set_field(gc.allocate_string(B("modf")), NativeFunction::new(modf));
+    table.set_field(
+        gc.allocate_string(B("modf")),
+        NativeFunction::new(math_modf),
+    );
     table.set_field(gc.allocate_string(B("pi")), std::f64::consts::PI as Number);
-    table.set_field(gc.allocate_string(B("rad")), NativeFunction::new(rad));
+    table.set_field(gc.allocate_string(B("rad")), NativeFunction::new(math_rad));
 
     fn seed1() -> i64 {
         SystemTime::now()
@@ -97,19 +118,25 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
         })),
     );
 
-    table.set_field(gc.allocate_string(B("sin")), NativeFunction::new(sin));
-    table.set_field(gc.allocate_string(B("sqrt")), NativeFunction::new(sqrt));
-    table.set_field(gc.allocate_string(B("tan")), NativeFunction::new(tan));
+    table.set_field(gc.allocate_string(B("sin")), NativeFunction::new(math_sin));
+    table.set_field(
+        gc.allocate_string(B("sqrt")),
+        NativeFunction::new(math_sqrt),
+    );
+    table.set_field(gc.allocate_string(B("tan")), NativeFunction::new(math_tan));
     table.set_field(
         gc.allocate_string(B("tointeger")),
-        NativeFunction::new(tointeger),
+        NativeFunction::new(math_tointeger),
     );
-    table.set_field(gc.allocate_string(B("type")), NativeFunction::new(ty));
-    table.set_field(gc.allocate_string(B("ult")), NativeFunction::new(ult));
+    table.set_field(
+        gc.allocate_string(B("type")),
+        NativeFunction::new(math_type),
+    );
+    table.set_field(gc.allocate_string(B("ult")), NativeFunction::new(math_ult));
     gc.allocate_cell(table)
 }
 
-fn abs<'gc>(
+fn math_abs<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -126,7 +153,7 @@ fn abs<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn acos<'gc>(
+fn math_acos<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -138,7 +165,7 @@ fn acos<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn asin<'gc>(
+fn math_asin<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -150,7 +177,7 @@ fn asin<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn atan<'gc>(
+fn math_atan<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -169,7 +196,7 @@ fn atan<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn ceil<'gc>(
+fn math_ceil<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -187,7 +214,7 @@ fn ceil<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn cos<'gc>(
+fn math_cos<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -199,7 +226,7 @@ fn cos<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn deg<'gc>(
+fn math_deg<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -211,7 +238,7 @@ fn deg<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn exp<'gc>(
+fn math_exp<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -223,7 +250,7 @@ fn exp<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn floor<'gc>(
+fn math_floor<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -241,7 +268,7 @@ fn floor<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn fmod<'gc>(
+fn math_fmod<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -266,7 +293,7 @@ fn fmod<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn log<'gc>(
+fn math_log<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -285,7 +312,7 @@ fn log<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn modf<'gc>(
+fn math_modf<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -305,7 +332,7 @@ fn modf<'gc>(
     Ok(Action::Return { num_results: 2 })
 }
 
-fn rad<'gc>(
+fn math_rad<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -314,6 +341,90 @@ fn rad<'gc>(
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     stack[0] = stack.arg(0).to_number()?.to_radians().into();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_sin<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    stack[0] = stack.arg(0).to_number()?.sin().into();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_sqrt<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    stack[0] = stack.arg(0).to_number()?.sqrt().into();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_tan<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    stack[0] = stack.arg(0).to_number()?.tan().into();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_tointeger<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    stack[0] = stack
+        .arg(0)
+        .to_value()?
+        .to_integer()
+        .map(|i| i.into())
+        .unwrap_or_default();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_type<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    let result = match stack.arg(0).to_value()? {
+        Value::Integer(_) => gc.allocate_string(B("integer")).into(),
+        Value::Number(_) => gc.allocate_string(B("float")).into(),
+        _ => Value::Nil,
+    };
+    stack[0] = result;
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_ult<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    let m = stack.arg(0).to_integer()?;
+    let n = stack.arg(1).to_integer()?;
+    stack[0] = ((m as u64) < (n as u64)).into();
     Ok(Action::Return { num_results: 1 })
 }
 
@@ -351,90 +462,6 @@ fn random_in_range<R: Rng>(rng: &mut R, lower: Integer, upper: Integer) -> Integ
         }
     }
     lower + project(rng, upper - lower)
-}
-
-fn sin<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack[0] = stack.arg(0).to_number()?.sin().into();
-    Ok(Action::Return { num_results: 1 })
-}
-
-fn sqrt<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack[0] = stack.arg(0).to_number()?.sqrt().into();
-    Ok(Action::Return { num_results: 1 })
-}
-
-fn tan<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack[0] = stack.arg(0).to_number()?.tan().into();
-    Ok(Action::Return { num_results: 1 })
-}
-
-fn tointeger<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack[0] = stack
-        .arg(0)
-        .to_value()?
-        .to_integer()
-        .map(|i| i.into())
-        .unwrap_or_default();
-    Ok(Action::Return { num_results: 1 })
-}
-
-fn ty<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    let result = match stack.arg(0).to_value()? {
-        Value::Integer(_) => gc.allocate_string(B("integer")).into(),
-        Value::Number(_) => gc.allocate_string(B("float")).into(),
-        _ => Value::Nil,
-    };
-    stack[0] = result;
-    Ok(Action::Return { num_results: 1 })
-}
-
-fn ult<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    let m = stack.arg(0).to_integer()?;
-    let n = stack.arg(1).to_integer()?;
-    stack[0] = ((m as u64) < (n as u64)).into();
-    Ok(Action::Return { num_results: 1 })
 }
 
 fn number_to_value<'gc>(x: Number) -> Value<'gc> {

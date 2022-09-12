@@ -13,45 +13,78 @@ use std::io::Write;
 pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let globals = vm.globals();
     let mut globals = globals.borrow_mut(gc);
-    globals.set_field(gc.allocate_string(B("assert")), NativeFunction::new(assert));
+    globals.set_field(
+        gc.allocate_string(B("assert")),
+        NativeFunction::new(base_assert),
+    );
     globals.set_field(
         gc.allocate_string(B("collectgarbage")),
-        NativeFunction::new(collectgarbage),
+        NativeFunction::new(base_collectgarbage),
     );
-    globals.set_field(gc.allocate_string(B("error")), NativeFunction::new(error));
+    globals.set_field(
+        gc.allocate_string(B("error")),
+        NativeFunction::new(base_error),
+    );
     globals.set_field(
         gc.allocate_string(B("getmetatable")),
-        NativeFunction::new(getmetatable),
+        NativeFunction::new(base_getmetatable),
     );
-    globals.set_field(gc.allocate_string(B("ipairs")), NativeFunction::new(ipairs));
+    globals.set_field(
+        gc.allocate_string(B("ipairs")),
+        NativeFunction::new(base_ipairs),
+    );
     globals.set_field(
         gc.allocate_string(B("load")),
         NativeFunction::new(base_load),
     );
-    globals.set_field(gc.allocate_string(B("next")), NativeFunction::new(next));
-    globals.set_field(gc.allocate_string(B("pairs")), NativeFunction::new(pairs));
-    globals.set_field(gc.allocate_string(B("print")), NativeFunction::new(print));
+    globals.set_field(
+        gc.allocate_string(B("next")),
+        NativeFunction::new(base_next),
+    );
+    globals.set_field(
+        gc.allocate_string(B("pairs")),
+        NativeFunction::new(base_pairs),
+    );
+    globals.set_field(
+        gc.allocate_string(B("print")),
+        NativeFunction::new(base_print),
+    );
     globals.set_field(
         gc.allocate_string(B("rawequal")),
-        NativeFunction::new(rawequal),
+        NativeFunction::new(base_rawequal),
     );
-    globals.set_field(gc.allocate_string(B("rawget")), NativeFunction::new(rawget));
-    globals.set_field(gc.allocate_string(B("rawlen")), NativeFunction::new(rawlen));
-    globals.set_field(gc.allocate_string(B("rawset")), NativeFunction::new(rawset));
-    globals.set_field(gc.allocate_string(B("select")), NativeFunction::new(select));
+    globals.set_field(
+        gc.allocate_string(B("rawget")),
+        NativeFunction::new(base_rawget),
+    );
+    globals.set_field(
+        gc.allocate_string(B("rawlen")),
+        NativeFunction::new(base_rawlen),
+    );
+    globals.set_field(
+        gc.allocate_string(B("rawset")),
+        NativeFunction::new(base_rawset),
+    );
+    globals.set_field(
+        gc.allocate_string(B("select")),
+        NativeFunction::new(base_select),
+    );
     globals.set_field(
         gc.allocate_string(B("setmetatable")),
-        NativeFunction::new(setmetatable),
+        NativeFunction::new(base_setmetatable),
     );
     globals.set_field(
         gc.allocate_string(B("tonumber")),
-        NativeFunction::new(tonumber),
+        NativeFunction::new(base_tonumber),
     );
     globals.set_field(
         gc.allocate_string(B("tostring")),
-        NativeFunction::new(tostring),
+        NativeFunction::new(base_tostring),
     );
-    globals.set_field(gc.allocate_string(B("type")), NativeFunction::new(ty));
+    globals.set_field(
+        gc.allocate_string(B("type")),
+        NativeFunction::new(base_type),
+    );
     globals.set_field(
         gc.allocate_string(B("_VERSION")),
         gc.allocate_string(format!("Lua {}.{}", LUA_VERSION.0, LUA_VERSION.1).into_bytes()),
@@ -59,7 +92,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     vm.globals()
 }
 
-fn assert<'gc>(
+fn base_assert<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -79,7 +112,7 @@ fn assert<'gc>(
     }
 }
 
-fn collectgarbage<'gc>(
+fn base_collectgarbage<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -94,7 +127,7 @@ fn collectgarbage<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn error<'gc>(
+fn base_error<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -106,7 +139,7 @@ fn error<'gc>(
     Err(ErrorKind::from_error_object(error_obj))
 }
 
-fn getmetatable<'gc>(
+fn base_getmetatable<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -122,7 +155,7 @@ fn getmetatable<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn ipairs<'gc>(
+fn base_ipairs<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -201,7 +234,7 @@ fn base_load<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn next<'gc>(
+fn base_next<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -224,7 +257,7 @@ fn next<'gc>(
     }
 }
 
-fn pairs<'gc>(
+fn base_pairs<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -235,12 +268,12 @@ fn pairs<'gc>(
 
     thread.ensure_stack(&mut window, 3);
     let stack = thread.stack_mut(&window);
-    stack[0] = NativeFunction::new(next).into();
+    stack[0] = NativeFunction::new(base_next).into();
     stack[2] = Value::Nil;
     Ok(Action::Return { num_results: 3 })
 }
 
-fn print<'gc>(
+fn base_print<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -260,7 +293,7 @@ fn print<'gc>(
     Ok(Action::Return { num_results: 0 })
 }
 
-fn rawequal<'gc>(
+fn base_rawequal<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -272,7 +305,7 @@ fn rawequal<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn rawget<'gc>(
+fn base_rawget<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -285,7 +318,7 @@ fn rawget<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn rawlen<'gc>(
+fn base_rawlen<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -308,7 +341,7 @@ fn rawlen<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn rawset<'gc>(
+fn base_rawset<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -327,7 +360,7 @@ fn rawset<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn select<'gc>(
+fn base_select<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -363,7 +396,7 @@ fn select<'gc>(
     })
 }
 
-fn setmetatable<'gc>(
+fn base_setmetatable<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -392,7 +425,7 @@ fn setmetatable<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn tonumber<'gc>(
+fn base_tonumber<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -435,7 +468,7 @@ fn tonumber<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn tostring<'gc>(
+fn base_tostring<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -449,7 +482,7 @@ fn tostring<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn ty<'gc>(
+fn base_type<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,

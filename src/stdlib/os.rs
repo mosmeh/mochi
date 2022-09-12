@@ -9,19 +9,25 @@ use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(gc.allocate_string(B("clock")), NativeFunction::new(clock));
-    table.set_field(gc.allocate_string(B("date")), NativeFunction::new(date));
+    table.set_field(
+        gc.allocate_string(B("clock")),
+        NativeFunction::new(os_clock),
+    );
+    table.set_field(gc.allocate_string(B("date")), NativeFunction::new(os_date));
     table.set_field(
         gc.allocate_string(B("difftime")),
-        NativeFunction::new(difftime),
+        NativeFunction::new(os_difftime),
     );
-    table.set_field(gc.allocate_string(B("exit")), NativeFunction::new(exit));
-    table.set_field(gc.allocate_string(B("getenv")), NativeFunction::new(getenv));
-    table.set_field(gc.allocate_string(B("time")), NativeFunction::new(time));
+    table.set_field(gc.allocate_string(B("exit")), NativeFunction::new(os_exit));
+    table.set_field(
+        gc.allocate_string(B("getenv")),
+        NativeFunction::new(os_getenv),
+    );
+    table.set_field(gc.allocate_string(B("time")), NativeFunction::new(os_time));
     gc.allocate_cell(table)
 }
 
-fn clock<'gc>(
+fn os_clock<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -34,7 +40,7 @@ fn clock<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn date<'gc>(
+fn os_date<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
@@ -104,7 +110,7 @@ fn date<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn difftime<'gc>(
+fn os_difftime<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -116,7 +122,7 @@ fn difftime<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn exit<'gc>(
+fn os_exit<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -142,7 +148,7 @@ fn exit<'gc>(
     std::process::exit(code)
 }
 
-fn getenv<'gc>(
+fn os_getenv<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -162,7 +168,7 @@ fn getenv<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn time<'gc>(
+fn os_time<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,

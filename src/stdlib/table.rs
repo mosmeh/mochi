@@ -8,15 +8,30 @@ use bstr::B;
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(gc.allocate_string(B("concat")), NativeFunction::new(concat));
-    table.set_field(gc.allocate_string(B("insert")), NativeFunction::new(insert));
-    table.set_field(gc.allocate_string(B("pack")), NativeFunction::new(pack));
-    table.set_field(gc.allocate_string(B("remove")), NativeFunction::new(remove));
-    table.set_field(gc.allocate_string(B("unpack")), NativeFunction::new(unpack));
+    table.set_field(
+        gc.allocate_string(B("concat")),
+        NativeFunction::new(table_concat),
+    );
+    table.set_field(
+        gc.allocate_string(B("insert")),
+        NativeFunction::new(table_insert),
+    );
+    table.set_field(
+        gc.allocate_string(B("pack")),
+        NativeFunction::new(table_pack),
+    );
+    table.set_field(
+        gc.allocate_string(B("remove")),
+        NativeFunction::new(table_remove),
+    );
+    table.set_field(
+        gc.allocate_string(B("unpack")),
+        NativeFunction::new(table_unpack),
+    );
     gc.allocate_cell(table)
 }
 
-fn concat<'gc>(
+fn table_concat<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -51,7 +66,7 @@ fn concat<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn insert<'gc>(
+fn table_insert<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -89,7 +104,7 @@ fn insert<'gc>(
     Ok(Action::Return { num_results: 0 })
 }
 
-fn pack<'gc>(
+fn table_pack<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -103,7 +118,7 @@ fn pack<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn remove<'gc>(
+fn table_remove<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
@@ -133,7 +148,7 @@ fn remove<'gc>(
     Ok(Action::Return { num_results: 1 })
 }
 
-fn unpack<'gc>(
+fn table_unpack<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,

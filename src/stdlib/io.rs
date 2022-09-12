@@ -9,12 +9,18 @@ use std::io::Write;
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(gc.allocate_string(B("flush")), NativeFunction::new(flush));
-    table.set_field(gc.allocate_string(B("write")), NativeFunction::new(write));
+    table.set_field(
+        gc.allocate_string(B("flush")),
+        NativeFunction::new(io_flush),
+    );
+    table.set_field(
+        gc.allocate_string(B("write")),
+        NativeFunction::new(io_write),
+    );
     gc.allocate_cell(table)
 }
 
-fn flush<'gc>(
+fn io_flush<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
     _: GcCell<LuaThread<'gc>>,
@@ -24,7 +30,7 @@ fn flush<'gc>(
     Ok(Action::Return { num_results: 0 })
 }
 
-fn write<'gc>(
+fn io_write<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,

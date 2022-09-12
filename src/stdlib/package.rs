@@ -37,7 +37,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     let lua_vdir = format!("{}.{}", LUA_VERSION.0, LUA_VERSION.1);
     let lua_vdir = lua_vdir.as_bytes();
 
-    let path = {
+    let package_path = {
         #[cfg(windows)]
         {
             const LUA_LDIR: &[u8] = b"!\\lua\\";
@@ -91,17 +91,23 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     let mut globals = globals.borrow_mut(gc);
     globals.set_field(
         gc.allocate_string(B("require")),
-        gc.allocate(NativeClosure::with_upvalues(require, vec![package.into()])),
+        gc.allocate(NativeClosure::with_upvalues(
+            package_require,
+            vec![package.into()],
+        )),
     );
 
     let registry = vm.registry();
     let mut registry = registry.borrow_mut(gc);
 
-    let loaded = registry.get_field(gc.allocate_string(super::LUA_LOADED_TABLE));
-    assert!(!loaded.is_nil());
+    let package_loaded = registry.get_field(gc.allocate_string(super::LUA_LOADED_TABLE));
+    assert!(!package_loaded.is_nil());
 
-    let preload = gc.allocate_cell(Table::new());
-    registry.set_field(gc.allocate_string(super::LUA_PRELOAD_TABLE), preload);
+    let package_preload = gc.allocate_cell(Table::new());
+    registry.set_field(
+        gc.allocate_string(super::LUA_PRELOAD_TABLE),
+        package_preload,
+    );
 
     let mut table = package.borrow_mut(gc);
     table.set_field(
@@ -118,10 +124,13 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
             ],
         )),
     );
-    table.set_field(gc.allocate_string(B("loaded")), loaded);
-    table.set_field(gc.allocate_string(B("path")), gc.allocate_string(path));
-    table.set_field(gc.allocate_string(B("preload")), preload);
-    let searchers = vec![
+    table.set_field(gc.allocate_string(B("loaded")), package_loaded);
+    table.set_field(
+        gc.allocate_string(B("path")),
+        gc.allocate_string(package_path),
+    );
+    table.set_field(gc.allocate_string(B("preload")), package_preload);
+    let package_searchers = vec![
         NativeFunction::new(searcher_preload).into(),
         gc.allocate(NativeClosure::with_upvalues(
             searcher_lua,
@@ -131,7 +140,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     ];
     table.set_field(
         gc.allocate_string(B("searchers")),
-        gc.allocate_cell(Table::from(searchers)),
+        gc.allocate_cell(Table::from(package_searchers)),
     );
     table.set_field(
         gc.allocate_string(B("searchpath")),
@@ -141,7 +150,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     package
 }
 
-fn require<'gc>(
+fn package_require<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
