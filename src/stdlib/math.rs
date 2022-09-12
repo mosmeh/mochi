@@ -133,6 +133,30 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
         NativeFunction::new(math_type),
     );
     table.set_field(gc.allocate_string(B("ult")), NativeFunction::new(math_ult));
+
+    // LUA_COMPAT_MATHLIB
+    table.set_field(
+        gc.allocate_string(B("atan2")),
+        NativeFunction::new(math_atan),
+    );
+    table.set_field(
+        gc.allocate_string(B("cosh")),
+        NativeFunction::new(math_cosh),
+    );
+    table.set_field(
+        gc.allocate_string(B("log10")),
+        NativeFunction::new(math_log10),
+    );
+    table.set_field(gc.allocate_string(B("pow")), NativeFunction::new(math_pow));
+    table.set_field(
+        gc.allocate_string(B("sinh")),
+        NativeFunction::new(math_sinh),
+    );
+    table.set_field(
+        gc.allocate_string(B("tanh")),
+        NativeFunction::new(math_tanh),
+    );
+
     gc.allocate_cell(table)
 }
 
@@ -425,6 +449,68 @@ fn math_ult<'gc>(
     let m = stack.arg(0).to_integer()?;
     let n = stack.arg(1).to_integer()?;
     stack[0] = ((m as u64) < (n as u64)).into();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_cosh<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    stack[0] = stack.arg(0).to_number()?.cosh().into();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_log10<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    stack[0] = stack.arg(0).to_number()?.log10().into();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_pow<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    let x = stack.arg(0).to_number()?;
+    let y = stack.arg(1).to_number()?;
+    stack[0] = Number::powf(x, y).into();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_sinh<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    stack[0] = stack.arg(0).to_number()?.sinh().into();
+    Ok(Action::Return { num_results: 1 })
+}
+
+fn math_tanh<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+    stack[0] = stack.arg(0).to_number()?.tanh().into();
     Ok(Action::Return { num_results: 1 })
 }
 
