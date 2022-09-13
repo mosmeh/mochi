@@ -26,16 +26,13 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
         ],
     );
 
-    let table = gc.allocate_cell(table);
-    vm.globals()
-        .borrow_mut(gc)
-        .set_field(gc.allocate_string(B("string")), table);
+    let string = gc.allocate_cell(table);
 
     let mut metatable = Table::new();
-    metatable.set_field(vm.metamethod_name(Metamethod::Index), table);
+    metatable.set_field(vm.metamethod_name(Metamethod::Index), string);
     vm.set_metatable_of_type(Type::String, gc.allocate_cell(metatable));
 
-    table
+    string
 }
 
 fn string_byte<'gc>(
