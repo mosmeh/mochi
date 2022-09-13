@@ -2,10 +2,8 @@ use super::helpers::StackExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{
-        Action, Integer, LuaThread, NativeClosure, NativeFunction, Number, StackWindow, Table,
-        Value,
-    },
+    stdlib::helpers::set_functions_to_table,
+    types::{Action, Integer, LuaThread, NativeClosure, Number, StackWindow, Table, Value},
 };
 use bstr::B;
 use rand::{Rng, RngCore, SeedableRng};
@@ -14,44 +12,42 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc, time::SystemTime};
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(gc.allocate_string(B("abs")), NativeFunction::new(math_abs));
-    table.set_field(
-        gc.allocate_string(B("acos")),
-        NativeFunction::new(math_acos),
-    );
-    table.set_field(
-        gc.allocate_string(B("asin")),
-        NativeFunction::new(math_asin),
-    );
-    table.set_field(
-        gc.allocate_string(B("atan")),
-        NativeFunction::new(math_atan),
-    );
-    table.set_field(
-        gc.allocate_string(B("ceil")),
-        NativeFunction::new(math_ceil),
-    );
-    table.set_field(gc.allocate_string(B("cos")), NativeFunction::new(math_cos));
-    table.set_field(gc.allocate_string(B("deg")), NativeFunction::new(math_deg));
-    table.set_field(gc.allocate_string(B("exp")), NativeFunction::new(math_exp));
-    table.set_field(
-        gc.allocate_string(B("floor")),
-        NativeFunction::new(math_floor),
-    );
-    table.set_field(
-        gc.allocate_string(B("fmod")),
-        NativeFunction::new(math_fmod),
+    set_functions_to_table(
+        gc,
+        &mut table,
+        &[
+            (B("abs"), math_abs),
+            (B("acos"), math_acos),
+            (B("asin"), math_asin),
+            (B("atan"), math_atan),
+            (B("ceil"), math_ceil),
+            (B("cos"), math_cos),
+            (B("deg"), math_deg),
+            (B("exp"), math_exp),
+            (B("floor"), math_floor),
+            (B("fmod"), math_fmod),
+            (B("log"), math_log),
+            (B("modf"), math_modf),
+            (B("rad"), math_rad),
+            (B("sin"), math_sin),
+            (B("sqrt"), math_sqrt),
+            (B("tan"), math_tan),
+            (B("tointeger"), math_tointeger),
+            (B("type"), math_type),
+            (B("ult"), math_ult),
+            // LUA_COMPAT_MATHLIB
+            (B("atan2"), math_atan),
+            (B("cosh"), math_cosh),
+            (B("log10"), math_log10),
+            (B("pow"), math_pow),
+            (B("sinh"), math_sinh),
+            (B("tanh"), math_tanh),
+        ],
     );
     table.set_field(gc.allocate_string(B("huge")), Number::INFINITY);
-    table.set_field(gc.allocate_string(B("log")), NativeFunction::new(math_log));
     table.set_field(gc.allocate_string(B("maxinteger")), Integer::MAX);
     table.set_field(gc.allocate_string(B("mininteger")), Integer::MIN);
-    table.set_field(
-        gc.allocate_string(B("modf")),
-        NativeFunction::new(math_modf),
-    );
-    table.set_field(gc.allocate_string(B("pi")), std::f64::consts::PI as Number);
-    table.set_field(gc.allocate_string(B("rad")), NativeFunction::new(math_rad));
+    table.set_field(gc.allocate_string(B("pi")), std::f64::consts::PI);
 
     fn seed1() -> i64 {
         SystemTime::now()
@@ -116,45 +112,6 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
             stack[1] = y.into();
             Ok(Action::Return { num_results: 2 })
         })),
-    );
-
-    table.set_field(gc.allocate_string(B("sin")), NativeFunction::new(math_sin));
-    table.set_field(
-        gc.allocate_string(B("sqrt")),
-        NativeFunction::new(math_sqrt),
-    );
-    table.set_field(gc.allocate_string(B("tan")), NativeFunction::new(math_tan));
-    table.set_field(
-        gc.allocate_string(B("tointeger")),
-        NativeFunction::new(math_tointeger),
-    );
-    table.set_field(
-        gc.allocate_string(B("type")),
-        NativeFunction::new(math_type),
-    );
-    table.set_field(gc.allocate_string(B("ult")), NativeFunction::new(math_ult));
-
-    // LUA_COMPAT_MATHLIB
-    table.set_field(
-        gc.allocate_string(B("atan2")),
-        NativeFunction::new(math_atan),
-    );
-    table.set_field(
-        gc.allocate_string(B("cosh")),
-        NativeFunction::new(math_cosh),
-    );
-    table.set_field(
-        gc.allocate_string(B("log10")),
-        NativeFunction::new(math_log10),
-    );
-    table.set_field(gc.allocate_string(B("pow")), NativeFunction::new(math_pow));
-    table.set_field(
-        gc.allocate_string(B("sinh")),
-        NativeFunction::new(math_sinh),
-    );
-    table.set_field(
-        gc.allocate_string(B("tanh")),
-        NativeFunction::new(math_tanh),
     );
 
     gc.allocate_cell(table)

@@ -1,4 +1,4 @@
-use super::helpers::StackExt;
+use super::helpers::{set_functions_to_table, StackExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
@@ -13,81 +13,30 @@ use std::io::{Read, Write};
 pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let globals = vm.globals();
     let mut globals = globals.borrow_mut(gc);
-    globals.set_field(
-        gc.allocate_string(B("assert")),
-        NativeFunction::new(base_assert),
-    );
-    globals.set_field(
-        gc.allocate_string(B("collectgarbage")),
-        NativeFunction::new(base_collectgarbage),
-    );
-    globals.set_field(
-        gc.allocate_string(B("dofile")),
-        NativeFunction::new(base_dofile),
-    );
-    globals.set_field(
-        gc.allocate_string(B("error")),
-        NativeFunction::new(base_error),
-    );
-    globals.set_field(
-        gc.allocate_string(B("getmetatable")),
-        NativeFunction::new(base_getmetatable),
-    );
-    globals.set_field(
-        gc.allocate_string(B("ipairs")),
-        NativeFunction::new(base_ipairs),
-    );
-    globals.set_field(
-        gc.allocate_string(B("load")),
-        NativeFunction::new(base_load),
-    );
-    globals.set_field(
-        gc.allocate_string(B("next")),
-        NativeFunction::new(base_next),
-    );
-    globals.set_field(
-        gc.allocate_string(B("pairs")),
-        NativeFunction::new(base_pairs),
-    );
-    globals.set_field(
-        gc.allocate_string(B("print")),
-        NativeFunction::new(base_print),
-    );
-    globals.set_field(
-        gc.allocate_string(B("rawequal")),
-        NativeFunction::new(base_rawequal),
-    );
-    globals.set_field(
-        gc.allocate_string(B("rawget")),
-        NativeFunction::new(base_rawget),
-    );
-    globals.set_field(
-        gc.allocate_string(B("rawlen")),
-        NativeFunction::new(base_rawlen),
-    );
-    globals.set_field(
-        gc.allocate_string(B("rawset")),
-        NativeFunction::new(base_rawset),
-    );
-    globals.set_field(
-        gc.allocate_string(B("select")),
-        NativeFunction::new(base_select),
-    );
-    globals.set_field(
-        gc.allocate_string(B("setmetatable")),
-        NativeFunction::new(base_setmetatable),
-    );
-    globals.set_field(
-        gc.allocate_string(B("tonumber")),
-        NativeFunction::new(base_tonumber),
-    );
-    globals.set_field(
-        gc.allocate_string(B("tostring")),
-        NativeFunction::new(base_tostring),
-    );
-    globals.set_field(
-        gc.allocate_string(B("type")),
-        NativeFunction::new(base_type),
+    set_functions_to_table(
+        gc,
+        &mut globals,
+        &[
+            (B("assert"), base_assert),
+            (B("collectgarbage"), base_collectgarbage),
+            (B("dofile"), base_dofile),
+            (B("error"), base_error),
+            (B("getmetatable"), base_getmetatable),
+            (B("ipairs"), base_ipairs),
+            (B("load"), base_load),
+            (B("next"), base_next),
+            (B("pairs"), base_pairs),
+            (B("print"), base_print),
+            (B("rawequal"), base_rawequal),
+            (B("rawget"), base_rawget),
+            (B("rawlen"), base_rawlen),
+            (B("rawset"), base_rawset),
+            (B("select"), base_select),
+            (B("setmetatable"), base_setmetatable),
+            (B("tonumber"), base_tonumber),
+            (B("tostring"), base_tostring),
+            (B("type"), base_type),
+        ],
     );
     globals.set_field(
         gc.allocate_string(B("_VERSION")),

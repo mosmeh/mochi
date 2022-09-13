@@ -1,21 +1,18 @@
-use super::helpers::StackExt;
+use super::helpers::{set_functions_to_table, StackExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Action, LuaThread, NativeFunction, StackWindow, Table},
+    types::{Action, LuaThread, StackWindow, Table},
 };
 use bstr::B;
 use std::io::Write;
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(
-        gc.allocate_string(B("flush")),
-        NativeFunction::new(io_flush),
-    );
-    table.set_field(
-        gc.allocate_string(B("write")),
-        NativeFunction::new(io_write),
+    set_functions_to_table(
+        gc,
+        &mut table,
+        &[(B("flush"), io_flush), (B("write"), io_write)],
     );
     gc.allocate_cell(table)
 }

@@ -1,29 +1,26 @@
-use super::helpers::StackExt;
+use super::helpers::{set_functions_to_table, StackExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Action, Integer, LuaThread, NativeFunction, StackWindow, Table, Value},
+    types::{Action, Integer, LuaThread, StackWindow, Table, Value},
 };
 use bstr::{ByteSlice, ByteVec, B};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(
-        gc.allocate_string(B("clock")),
-        NativeFunction::new(os_clock),
+    set_functions_to_table(
+        gc,
+        &mut table,
+        &[
+            (B("clock"), os_clock),
+            (B("date"), os_date),
+            (B("difftime"), os_difftime),
+            (B("exit"), os_exit),
+            (B("getenv"), os_getenv),
+            (B("time"), os_time),
+        ],
     );
-    table.set_field(gc.allocate_string(B("date")), NativeFunction::new(os_date));
-    table.set_field(
-        gc.allocate_string(B("difftime")),
-        NativeFunction::new(os_difftime),
-    );
-    table.set_field(gc.allocate_string(B("exit")), NativeFunction::new(os_exit));
-    table.set_field(
-        gc.allocate_string(B("getenv")),
-        NativeFunction::new(os_getenv),
-    );
-    table.set_field(gc.allocate_string(B("time")), NativeFunction::new(os_time));
     gc.allocate_cell(table)
 }
 

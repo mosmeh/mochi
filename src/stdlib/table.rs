@@ -1,32 +1,23 @@
-use super::helpers::StackExt;
+use super::helpers::{set_functions_to_table, StackExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Action, Integer, LuaThread, NativeFunction, StackWindow, Table, Value},
+    types::{Action, Integer, LuaThread, StackWindow, Table, Value},
 };
 use bstr::B;
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(
-        gc.allocate_string(B("concat")),
-        NativeFunction::new(table_concat),
-    );
-    table.set_field(
-        gc.allocate_string(B("insert")),
-        NativeFunction::new(table_insert),
-    );
-    table.set_field(
-        gc.allocate_string(B("pack")),
-        NativeFunction::new(table_pack),
-    );
-    table.set_field(
-        gc.allocate_string(B("remove")),
-        NativeFunction::new(table_remove),
-    );
-    table.set_field(
-        gc.allocate_string(B("unpack")),
-        NativeFunction::new(table_unpack),
+    set_functions_to_table(
+        gc,
+        &mut table,
+        &[
+            (B("concat"), table_concat),
+            (B("insert"), table_insert),
+            (B("pack"), table_pack),
+            (B("remove"), table_remove),
+            (B("unpack"), table_unpack),
+        ],
     );
     gc.allocate_cell(table)
 }

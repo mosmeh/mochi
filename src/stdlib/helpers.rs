@@ -1,12 +1,38 @@
 use crate::{
     gc::GcContext,
     runtime::ErrorKind,
-    types::{Integer, Number, Table, Value},
+    types::{Integer, NativeFunction, NativeFunctionPtr, Number, Table, Value},
 };
 use std::{
     borrow::{Borrow, Cow},
     cell::{Ref, RefMut},
 };
+
+pub trait StackExt<'gc> {
+    fn callee(&self) -> Value<'gc>;
+    fn args(&self) -> &[Value<'gc>];
+    fn arg(&self, nth: usize) -> Argument<'gc>;
+}
+
+impl<'gc, T> StackExt<'gc> for T
+where
+    T: Borrow<[Value<'gc>]>,
+{
+    fn callee(&self) -> Value<'gc> {
+        self.borrow()[0]
+    }
+
+    fn args(&self) -> &[Value<'gc>] {
+        &self.borrow()[1..]
+    }
+
+    fn arg(&self, nth: usize) -> Argument<'gc> {
+        Argument {
+            value: self.borrow().get(nth + 1).copied(),
+            nth,
+        }
+    }
+}
 
 pub struct Argument<'gc> {
     value: Option<Value<'gc>>,
@@ -95,28 +121,12 @@ impl<'gc> Argument<'gc> {
     }
 }
 
-pub trait StackExt<'gc> {
-    fn callee(&self) -> Value<'gc>;
-    fn args(&self) -> &[Value<'gc>];
-    fn arg(&self, nth: usize) -> Argument<'gc>;
-}
-
-impl<'gc, T> StackExt<'gc> for T
-where
-    T: Borrow<[Value<'gc>]>,
-{
-    fn callee(&self) -> Value<'gc> {
-        self.borrow()[0]
-    }
-
-    fn args(&self) -> &[Value<'gc>] {
-        &self.borrow()[1..]
-    }
-
-    fn arg(&self, nth: usize) -> Argument<'gc> {
-        Argument {
-            value: self.borrow().get(nth + 1).copied(),
-            nth,
-        }
+pub fn set_functions_to_table<'gc>(
+    gc: &'gc GcContext,
+    table: &mut Table<'gc>,
+    functions: &[(&[u8], NativeFunctionPtr)],
+) {
+    for (name, func) in functions {
+        table.set_field(gc.allocate_string(*name), NativeFunction::new(*func));
     }
 }

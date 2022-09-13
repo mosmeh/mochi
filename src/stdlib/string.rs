@@ -1,50 +1,29 @@
-use super::helpers::StackExt;
+use super::helpers::{set_functions_to_table, StackExt};
 use crate::{
     binary_chunk,
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Metamethod, Vm},
-    types::{Action, Integer, LuaThread, NativeFunction, StackWindow, Table, Type, Value},
+    types::{Action, Integer, LuaThread, StackWindow, Table, Type, Value},
 };
 use bstr::B;
 use std::ops::Range;
 
 pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
-    table.set_field(
-        gc.allocate_string(B("byte")),
-        NativeFunction::new(string_byte),
-    );
-    table.set_field(
-        gc.allocate_string(B("char")),
-        NativeFunction::new(string_char),
-    );
-    table.set_field(
-        gc.allocate_string(B("dump")),
-        NativeFunction::new(string_dump),
-    );
-    table.set_field(
-        gc.allocate_string(B("len")),
-        NativeFunction::new(string_len),
-    );
-    table.set_field(
-        gc.allocate_string(B("lower")),
-        NativeFunction::new(string_lower),
-    );
-    table.set_field(
-        gc.allocate_string(B("sub")),
-        NativeFunction::new(string_sub),
-    );
-    table.set_field(
-        gc.allocate_string(B("rep")),
-        NativeFunction::new(string_rep),
-    );
-    table.set_field(
-        gc.allocate_string(B("reverse")),
-        NativeFunction::new(string_reverse),
-    );
-    table.set_field(
-        gc.allocate_string(B("upper")),
-        NativeFunction::new(string_upper),
+    set_functions_to_table(
+        gc,
+        &mut table,
+        &[
+            (B("byte"), string_byte),
+            (B("char"), string_char),
+            (B("dump"), string_dump),
+            (B("len"), string_len),
+            (B("lower"), string_lower),
+            (B("sub"), string_sub),
+            (B("rep"), string_rep),
+            (B("reverse"), string_reverse),
+            (B("upper"), string_upper),
+        ],
     );
 
     let table = gc.allocate_cell(table);
