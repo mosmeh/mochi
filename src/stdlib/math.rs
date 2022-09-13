@@ -302,7 +302,7 @@ fn math_fmod<'gc>(
     let stack = thread.stack_mut(&window);
     let x = stack.arg(0);
     let y = stack.arg(1);
-    let result = if let (Value::Integer(x), Value::Integer(y)) = (x.to_value()?, y.to_value()?) {
+    let result = if let (Value::Integer(x), Value::Integer(y)) = (x.as_value()?, y.as_value()?) {
         if y == 0 {
             return Err(ErrorKind::ArgumentError {
                 nth: 1,
@@ -345,7 +345,7 @@ fn math_modf<'gc>(
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let x = stack.arg(0);
-    let (trunc, fract) = if let Value::Integer(x) = x.to_value()? {
+    let (trunc, fract) = if let Value::Integer(x) = x.as_value()? {
         (x.into(), 0.0.into())
     } else {
         let x = x.to_number()?;
@@ -414,7 +414,7 @@ fn math_tointeger<'gc>(
     let stack = thread.stack_mut(&window);
     stack[0] = stack
         .arg(0)
-        .to_value()?
+        .as_value()?
         .to_integer()
         .map(|i| i.into())
         .unwrap_or_default();
@@ -429,7 +429,7 @@ fn math_type<'gc>(
 ) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
-    let result = match stack.arg(0).to_value()? {
+    let result = match stack.arg(0).as_value()? {
         Value::Integer(_) => gc.allocate_string(B("integer")).into(),
         Value::Number(_) => gc.allocate_string(B("float")).into(),
         _ => Value::Nil,

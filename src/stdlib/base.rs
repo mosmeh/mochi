@@ -104,7 +104,7 @@ fn base_assert<'gc>(
 ) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
-    if stack.arg(0).to_value()?.to_boolean() {
+    if stack.arg(0).as_value()?.to_boolean() {
         stack.copy_within(1..stack.len(), 0);
         Ok(Action::Return {
             num_results: stack.args().len(),
@@ -179,7 +179,7 @@ fn base_getmetatable<'gc>(
 ) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
-    let object = stack.arg(0).to_value()?;
+    let object = stack.arg(0).as_value()?;
     stack[0] = vm
         .metatable_of_object(object)
         .map(Value::from)
@@ -215,7 +215,7 @@ fn base_ipairs<'gc>(
     }
 
     let mut thread = thread.borrow_mut(gc);
-    thread.stack(&window).arg(0).to_value()?;
+    thread.stack(&window).arg(0).as_value()?;
 
     thread.ensure_stack(&mut window, 3);
     let stack = thread.stack_mut(&window);
@@ -296,7 +296,7 @@ fn base_pairs<'gc>(
     mut window: StackWindow,
 ) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
-    thread.stack(&window).arg(0).to_value()?;
+    thread.stack(&window).arg(0).as_value()?;
 
     thread.ensure_stack(&mut window, 3);
     let stack = thread.stack_mut(&window);
@@ -333,7 +333,7 @@ fn base_rawequal<'gc>(
 ) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
-    stack[0] = (stack.arg(0).to_value()? == stack.arg(1).to_value()?).into();
+    stack[0] = (stack.arg(0).as_value()? == stack.arg(1).as_value()?).into();
     Ok(Action::Return { num_results: 1 })
 }
 
@@ -345,7 +345,7 @@ fn base_rawget<'gc>(
 ) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
-    let index = stack.arg(1).to_value()?;
+    let index = stack.arg(1).as_value()?;
     stack[0] = stack.arg(0).borrow_as_table()?.get(index);
     Ok(Action::Return { num_results: 1 })
 }
@@ -383,12 +383,12 @@ fn base_rawset<'gc>(
     let stack = thread.stack_mut(&window);
 
     let table = stack.arg(0);
-    let index = stack.arg(1).to_value()?;
-    let value = stack.arg(2).to_value()?;
+    let index = stack.arg(1).as_value()?;
+    let value = stack.arg(2).as_value()?;
 
     table.borrow_as_table_mut(gc)?.set(index, value)?;
 
-    stack[0] = table.to_value()?;
+    stack[0] = table.as_value()?;
     Ok(Action::Return { num_results: 1 })
 }
 
@@ -451,7 +451,7 @@ fn base_setmetatable<'gc>(
             }
         };
         table.set_metatable(metatable);
-        table_arg.to_value()?
+        table_arg.as_value()?
     };
     stack[0] = table;
     Ok(Action::Return { num_results: 1 })
@@ -465,7 +465,7 @@ fn base_tonumber<'gc>(
 ) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
-    stack[0] = match stack.arg(0).to_value()? {
+    stack[0] = match stack.arg(0).as_value()? {
         Value::Integer(x) => Value::Integer(x),
         Value::Number(x) => Value::Number(x),
         Value::String(s) => {
@@ -509,7 +509,7 @@ fn base_tostring<'gc>(
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
     let mut string = Vec::new();
-    stack.arg(0).to_value()?.fmt_bytes(&mut string)?;
+    stack.arg(0).as_value()?.fmt_bytes(&mut string)?;
     stack[0] = gc.allocate_string(string).into();
     Ok(Action::Return { num_results: 1 })
 }
@@ -522,7 +522,7 @@ fn base_type<'gc>(
 ) -> Result<Action, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack_mut(&window);
-    let string = stack.arg(0).to_value()?.ty().name().as_bytes();
+    let string = stack.arg(0).as_value()?.ty().name().as_bytes();
     stack[0] = gc.allocate_string(string).into();
     Ok(Action::Return { num_results: 1 })
 }

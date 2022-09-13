@@ -18,7 +18,7 @@ impl<'gc> Argument<'gc> {
         self.value
     }
 
-    pub fn to_value(&self) -> Result<Value<'gc>, ErrorKind> {
+    pub fn as_value(&self) -> Result<Value<'gc>, ErrorKind> {
         self.to_type("value", |value| Some(*value))
     }
 
