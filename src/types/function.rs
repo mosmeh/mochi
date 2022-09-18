@@ -17,6 +17,14 @@ pub enum Action {
     TailCall {
         num_args: usize,
     },
+    Resume {
+        coroutine_bottom: usize,
+        num_values: usize,
+        continuation: Box<NativeClosureFn>,
+    },
+    Yield {
+        num_values: usize,
+    },
 }
 
 pub type NativeFunctionPtr = for<'gc> fn(

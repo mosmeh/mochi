@@ -1,9 +1,12 @@
 use crate::{
-    gc::GcContext,
+    gc::{GcCell, GcContext},
     runtime::ErrorKind,
-    types::{Integer, NativeFunction, NativeFunctionPtr, Number, Table, Value},
+    types::{
+        Integer, LuaThread, NativeFunction, NativeFunctionPtr, Number, Table, Type, UserData, Value,
+    },
 };
 use std::{
+    any::Any,
     borrow::{Borrow, Cow},
     cell::{Ref, RefMut},
 };
@@ -90,15 +93,26 @@ impl<'gc> Argument<'gc> {
         }
     }
 
-    pub fn borrow_as_table(&self) -> Result<Ref<'_, Table<'gc>>, ErrorKind> {
+    pub fn as_thread(&self) -> Result<GcCell<'gc, LuaThread<'gc>>, ErrorKind> {
+        self.to_type("thread", Value::as_thread)
+    }
+
+    pub fn as_userdata<T: Any>(&self) -> Result<GcCell<'gc, UserData<'gc>>, ErrorKind> {
+        self.to_type("userdata", |value| value.as_userdata::<T>())
+    }
+
+    pub fn borrow_as_table(&self) -> Result<Ref<Table<'gc>>, ErrorKind> {
         self.to_type("table", Value::borrow_as_table)
     }
 
-    pub fn borrow_as_table_mut(
-        &self,
-        gc: &'gc GcContext,
-    ) -> Result<RefMut<'_, Table<'gc>>, ErrorKind> {
+    pub fn borrow_as_table_mut(&self, gc: &'gc GcContext) -> Result<RefMut<Table<'gc>>, ErrorKind> {
         self.to_type("table", |value| value.borrow_as_table_mut(gc))
+    }
+
+    pub fn ensure_function(&self) -> Result<Value<'gc>, ErrorKind> {
+        self.to_type("function", |value| {
+            (value.ty() == Type::Function).then_some(*value)
+        })
     }
 
     fn to_type<'a, F, T>(&'a self, name: &'static str, convert: F) -> Result<T, ErrorKind>

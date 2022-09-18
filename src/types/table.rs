@@ -6,7 +6,7 @@ use bucket::Bucket;
 use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum TableError {
     #[error("table index is nil")]
     IndexIsNil,

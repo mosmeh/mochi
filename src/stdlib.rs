@@ -1,4 +1,5 @@
 mod base;
+mod coroutine;
 mod helpers;
 mod io;
 mod math;
@@ -27,6 +28,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) {
 
     let libs: &[(_, LoadFn)] = &[
         (B("_G"), base::load),
+        (B("coroutine"), coroutine::load),
         (B("package"), package::load),
         (B("string"), string::load),
         (B("table"), table::load),

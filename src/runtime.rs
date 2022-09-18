@@ -6,7 +6,7 @@ mod metamethod;
 mod opcode;
 mod ops;
 
-pub use error::{ErrorKind, Operation, RuntimeError, TracebackFrame};
+pub use error::{ErrorKind, Operation, RuntimeError};
 pub use instruction::Instruction;
 pub(crate) use metamethod::Metamethod;
 pub use opcode::OpCode;
@@ -14,11 +14,14 @@ pub use opcode::OpCode;
 use crate::{
     gc::{GarbageCollect, GcCell, GcContext, GcHeap, Tracer},
     types::{
-        Action, LuaString, LuaThread, NativeClosureFn, StackWindow, Table, Type, Upvalue, Value,
+        Action, LuaString, LuaThread, NativeClosureFn, StackWindow, Table, ThreadStatus, Type,
+        Upvalue, UserData, Value,
     },
     Error, LuaClosure,
 };
 use std::{ops::ControlFlow, path::Path};
+
+pub(crate) type CoroutineResult = Result<(), ErrorKind>;
 
 #[derive(Default)]
 pub struct Runtime {
@@ -54,68 +57,46 @@ impl Runtime {
         self.heap.with(
             |gc, vm| -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
                 let value = f(gc, vm)?;
-                let vm = vm.borrow();
-                let mut thread = vm.main_thread.borrow_mut(gc);
-                assert!(thread.stack.is_empty());
-                assert!(thread.frames.is_empty());
-                assert!(thread.open_upvalues.is_empty());
-                thread.stack.push(value);
-                thread.deferred_call(0)?;
+
+                let mut vm = vm.borrow_mut(gc);
+                let main_thread = vm.main_thread;
+                main_thread.borrow_mut(gc).status = ThreadStatus::Unresumable;
+                assert!(vm.thread_stack.is_empty());
+                vm.thread_stack.push(main_thread);
+
+                let mut thread_ref = main_thread.borrow_mut(gc);
+                assert!(thread_ref.stack.is_empty());
+                assert!(thread_ref.frames.is_empty());
+                assert!(thread_ref.open_upvalues.is_empty());
+                thread_ref.stack.push(value);
+                thread_ref.deferred_call(0)?;
+
                 Ok(())
             },
         )?;
 
-        let result = loop {
-            let result = self.heap.with(|gc, vm| {
-                let mut vm = vm.borrow_mut(gc);
-                let thread = vm.main_thread;
-                loop {
-                    if vm.execute_frame(gc, thread)?.is_break() {
-                        return Ok(ControlFlow::Break(()));
-                    }
-                    if gc.debt() > 0 {
-                        return Ok(ControlFlow::Continue(()));
-                    }
-                }
-            });
-            match result {
+        loop {
+            match self.heap.with(execute_until_gc) {
                 Ok(ControlFlow::Continue(())) => self.heap.step(),
-                Ok(ControlFlow::Break(())) => break Ok(()),
-                Err(kind) => break Err(kind),
+                Ok(ControlFlow::Break(())) => return Ok(()),
+                Err(err) => return Err(Box::new(err)),
             }
-        };
-
-        self.heap.with(|gc, vm| {
-            let vm = vm.borrow();
-            let mut thread = vm.main_thread.borrow_mut(gc);
-            let result = match result {
-                Ok(()) => Ok(()),
-                Err(kind) => {
-                    let frames = std::mem::take(&mut thread.frames);
-                    let traceback = frames
-                        .into_iter()
-                        .rev()
-                        .map(|frame| match frame {
-                            Frame::Lua(LuaFrame { bottom, .. }) => {
-                                let value = thread.stack[bottom];
-                                let proto = value.as_lua_closure().unwrap().proto;
-                                TracebackFrame::Lua {
-                                    source: String::from_utf8_lossy(&proto.source).to_string(),
-                                    lines_defined: proto.lines_defined.clone(),
-                                }
-                            }
-                            Frame::Native(_) | Frame::Continuation(_) => TracebackFrame::Native,
-                        })
-                        .collect();
-                    Err(RuntimeError { kind, traceback }.into())
-                }
-            };
-            thread.stack.clear();
-            thread.frames.clear();
-            thread.open_upvalues.clear();
-            result
-        })
+        }
     }
+}
+
+fn execute_until_gc<'gc>(
+    gc: &'gc GcContext,
+    vm: GcCell<'gc, Vm<'gc>>,
+) -> Result<ControlFlow<(), ()>, RuntimeError> {
+    let mut vm = vm.borrow_mut(gc);
+    while let Some(thread) = vm.thread_stack.last().copied() {
+        vm.execute_single_step(gc, thread)?;
+        if gc.debt() > 0 {
+            return Ok(ControlFlow::Continue(()));
+        }
+    }
+    Ok(ControlFlow::Break(()))
 }
 
 #[derive(Debug)]
@@ -127,14 +108,14 @@ pub(crate) enum Frame {
 
 #[derive(Debug, Clone)]
 pub(crate) struct LuaFrame {
-    bottom: usize,
+    pub(crate) bottom: usize,
     base: usize,
     pc: usize,
     num_extra_args: usize,
 }
 
 impl LuaFrame {
-    fn new(bottom: usize) -> Self {
+    pub fn new(bottom: usize) -> Self {
         Self {
             bottom,
             base: bottom + 1,
@@ -150,7 +131,7 @@ pub(crate) struct NativeFrame {
 }
 
 impl NativeFrame {
-    fn new(bottom: usize) -> Self {
+    pub fn new(bottom: usize) -> Self {
         Self { bottom }
     }
 }
@@ -168,45 +149,11 @@ impl std::fmt::Debug for ContinuationFrame {
     }
 }
 
-struct ExecutionState<'gc, 'stack> {
-    base: usize,
-    pc: usize,
-    stack: &'stack mut [Value<'gc>],
-    lower_stack: &'stack mut [Value<'gc>],
-}
-
-impl<'gc, 'stack> ExecutionState<'gc, 'stack> {
-    fn resolve_upvalue(&self, upvalue: &Upvalue<'gc>) -> Value<'gc> {
-        match upvalue {
-            Upvalue::Open(i) => {
-                if *i < self.base {
-                    self.lower_stack[*i]
-                } else {
-                    self.stack[*i - self.base]
-                }
-            }
-            Upvalue::Closed(x) => *x,
-        }
-    }
-
-    fn resolve_upvalue_mut<'a>(&'a mut self, upvalue: &'a mut Upvalue<'gc>) -> &'a mut Value<'gc> {
-        match upvalue {
-            Upvalue::Open(i) => {
-                if *i < self.base {
-                    &mut self.lower_stack[*i]
-                } else {
-                    &mut self.stack[*i - self.base]
-                }
-            }
-            Upvalue::Closed(x) => x,
-        }
-    }
-}
-
 pub struct Vm<'gc> {
     registry: GcCell<'gc, Table<'gc>>,
     main_thread: GcCell<'gc, LuaThread<'gc>>,
     globals: GcCell<'gc, Table<'gc>>,
+    thread_stack: Vec<GcCell<'gc, LuaThread<'gc>>>,
     metamethod_names: [LuaString<'gc>; Metamethod::COUNT],
     metatables: [Option<GcCell<'gc, Table<'gc>>>; Type::COUNT],
 }
@@ -216,6 +163,7 @@ unsafe impl GarbageCollect for Vm<'_> {
         self.registry.trace(tracer);
         self.main_thread.trace(tracer);
         self.globals.trace(tracer);
+        self.thread_stack.trace(tracer);
         self.metamethod_names.trace(tracer);
         self.metatables.trace(tracer);
     }
@@ -230,6 +178,7 @@ impl<'gc> Vm<'gc> {
             registry: gc.allocate_cell(registry),
             main_thread,
             globals,
+            thread_stack: Default::default(),
             metamethod_names: Metamethod::allocate_names(gc),
             metatables: Default::default(),
         }
@@ -237,6 +186,10 @@ impl<'gc> Vm<'gc> {
 
     pub fn registry(&self) -> GcCell<'gc, Table<'gc>> {
         self.registry
+    }
+
+    pub fn main_thread(&self) -> GcCell<'gc, LuaThread<'gc>> {
+        self.main_thread
     }
 
     pub fn globals(&self) -> GcCell<'gc, Table<'gc>> {
@@ -295,16 +248,47 @@ impl<'gc> Vm<'gc> {
         self.metatables[ty as usize] = metatable.into();
     }
 
-    fn execute_frame(
+    fn execute_single_step(
         &mut self,
         gc: &'gc GcContext,
         thread: GcCell<'gc, LuaThread<'gc>>,
-    ) -> Result<ControlFlow<(), ()>, ErrorKind> {
+    ) -> Result<(), RuntimeError> {
+        match self.execute_next_frame(gc, thread) {
+            Ok(()) => (),
+            Err(kind) => {
+                self.thread_stack.pop().unwrap();
+                {
+                    let mut thread_ref = thread.borrow_mut(gc);
+                    thread_ref.status = ThreadStatus::Error(kind.clone());
+
+                    if self.thread_stack.is_empty() {
+                        let traceback = thread_ref.traceback();
+                        *thread_ref = LuaThread::new();
+                        return Err(RuntimeError { kind, traceback });
+                    }
+                }
+
+                let result = UserData::new(CoroutineResult::Err(kind));
+                self.thread_stack
+                    .last()
+                    .unwrap()
+                    .borrow_mut(gc)
+                    .stack
+                    .push(gc.allocate_cell(result).into());
+            }
+        };
+        Ok(())
+    }
+
+    fn execute_next_frame(
+        &mut self,
+        gc: &'gc GcContext,
+        thread: GcCell<'gc, LuaThread<'gc>>,
+    ) -> Result<(), ErrorKind> {
         let mut thread_ref = thread.borrow_mut(gc);
         if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
             drop(thread_ref);
-            self.execute_lua_frame(gc, thread)?;
-            return Ok(ControlFlow::Continue(()));
+            return self.execute_lua_frame(gc, thread);
         }
 
         let current_frame = thread_ref.frames.pop();
@@ -338,39 +322,124 @@ impl<'gc> Vm<'gc> {
                     continuation(gc, self, thread, StackWindow { bottom }),
                 )
             }
-            None => return Ok(ControlFlow::Break(())),
-        };
+            None => {
+                let coroutine = self.thread_stack.pop().unwrap();
+                debug_assert!(GcCell::ptr_eq(&coroutine, &thread));
 
-        let mut thread_ref = thread.borrow_mut(gc);
-        let action = match result {
-            Ok(action) => action,
-            Err(err) => {
-                thread_ref.frames.push(current_frame.unwrap());
-                return Err(err);
+                let mut values = std::mem::take(&mut thread_ref.stack);
+                if let Some(coroutine) = self.thread_stack.last() {
+                    let mut coroutine_ref = coroutine.borrow_mut(gc);
+                    let result = UserData::new(CoroutineResult::Ok(()));
+                    coroutine_ref.stack.push(gc.allocate_cell(result).into());
+                    coroutine_ref.stack.append(&mut values);
+                }
+                return Ok(());
             }
         };
 
+        let mut thread_ref = thread.borrow_mut(gc);
+        thread_ref.frames.push(current_frame.unwrap());
+
+        let action = match result {
+            Ok(action) => action,
+            Err(kind) => return Err(kind),
+        };
+
         match action {
-            Action::Return { num_results } => thread_ref.stack.truncate(bottom + num_results),
+            Action::Return { num_results } => {
+                thread_ref.frames.pop().unwrap();
+                thread_ref.stack.truncate(bottom + num_results)
+            }
             Action::Call {
                 callee_bottom,
                 continuation,
             } => {
-                thread_ref
-                    .frames
-                    .push(Frame::Continuation(ContinuationFrame {
-                        bottom,
-                        continuation: Box::new(continuation),
-                    }));
+                *thread_ref.frames.last_mut().unwrap() = Frame::Continuation(ContinuationFrame {
+                    bottom,
+                    continuation: Box::new(continuation),
+                });
                 thread_ref.deferred_call(bottom + callee_bottom)?;
             }
             Action::TailCall { num_args } => {
+                thread_ref.frames.pop().unwrap();
                 thread_ref.stack.truncate(bottom + num_args + 1);
                 thread_ref.deferred_call(bottom)?;
             }
+            Action::Resume {
+                coroutine_bottom,
+                num_values,
+                continuation,
+            } => {
+                let mut args = thread_ref.stack.split_off(bottom + coroutine_bottom);
+                let coroutine = args[0].as_thread().unwrap();
+
+                *thread_ref.frames.last_mut().unwrap() = Frame::Continuation(ContinuationFrame {
+                    bottom,
+                    continuation: Box::new(continuation),
+                });
+                drop(thread_ref);
+
+                let mut coroutine_ref = coroutine.borrow_mut(gc);
+                let resume_result = match coroutine_ref.status {
+                    ThreadStatus::Error(_) => Err(ErrorKind::ExplicitError(
+                        "cannot resume dead coroutine".to_owned(),
+                    )),
+                    ThreadStatus::Unresumable if coroutine_ref.frames.is_empty() => Err(
+                        ErrorKind::ExplicitError("cannot resume dead coroutine".to_owned()),
+                    ),
+                    ThreadStatus::Unresumable => Err(ErrorKind::ExplicitError(
+                        "cannot resume non-suspended coroutine".to_owned(),
+                    )),
+                    ThreadStatus::Resumable => Ok(()),
+                };
+                match resume_result {
+                    Ok(()) => (),
+                    Err(err) => {
+                        drop(coroutine_ref);
+                        let result = UserData::new(CoroutineResult::Err(err));
+                        thread
+                            .borrow_mut(gc)
+                            .stack
+                            .push(gc.allocate_cell(result).into());
+                        return Ok(());
+                    }
+                }
+
+                self.thread_stack.push(coroutine);
+                coroutine_ref.status = ThreadStatus::Unresumable;
+
+                let mut values = args.split_off(1);
+                values.truncate(num_values);
+                coroutine_ref.stack.append(&mut values);
+            }
+            Action::Yield { num_values } => {
+                match self.thread_stack.len() {
+                    0 => unreachable!(),
+                    1 => {
+                        return Err(ErrorKind::ExplicitError(
+                            "attempt to yield from outside a coroutine".to_owned(),
+                        ))
+                    }
+                    _ => (),
+                }
+
+                let resumer = self.thread_stack.pop().unwrap();
+                debug_assert!(GcCell::ptr_eq(&resumer, &thread));
+
+                thread_ref.frames.pop().unwrap();
+                thread_ref.status = ThreadStatus::Resumable;
+
+                let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
+                let result = UserData::new(CoroutineResult::Ok(()));
+                resumer_ref.stack.push(gc.allocate_cell(result).into());
+
+                let mut values = thread_ref.stack.split_off(bottom);
+                values.truncate(num_values);
+                resumer_ref.stack.append(&mut values);
+            }
         }
 
-        Ok(ControlFlow::Continue(()))
+        Ok(())
     }
 
     fn deferred_call_index_metamethod<K>(
@@ -444,23 +513,6 @@ impl<'gc> LuaThread<'gc> {
         }
     }
 
-    fn deferred_call(&mut self, bottom: usize) -> Result<(), ErrorKind> {
-        match self.stack[bottom] {
-            Value::LuaClosure(_) => {
-                self.frames.push(Frame::Lua(LuaFrame::new(bottom)));
-                Ok(())
-            }
-            Value::NativeFunction(_) | Value::NativeClosure(_) => {
-                self.frames.push(Frame::Native(NativeFrame::new(bottom)));
-                Ok(())
-            }
-            value => Err(ErrorKind::TypeError {
-                operation: Operation::Call,
-                ty: value.ty(),
-            }),
-        }
-    }
-
     fn deferred_call_metamethod(
         &mut self,
         metamethod: Value<'gc>,
@@ -491,6 +543,41 @@ impl<'gc> LuaThread<'gc> {
             if let Upvalue::Open(i) = *upvalue {
                 *upvalue = Upvalue::Closed(self.stack[i]);
             }
+        }
+    }
+}
+
+struct ExecutionState<'gc, 'stack> {
+    base: usize,
+    pc: usize,
+    stack: &'stack mut [Value<'gc>],
+    lower_stack: &'stack mut [Value<'gc>],
+}
+
+impl<'gc, 'stack> ExecutionState<'gc, 'stack> {
+    fn resolve_upvalue(&self, upvalue: &Upvalue<'gc>) -> Value<'gc> {
+        match upvalue {
+            Upvalue::Open(i) => {
+                if *i < self.base {
+                    self.lower_stack[*i]
+                } else {
+                    self.stack[*i - self.base]
+                }
+            }
+            Upvalue::Closed(x) => *x,
+        }
+    }
+
+    fn resolve_upvalue_mut<'a>(&'a mut self, upvalue: &'a mut Upvalue<'gc>) -> &'a mut Value<'gc> {
+        match upvalue {
+            Upvalue::Open(i) => {
+                if *i < self.base {
+                    &mut self.lower_stack[*i]
+                } else {
+                    &mut self.stack[*i - self.base]
+                }
+            }
+            Upvalue::Closed(x) => x,
         }
     }
 }

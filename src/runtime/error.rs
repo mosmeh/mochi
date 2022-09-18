@@ -1,5 +1,5 @@
-use crate::types::{LineRange, TableError, Type, Value};
-use std::{borrow::Cow, fmt::Display};
+use crate::types::{TableError, TracebackFrame, Type, Value};
+use std::fmt::Display;
 
 #[derive(Debug, thiserror::Error)]
 pub struct RuntimeError {
@@ -50,6 +50,30 @@ pub enum ErrorKind {
     Io(#[from] std::io::Error),
 }
 
+impl Clone for ErrorKind {
+    fn clone(&self) -> Self {
+        match self {
+            Self::ExplicitError(s) => Self::ExplicitError(s.clone()),
+            Self::TypeError { operation, ty } => Self::TypeError {
+                operation: *operation,
+                ty: *ty,
+            },
+            Self::ArgumentError { nth, message } => Self::ArgumentError { nth: *nth, message },
+            Self::ArgumentTypeError {
+                nth,
+                expected_type,
+                got_type,
+            } => Self::ArgumentTypeError {
+                nth: *nth,
+                expected_type,
+                got_type: *got_type,
+            },
+            Self::Table(e) => Self::Table(e.clone()),
+            Self::Io(e) => Self::Io(std::io::Error::new(e.kind(), e.to_string())),
+        }
+    }
+}
+
 impl ErrorKind {
     pub fn from_error_object(error_object: Value) -> Self {
         let msg = if let Some(s) = error_object.to_string() {
@@ -58,73 +82,6 @@ impl ErrorKind {
             format!("(error object is a {} value)", error_object.ty().name())
         };
         Self::ExplicitError(msg)
-    }
-}
-
-#[derive(Debug)]
-pub enum TracebackFrame {
-    Lua {
-        source: String,
-        lines_defined: LineRange,
-    },
-    Native,
-}
-
-impl Display for TracebackFrame {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Lua {
-                source,
-                lines_defined,
-            } => {
-                let source = format_source(source);
-                match &lines_defined {
-                    LineRange::File => write!(f, "{}: in main chunk", source),
-                    LineRange::Lines(range) => {
-                        write!(f, "{}: in function <{}:{}>", source, source, range.start())
-                    }
-                }
-            }
-            Self::Native => f.write_str("[C]: in function"),
-        }
-    }
-}
-
-fn format_source(source: &str) -> Cow<str> {
-    const LUA_IDSIZE: usize = 60;
-    const RETS: &str = "...";
-    const PRE: &str = "[string \"";
-    const POS: &str = "\"]";
-
-    match source.chars().next() {
-        Some('=') => source.chars().take(LUA_IDSIZE).skip(1).collect(),
-        Some('@') => {
-            let filename_len = source.len() - 1;
-            if filename_len < LUA_IDSIZE {
-                source.strip_prefix('@').unwrap().into()
-            } else {
-                let reversed: String = source
-                    .chars()
-                    .rev()
-                    .take(filename_len.min(LUA_IDSIZE - RETS.len() - 1))
-                    .collect();
-                let mut ellipsized = RETS.to_owned();
-                ellipsized.extend(reversed.chars().rev());
-                ellipsized.into()
-            }
-        }
-        _ => {
-            const MAX_STR_LEN: usize = LUA_IDSIZE - PRE.len() - RETS.len() - POS.len() - 1;
-            let mut lines = source.lines();
-            let first_line = lines.next().unwrap_or_default();
-            let is_multiline = lines.next().is_some();
-            if !is_multiline && first_line.len() < MAX_STR_LEN {
-                format!("{PRE}{first_line}{POS}").into()
-            } else {
-                let truncated: String = first_line.chars().take(MAX_STR_LEN).collect();
-                format!("{PRE}{truncated}{RETS}{POS}").into()
-            }
-        }
     }
 }
 

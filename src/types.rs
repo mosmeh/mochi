@@ -10,11 +10,13 @@ pub use function::{
 };
 pub use string::LuaString;
 pub use table::{Table, TableError};
-pub use thread::{LuaThread, StackWindow};
+pub(crate) use thread::ThreadStatus;
+pub use thread::{LuaThread, StackWindow, TracebackFrame};
 pub use user_data::UserData;
 
 use crate::gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer};
 use std::{
+    any::Any,
     borrow::Cow,
     cell::{Ref, RefMut},
     fmt::Display,
@@ -53,7 +55,7 @@ types! {
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name())
+        f.write_str(self.name())
     }
 }
 
@@ -348,6 +350,39 @@ impl<'gc> Value<'gc> {
         } else {
             None
         }
+    }
+
+    pub fn as_thread(&self) -> Option<GcCell<'gc, LuaThread<'gc>>> {
+        if let Self::Thread(x) = self {
+            Some(*x)
+        } else {
+            None
+        }
+    }
+
+    pub fn borrow_as_thread(&self) -> Option<Ref<LuaThread<'gc>>> {
+        if let Self::Thread(x) = self {
+            Some(x.borrow())
+        } else {
+            None
+        }
+    }
+
+    pub fn borrow_as_thread_mut(&self, gc: &'gc GcContext) -> Option<RefMut<LuaThread<'gc>>> {
+        if let Self::Thread(x) = self {
+            Some(x.borrow_mut(gc))
+        } else {
+            None
+        }
+    }
+
+    pub fn as_userdata<T: Any>(&self) -> Option<GcCell<'gc, UserData<'gc>>> {
+        if let Self::UserData(x) = self {
+            if x.borrow().is::<T>() {
+                return Some(*x);
+            }
+        }
+        None
     }
 
     pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
