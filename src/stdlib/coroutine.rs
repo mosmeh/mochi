@@ -30,12 +30,8 @@ fn coroutine_close<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread_ref = thread.borrow_mut(gc);
-    let stack = thread_ref.stack_mut(&window);
-
-    let co = stack.arg(0);
-    let co = co.as_thread()?;
+) -> Result<Action<'gc>, ErrorKind> {
+    let co = thread.borrow().stack(&window).arg(0).as_thread()?;
     let status = get_coroutine_status(thread, co);
     if !matches!(status, CoroutineStatus::Dead | CoroutineStatus::Suspended) {
         return Err(ErrorKind::ExplicitError(format!(
@@ -44,20 +40,18 @@ fn coroutine_close<'gc>(
         )));
     }
 
-    let mut coroutine_ref = co.borrow_mut(gc);
-    match &coroutine_ref.status {
+    let mut co = co.borrow_mut(gc);
+    Ok(Action::Return(match &co.status {
         ThreadStatus::Resumable | ThreadStatus::Unresumable => {
-            stack[0] = true.into();
-            coroutine_ref.close();
-            Ok(Action::Return { num_results: 1 })
+            co.close();
+            vec![true.into()]
         }
         ThreadStatus::Error(err) => {
-            stack[0] = false.into();
-            stack[1] = gc.allocate_string(err.to_string().into_bytes()).into();
-            coroutine_ref.close();
-            Ok(Action::Return { num_results: 2 })
+            let msg = gc.allocate_string(err.to_string().into_bytes()).into();
+            co.close();
+            vec![false.into(), msg]
         }
-    }
+    }))
 }
 
 fn coroutine_create<'gc>(
@@ -65,27 +59,20 @@ fn coroutine_create<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-
-    let f = stack.arg(0).ensure_function()?;
+) -> Result<Action<'gc>, ErrorKind> {
+    let f = thread.borrow().stack(&window).arg(0).ensure_function()?;
     let co = LuaThread::with_body(f);
 
-    stack[0] = gc.allocate_cell(co).into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![gc.allocate_cell(co).into()]))
 }
 
 fn coroutine_isyieldable<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     vm: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread_ref = thread.borrow_mut(gc);
-    let stack = thread_ref.stack_mut(&window);
-
-    let co = stack.arg(0);
+) -> Result<Action<'gc>, ErrorKind> {
+    let co = thread.borrow().stack(&window).arg(0);
     let co = if co.get().is_some() {
         co.as_thread()?
     } else {
@@ -93,63 +80,56 @@ fn coroutine_isyieldable<'gc>(
     };
     let is_main_thread = GcCell::ptr_eq(&co, &vm.main_thread());
 
-    stack[0] = (!is_main_thread).into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![(!is_main_thread).into()]))
 }
 
 fn coroutine_resume<'gc>(
-    _: &'gc GcContext,
+    gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let thread = thread.borrow();
+    mut window: StackWindow,
+) -> Result<Action<'gc>, ErrorKind> {
+    let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack(&window);
-    stack.arg(0).as_thread()?;
+    let coroutine = stack.arg(0).as_thread()?;
+    let args = stack.args()[1..].to_vec();
+    thread.resize_stack(&mut window, 1);
 
     Ok(Action::Resume {
-        coroutine_bottom: 1,
-        num_values: stack.args().len() - 1,
-        continuation: Box::new(|gc, _, thread, mut window| {
-            let mut thread = thread.borrow_mut(gc);
-            let result = thread
-                .stack(&window)
-                .arg(0)
-                .as_userdata::<CoroutineResult>()?;
+        coroutine,
+        args,
+        continuation: Box::new(|gc, _, thread, window| {
+            let thread = thread.borrow();
+            let stack = thread.stack(&window);
+            let result = stack.arg(0).as_userdata::<CoroutineResult>()?;
             let result = result.borrow();
-            match result.get::<CoroutineResult>().unwrap() {
-                Ok(()) => {
-                    let stack = thread.stack_mut(&window);
-                    stack[0] = true.into();
-                    stack.copy_within(2.., 1);
-                    Ok(Action::Return {
-                        num_results: stack.args().len(),
-                    })
-                }
-                Err(err) => {
-                    thread.ensure_stack(&mut window, 2);
-                    let stack = thread.stack_mut(&window);
-                    stack[0] = false.into();
-                    stack[1] = gc.allocate_string(err.to_string().into_bytes()).into();
-                    Ok(Action::Return { num_results: 2 })
-                }
-            }
+            Ok(Action::Return(
+                match result.get::<CoroutineResult>().unwrap() {
+                    Ok(()) => {
+                        let mut results = vec![true.into()];
+                        results.extend_from_slice(&stack.args()[1..]);
+                        results
+                    }
+                    Err(err) => vec![
+                        false.into(),
+                        gc.allocate_string(err.to_string().into_bytes()).into(),
+                    ],
+                },
+            ))
         }),
     })
 }
 
 fn coroutine_running<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     vm: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
-    mut window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread_ref = thread.borrow_mut(gc);
-    thread_ref.ensure_stack(&mut window, 2);
-    let stack = thread_ref.stack_mut(&window);
-    stack[0] = thread.into();
-    stack[1] = GcCell::ptr_eq(&thread, &vm.main_thread()).into();
-    Ok(Action::Return { num_results: 2 })
+    _: StackWindow,
+) -> Result<Action<'gc>, ErrorKind> {
+    Ok(Action::Return(vec![
+        thread.into(),
+        GcCell::ptr_eq(&thread, &vm.main_thread()).into(),
+    ]))
 }
 
 fn coroutine_status<'gc>(
@@ -157,13 +137,12 @@ fn coroutine_status<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let co = thread.borrow().stack(&window).arg(0);
-    let co = co.as_thread()?;
+) -> Result<Action<'gc>, ErrorKind> {
+    let co = thread.borrow().stack(&window).arg(0).as_thread()?;
     let status = get_coroutine_status(thread, co);
-    thread.borrow_mut(gc).stack_mut(&window)[0] =
-        gc.allocate_string(status.name().as_bytes()).into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![gc
+        .allocate_string(status.name().as_bytes())
+        .into()]))
 }
 
 fn coroutine_wrap<'gc>(
@@ -171,43 +150,28 @@ fn coroutine_wrap<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-
-    let f = stack.arg(0).ensure_function()?;
+) -> Result<Action<'gc>, ErrorKind> {
+    let f = thread.borrow().stack(&window).arg(0).ensure_function()?;
     let co = LuaThread::with_body(f);
 
     let wrapper = NativeClosure::with_upvalues(
-        |gc, _, thread, mut window| {
-            let mut thread = thread.borrow_mut(gc);
-            let stack = thread.stack_mut(&window);
+        |_, _, thread, window| {
+            let thread = thread.borrow();
+            let stack = thread.stack(&window);
 
-            let num_args = stack.args().len();
             let closure = stack.callee();
             let closure = closure.as_native_closure().unwrap();
-            let coroutine = closure.upvalues().first().unwrap();
+            let coroutine = closure.upvalues().first().unwrap().as_thread().unwrap();
 
-            thread.ensure_stack(&mut window, num_args + 2);
-            let stack = thread.stack_mut(&window);
-            stack.copy_within(1..1 + num_args, 2);
-
-            stack[1] = *coroutine;
             let continuation: Box<NativeClosureFn> = Box::new(|gc, _, thread, window| {
-                let mut thread = thread.borrow_mut(gc);
+                let thread = thread.borrow();
                 let stack = thread.stack(&window);
 
                 let result = stack.arg(0).as_userdata::<CoroutineResult>()?;
                 let result = result.borrow();
 
                 match result.get::<CoroutineResult>().unwrap() {
-                    Ok(()) => {
-                        let stack = thread.stack_mut(&window);
-                        stack.copy_within(2.., 0);
-                        Ok(Action::Return {
-                            num_results: stack.len() - 2,
-                        })
-                    }
+                    Ok(()) => Ok(Action::Return(stack.args()[1..].to_vec())),
                     Err(err) => {
                         let closure = stack.callee();
                         let closure = closure.as_native_closure().unwrap();
@@ -223,30 +187,26 @@ fn coroutine_wrap<'gc>(
                 }
             });
             Ok(Action::Resume {
-                coroutine_bottom: 1,
-                num_values: num_args,
+                coroutine,
+                args: stack.args().to_vec(),
                 continuation,
             })
         },
         vec![gc.allocate_cell(co).into()],
     );
 
-    stack[0] = gc.allocate(wrapper).into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![gc.allocate(wrapper).into()]))
 }
 
 fn coroutine_yield<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack.copy_within(1.., 0);
-    Ok(Action::Yield {
-        num_values: stack.args().len(),
-    })
+) -> Result<Action<'gc>, ErrorKind> {
+    Ok(Action::Yield(
+        thread.borrow().stack(&window).args().to_vec(),
+    ))
 }
 
 enum CoroutineStatus {

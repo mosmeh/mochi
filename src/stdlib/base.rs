@@ -46,18 +46,15 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
 }
 
 fn base_assert<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
     if stack.arg(0).as_value()?.to_boolean() {
-        stack.copy_within(1..stack.len(), 0);
-        Ok(Action::Return {
-            num_results: stack.args().len(),
-        })
+        Ok(Action::Return(stack.args().to_vec()))
     } else if let Some(error_obj) = stack.arg(1).get() {
         Err(ErrorKind::from_error_object(error_obj))
     } else {
@@ -70,14 +67,14 @@ fn base_collectgarbage<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack[0] = match stack.arg(0).to_string()?.as_ref() {
+) -> Result<Action<'gc>, ErrorKind> {
+    let opt = thread.borrow().stack(&window).arg(0);
+    let opt = opt.to_string()?;
+    let result = match opt.as_ref() {
         b"count" => ((gc.total_bytes() as Number) / 1024.0).into(),
         opt => todo!("{}", opt.as_bstr()),
     };
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![result]))
 }
 
 fn base_dofile<'gc>(
@@ -85,11 +82,8 @@ fn base_dofile<'gc>(
     vm: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-
-    let filename = stack.arg(0);
+) -> Result<Action<'gc>, ErrorKind> {
+    let filename = thread.borrow().stack(&window).arg(0);
     let closure = if filename.get().is_some() {
         let filename = filename.to_string()?;
         let path = filename
@@ -104,8 +98,10 @@ fn base_dofile<'gc>(
             .map_err(|e| ErrorKind::ExplicitError(e.to_string()))?
     };
 
-    stack[0] = gc.allocate(closure).into();
-    Ok(Action::TailCall { num_args: 0 })
+    Ok(Action::TailCall {
+        callee: gc.allocate(closure).into(),
+        args: Vec::new(),
+    })
 }
 
 fn base_error<'gc>(
@@ -113,64 +109,62 @@ fn base_error<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-    let error_obj = stack.arg(0).get().unwrap_or_default();
+) -> Result<Action<'gc>, ErrorKind> {
+    let error_obj = thread
+        .borrow()
+        .stack(&window)
+        .arg(0)
+        .get()
+        .unwrap_or_default();
     Err(ErrorKind::from_error_object(error_obj))
 }
 
 fn base_getmetatable<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     vm: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    let object = stack.arg(0).as_value()?;
-    stack[0] = vm
+) -> Result<Action<'gc>, ErrorKind> {
+    let object = thread.borrow().stack(&window).arg(0).as_value()?;
+    let metatable = vm
         .metatable_of_object(object)
         .map(Value::from)
         .unwrap_or_default();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![metatable]))
 }
 
 fn base_ipairs<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
-    mut window: StackWindow,
-) -> Result<Action, ErrorKind> {
+    window: StackWindow,
+) -> Result<Action<'gc>, ErrorKind> {
     fn iterate<'gc>(
-        gc: &'gc GcContext,
+        _: &'gc GcContext,
         _: &mut Vm<'gc>,
         thread: GcCell<LuaThread<'gc>>,
         window: StackWindow,
-    ) -> Result<Action, ErrorKind> {
-        let mut thread = thread.borrow_mut(gc);
-        let stack = thread.stack_mut(&window);
+    ) -> Result<Action<'gc>, ErrorKind> {
+        let thread = thread.borrow();
+        let stack = thread.stack(&window);
         let i = stack.arg(1).to_integer()? + 1;
         let value = stack.arg(0).borrow_as_table()?.get(i);
 
-        if value.is_nil() {
-            stack[0] = Value::Nil;
-            Ok(Action::Return { num_results: 1 })
+        Ok(Action::Return(if value.is_nil() {
+            vec![Value::Nil]
         } else {
-            stack[0] = i.into();
-            stack[1] = value;
-            Ok(Action::Return { num_results: 2 })
-        }
+            vec![i.into(), value]
+        }))
     }
 
-    let mut thread = thread.borrow_mut(gc);
-    thread.stack(&window).arg(0).as_value()?;
+    let thread = thread.borrow();
+    let table = thread.stack(&window).arg(0).as_value()?;
 
-    thread.ensure_stack(&mut window, 3);
-    let stack = thread.stack_mut(&window);
-    stack[0] = NativeFunction::new(iterate).into();
-    stack[2] = 0.into();
-    Ok(Action::Return { num_results: 3 })
+    Ok(Action::Return(vec![
+        NativeFunction::new(iterate).into(),
+        table,
+        0.into(),
+    ]))
 }
 
 fn base_load<'gc>(
@@ -178,9 +172,9 @@ fn base_load<'gc>(
     vm: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let mode = stack.arg(2);
     let mode = mode.to_string_or(B("bt"))?;
@@ -194,9 +188,10 @@ fn base_load<'gc>(
         match crate::load(gc, bytes, chunk_name) {
             Ok(proto) => proto,
             Err(err) => {
-                stack[0] = Value::Nil;
-                stack[1] = gc.allocate_string(err.to_string().into_bytes()).into();
-                return Ok(Action::Return { num_results: 2 });
+                return Ok(Action::Return(vec![
+                    Value::Nil,
+                    gc.allocate_string(err.to_string().into_bytes()).into(),
+                ]))
             }
         }
     } else {
@@ -211,47 +206,44 @@ fn base_load<'gc>(
     };
     closure.upvalues.push(gc.allocate_cell(upvalue));
 
-    stack[0] = gc.allocate(closure).into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![gc.allocate(closure).into()]))
 }
 
 fn base_next<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let table = stack.arg(0);
     let table = table.borrow_as_table()?;
     let index = stack.arg(1).get().unwrap_or_default();
 
-    if let Some((key, value)) = table.next(index)? {
-        stack[0] = key;
-        stack[1] = value;
-        Ok(Action::Return { num_results: 2 })
-    } else {
-        stack[0] = Value::Nil;
-        Ok(Action::Return { num_results: 1 })
-    }
+    Ok(Action::Return(
+        if let Some((key, value)) = table.next(index)? {
+            vec![key, value]
+        } else {
+            vec![Value::Nil]
+        },
+    ))
 }
 
 fn base_pairs<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
-    mut window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    thread.stack(&window).arg(0).as_value()?;
+    window: StackWindow,
+) -> Result<Action<'gc>, ErrorKind> {
+    let table = thread.borrow().stack(&window).arg(0).as_value()?;
 
-    thread.ensure_stack(&mut window, 3);
-    let stack = thread.stack_mut(&window);
-    stack[0] = NativeFunction::new(base_next).into();
-    stack[2] = Value::Nil;
-    Ok(Action::Return { num_results: 3 })
+    Ok(Action::Return(vec![
+        NativeFunction::new(base_next).into(),
+        table,
+        Value::Nil,
+    ]))
 }
 
 fn base_print<'gc>(
@@ -259,11 +251,9 @@ fn base_print<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
+) -> Result<Action<'gc>, ErrorKind> {
     let mut stdout = std::io::stdout().lock();
-    if let Some((last, xs)) = stack.args().split_last() {
+    if let Some((last, xs)) = thread.borrow().stack(&window).args().split_last() {
         for x in xs {
             x.fmt_bytes(&mut stdout)?;
             stdout.write_all(b"\t")?;
@@ -271,43 +261,42 @@ fn base_print<'gc>(
         last.fmt_bytes(&mut stdout)?;
     }
     stdout.write_all(b"\n")?;
-    Ok(Action::Return { num_results: 0 })
+    Ok(Action::Return(Vec::new()))
 }
 
 fn base_rawequal<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack[0] = (stack.arg(0).as_value()? == stack.arg(1).as_value()?).into();
-    Ok(Action::Return { num_results: 1 })
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
+    let v1 = stack.arg(0).as_value()?;
+    let v2 = stack.arg(1).as_value()?;
+    Ok(Action::Return(vec![(v1 == v2).into()]))
 }
 
 fn base_rawget<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
     let index = stack.arg(1).as_value()?;
-    stack[0] = stack.arg(0).borrow_as_table()?.get(index);
-    Ok(Action::Return { num_results: 1 })
+    let value = stack.arg(0).borrow_as_table()?.get(index);
+    Ok(Action::Return(vec![value]))
 }
 
 fn base_rawlen<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    let len = match stack.arg(0).get() {
+) -> Result<Action<'gc>, ErrorKind> {
+    let len = match thread.borrow().stack(&window).arg(0).get() {
         Some(Value::Table(t)) => t.borrow().lua_len(),
         Some(Value::String(s)) => s.len() as Integer,
         value => {
@@ -318,8 +307,7 @@ fn base_rawlen<'gc>(
             })
         }
     };
-    stack[0] = len.into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![len.into()]))
 }
 
 fn base_rawset<'gc>(
@@ -327,9 +315,9 @@ fn base_rawset<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let table = stack.arg(0);
     let index = stack.arg(1).as_value()?;
@@ -337,26 +325,24 @@ fn base_rawset<'gc>(
 
     table.borrow_as_table_mut(gc)?.set(index, value)?;
 
-    stack[0] = table.as_value()?;
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![table.as_value()?]))
 }
 
 fn base_select<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let num_args = stack.args().len() as Integer;
     let index = stack.arg(0);
 
     if let Some(Value::String(s)) = index.get() {
         if s.as_ref() == b"#" {
-            stack[0] = (num_args - 1).into();
-            return Ok(Action::Return { num_results: 1 });
+            return Ok(Action::Return(vec![(num_args - 1).into()]));
         }
     }
 
@@ -371,10 +357,7 @@ fn base_select<'gc>(
             message: "index out of range",
         });
     }
-    stack.copy_within((index + 1) as usize.., 0);
-    Ok(Action::Return {
-        num_results: (num_args - index) as usize,
-    })
+    Ok(Action::Return(stack.args()[index as usize..].to_vec()))
 }
 
 fn base_setmetatable<'gc>(
@@ -382,9 +365,9 @@ fn base_setmetatable<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
     let table = {
         let table_arg = stack.arg(0);
         let mut table = table_arg.borrow_as_table_mut(gc)?;
@@ -402,19 +385,18 @@ fn base_setmetatable<'gc>(
         table.set_metatable(metatable);
         table_arg.as_value()?
     };
-    stack[0] = table;
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![table]))
 }
 
 fn base_tonumber<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack[0] = match stack.arg(0).as_value()? {
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
+    let result = match stack.arg(0).as_value()? {
         Value::Integer(x) => Value::Integer(x),
         Value::Number(x) => Value::Number(x),
         Value::String(s) => {
@@ -446,7 +428,7 @@ fn base_tonumber<'gc>(
         }
         _ => Value::Nil,
     };
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![result]))
 }
 
 fn base_tostring<'gc>(
@@ -454,13 +436,15 @@ fn base_tostring<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
     let mut string = Vec::new();
-    stack.arg(0).as_value()?.fmt_bytes(&mut string)?;
-    stack[0] = gc.allocate_string(string).into();
-    Ok(Action::Return { num_results: 1 })
+    thread
+        .borrow()
+        .stack(&window)
+        .arg(0)
+        .as_value()?
+        .fmt_bytes(&mut string)?;
+    Ok(Action::Return(vec![gc.allocate_string(string).into()]))
 }
 
 fn base_type<'gc>(
@@ -468,10 +452,14 @@ fn base_type<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    let string = stack.arg(0).as_value()?.ty().name().as_bytes();
-    stack[0] = gc.allocate_string(string).into();
-    Ok(Action::Return { num_results: 1 })
+) -> Result<Action<'gc>, ErrorKind> {
+    let string = thread
+        .borrow()
+        .stack(&window)
+        .arg(0)
+        .as_value()?
+        .ty()
+        .name()
+        .as_bytes();
+    Ok(Action::Return(vec![gc.allocate_string(string).into()]))
 }

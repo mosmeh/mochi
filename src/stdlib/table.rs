@@ -27,9 +27,9 @@ fn table_concat<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let table = stack.arg(0);
     let table = table.borrow_as_table()?;
@@ -53,8 +53,9 @@ fn table_concat<'gc>(
     }
 
     let concatenated = strings.join(sep.as_ref());
-    stack[0] = gc.allocate_string(concatenated).into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![gc
+        .allocate_string(concatenated)
+        .into()]))
 }
 
 fn table_insert<'gc>(
@@ -62,7 +63,7 @@ fn table_insert<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
+) -> Result<Action<'gc>, ErrorKind> {
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
@@ -92,7 +93,7 @@ fn table_insert<'gc>(
             ))
         }
     };
-    Ok(Action::Return { num_results: 0 })
+    Ok(Action::Return(Vec::new()))
 }
 
 fn table_pack<'gc>(
@@ -100,13 +101,12 @@ fn table_pack<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
     let mut table = Table::from(stack.args().to_vec());
     table.set_field(gc.allocate_string(B("n")), stack.args().len() as Integer);
-    stack[0] = gc.allocate_cell(table).into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![gc.allocate_cell(table).into()]))
 }
 
 fn table_remove<'gc>(
@@ -114,9 +114,9 @@ fn table_remove<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let table = stack.arg(0);
     let mut table = table.borrow_as_table_mut(gc)?;
@@ -130,32 +130,30 @@ fn table_remove<'gc>(
         });
     }
 
-    stack[0] = table.get(pos);
+    let removed = table.get(pos);
     for i in pos..len {
         let value = table.get(i + 1);
         table.set(i, value)?;
     }
     table.set(len, Value::Nil)?;
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![removed]))
 }
 
 fn table_unpack<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
-    mut window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
+    window: StackWindow,
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
     let stack = thread.stack(&window);
+
     let table = stack.arg(0);
     let table = table.borrow_as_table()?;
     let start = stack.arg(1).to_integer_or(1)?;
     let end = stack.arg(2).to_integer_or_else(|| table.lua_len())?;
 
-    let n = (end - start + 1) as usize;
-    thread.ensure_stack(&mut window, n);
-    for (dest, src) in thread.stack_mut(&window).iter_mut().zip(start..=end) {
-        *dest = table.get(src);
-    }
-    Ok(Action::Return { num_results: n })
+    Ok(Action::Return(
+        (start..=end).map(|key| table.get(key)).collect(),
+    ))
 }

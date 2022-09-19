@@ -25,16 +25,16 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 }
 
 fn os_clock<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    thread.borrow_mut(gc).stack_mut(&window)[0] = cpu_time::ProcessTime::now()
+    _: GcCell<LuaThread<'gc>>,
+    _: StackWindow,
+) -> Result<Action<'gc>, ErrorKind> {
+    let clock = cpu_time::ProcessTime::now()
         .as_duration()
         .as_secs_f64()
         .into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![clock]))
 }
 
 fn os_date<'gc>(
@@ -42,9 +42,9 @@ fn os_date<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let format = stack.arg(0);
     let format = format.to_string_or(B("%c"))?;
@@ -73,8 +73,7 @@ fn os_date<'gc>(
             let datetime = Local.timestamp(time, 0);
             set_datetime_to_table(gc, &mut table, &datetime);
         }
-        stack[0] = gc.allocate_cell(table).into();
-        return Ok(Action::Return { num_results: 1 });
+        return Ok(Action::Return(vec![gc.allocate_cell(table).into()]));
     }
 
     const L_STRFTIME: &[u8] = b"aAbBcCdDeFgGhHIjmMnprRStTuUVwWxXyYzZ%";
@@ -101,22 +100,22 @@ fn os_date<'gc>(
     } else {
         Local.timestamp(time, 0).format(&format)
     };
-    stack[0] = gc
+    Ok(Action::Return(vec![gc
         .allocate_string(formatted.to_string().into_bytes())
-        .into();
-    Ok(Action::Return { num_results: 1 })
+        .into()]))
 }
 
 fn os_difftime<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack[0] = (stack.arg(0).to_number()? - stack.arg(1).to_number()?).into();
-    Ok(Action::Return { num_results: 1 })
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
+    let t2 = stack.arg(0).to_number()?;
+    let t1 = stack.arg(1).to_number()?;
+    Ok(Action::Return(vec![(t2 - t1).into()]))
 }
 
 fn os_exit<'gc>(
@@ -124,7 +123,7 @@ fn os_exit<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
+) -> Result<Action<'gc>, ErrorKind> {
     // TODO: use std::process::ExitCode::exit_process once stabilized
     const EXIT_SUCCESS: i32 = 0;
     const EXIT_FAILURE: i32 = 1;
@@ -150,10 +149,10 @@ fn os_getenv<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-    stack[0] = stack
+) -> Result<Action<'gc>, ErrorKind> {
+    let env = thread
+        .borrow()
+        .stack(&window)
         .arg(0)
         .to_string()?
         .to_os_str()
@@ -162,7 +161,7 @@ fn os_getenv<'gc>(
         .and_then(|s| Vec::from_os_string(s).ok())
         .map(|s| gc.allocate_string(s).into())
         .unwrap_or_default();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![env]))
 }
 
 fn os_time<'gc>(
@@ -170,7 +169,7 @@ fn os_time<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
+) -> Result<Action<'gc>, ErrorKind> {
     fn get_field<'gc, T, D>(
         gc: &'gc GcContext,
         table: &Table<'gc>,
@@ -198,13 +197,9 @@ fn os_time<'gc>(
         }
     }
 
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-
-    let table = stack.arg(0);
+    let table = thread.borrow().stack(&window).arg(0);
     if table.get().is_none() {
-        stack[0] = Utc::now().timestamp().into();
-        return Ok(Action::Return { num_results: 1 });
+        return Ok(Action::Return(vec![Utc::now().timestamp().into()]));
     }
 
     let mut table = table.borrow_as_table_mut(gc)?;
@@ -227,8 +222,7 @@ fn os_time<'gc>(
         })?;
     set_datetime_to_table(gc, &mut table, &datetime);
 
-    stack[0] = datetime.timestamp().into();
-    Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(vec![datetime.timestamp().into()]))
 }
 
 fn set_datetime_to_table<'gc, Tz: TimeZone>(

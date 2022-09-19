@@ -346,33 +346,37 @@ impl<'gc> Vm<'gc> {
         };
 
         match action {
-            Action::Return { num_results } => {
-                thread_ref.frames.pop().unwrap();
-                thread_ref.stack.truncate(bottom + num_results)
-            }
             Action::Call {
-                callee_bottom,
+                callee,
+                mut args,
                 continuation,
             } => {
                 *thread_ref.frames.last_mut().unwrap() = Frame::Continuation(ContinuationFrame {
                     bottom,
                     continuation: Box::new(continuation),
                 });
-                thread_ref.deferred_call(bottom + callee_bottom)?;
+                let callee_bottom = thread_ref.stack.len();
+                thread_ref.stack.push(callee);
+                thread_ref.stack.append(&mut args);
+                thread_ref.deferred_call(callee_bottom)?;
             }
-            Action::TailCall { num_args } => {
+            Action::TailCall { callee, mut args } => {
                 thread_ref.frames.pop().unwrap();
-                thread_ref.stack.truncate(bottom + num_args + 1);
+                thread_ref.stack.truncate(bottom);
+                thread_ref.stack.push(callee);
+                thread_ref.stack.append(&mut args);
                 thread_ref.deferred_call(bottom)?;
             }
+            Action::Return(mut results) => {
+                thread_ref.frames.pop().unwrap();
+                thread_ref.stack.truncate(bottom);
+                thread_ref.stack.append(&mut results);
+            }
             Action::Resume {
-                coroutine_bottom,
-                num_values,
+                coroutine,
+                mut args,
                 continuation,
             } => {
-                let mut args = thread_ref.stack.split_off(bottom + coroutine_bottom);
-                let coroutine = args[0].as_thread().unwrap();
-
                 *thread_ref.frames.last_mut().unwrap() = Frame::Continuation(ContinuationFrame {
                     bottom,
                     continuation: Box::new(continuation),
@@ -407,12 +411,9 @@ impl<'gc> Vm<'gc> {
 
                 self.thread_stack.push(coroutine);
                 coroutine_ref.status = ThreadStatus::Unresumable;
-
-                let mut values = args.split_off(1);
-                values.truncate(num_values);
-                coroutine_ref.stack.append(&mut values);
+                coroutine_ref.stack.append(&mut args);
             }
-            Action::Yield { num_values } => {
+            Action::Yield(mut values) => {
                 match self.thread_stack.len() {
                     0 => unreachable!(),
                     1 => {
@@ -426,15 +427,13 @@ impl<'gc> Vm<'gc> {
                 let resumer = self.thread_stack.pop().unwrap();
                 debug_assert!(GcCell::ptr_eq(&resumer, &thread));
 
+                thread_ref.stack.truncate(bottom);
                 thread_ref.frames.pop().unwrap();
                 thread_ref.status = ThreadStatus::Resumable;
 
                 let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
                 let result = UserData::new(CoroutineResult::Ok(()));
                 resumer_ref.stack.push(gc.allocate_cell(result).into());
-
-                let mut values = thread_ref.stack.split_off(bottom);
-                values.truncate(num_values);
                 resumer_ref.stack.append(&mut values);
             }
         }
@@ -528,9 +527,9 @@ impl<'gc> LuaThread<'gc> {
             continuation: Box::new(move |gc, _, thread, _| {
                 let stack = &mut thread.borrow_mut(gc).stack;
                 stack[dest] = stack[metamethod_bottom];
-                Ok(Action::Return {
-                    num_results: metamethod_bottom - current_bottom,
-                })
+                Ok(Action::Return(
+                    stack[current_bottom..metamethod_bottom].to_vec(),
+                ))
             }),
         }));
         self.frames

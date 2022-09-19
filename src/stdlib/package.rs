@@ -155,9 +155,9 @@ fn package_require<'gc>(
     vm: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let name = gc.allocate_string(stack.arg(0).to_string()?);
 
@@ -170,8 +170,7 @@ fn package_require<'gc>(
 
     let value = loaded.borrow().get_field(name);
     if !value.is_nil() {
-        stack[0] = value;
-        return Ok(Action::Return { num_results: 1 });
+        return Ok(Action::Return(vec![value]));
     }
 
     let closure = stack.callee();
@@ -197,6 +196,8 @@ fn package_require<'gc>(
 
             let closure = stack.callee();
             let closure = closure.as_native_closure().unwrap();
+            thread.resize_stack(&mut window, 1);
+
             let name = closure.upvalues()[0];
             let searchers = closure.upvalues()[1].borrow_as_table().unwrap();
 
@@ -212,48 +213,50 @@ fn package_require<'gc>(
                 )));
             }
 
-            thread.ensure_stack(&mut window, 3);
-            let stack = thread.stack_mut(&window);
-            stack[1] = searcher;
-            stack[2] = name;
-
             let msg = msg.clone();
             let continuation: Box<NativeClosureFn> = Box::new(move |gc, _, thread, mut window| {
                 let mut thread = thread.borrow_mut(gc);
                 let stack = thread.stack(&window);
 
-                match stack.get(1) {
+                let loader = match stack.get(1) {
                     Some(
-                        Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_),
-                    ) => (),
+                        value @ Value::NativeFunction(_)
+                        | value @ Value::LuaClosure(_)
+                        | value @ Value::NativeClosure(_),
+                    ) => *value,
                     Some(value) => {
                         if let Some(s) = value.to_string() {
                             let mut msg = msg.borrow_mut();
                             msg.push_str(b"\n\t");
                             msg.extend_from_slice(&s);
                         }
-                        return Ok(Action::TailCall { num_args: 0 });
+                        return Ok(Action::TailCall {
+                            callee: stack[0],
+                            args: vec![],
+                        });
                     }
-                    _ => return Ok(Action::TailCall { num_args: 0 }),
-                }
+                    _ => {
+                        return Ok(Action::TailCall {
+                            callee: stack[0],
+                            args: vec![],
+                        })
+                    }
+                };
+                let loader_data = stack.get(2).copied().unwrap_or_default();
 
                 let closure = stack.callee();
                 let closure = closure.as_native_closure().unwrap();
                 let name = closure.upvalues()[0];
 
-                thread.ensure_stack(&mut window, 5);
+                thread.resize_stack(&mut window, 2);
                 let stack = thread.stack_mut(&window);
-                let loader = stack[1];
-                let loader_data = stack[2];
                 stack[1] = loader_data;
-                stack[2] = loader;
-                stack[3] = name;
-                stack[4] = loader_data;
 
                 let continuation: Box<NativeClosureFn> = Box::new(|gc, _, thread, window| {
-                    let mut thread = thread.borrow_mut(gc);
-                    let stack = thread.stack_mut(&window);
+                    let thread = thread.borrow();
+                    let stack = thread.stack(&window);
 
+                    let loader_data = stack[1];
                     let value = match stack.get(2) {
                         Some(Value::Nil) | None => Value::Boolean(true),
                         Some(value) => *value,
@@ -265,28 +268,29 @@ fn package_require<'gc>(
                     let loaded = closure.upvalues()[2];
                     loaded.borrow_as_table_mut(gc).unwrap().set(name, value)?;
 
-                    let loader_data = stack[1];
-                    stack[0] = value;
-                    stack[1] = loader_data;
-                    Ok(Action::Return { num_results: 2 })
+                    Ok(Action::Return(vec![value, loader_data]))
                 });
 
                 Ok(Action::Call {
-                    callee_bottom: 2,
+                    callee: loader,
+                    args: vec![name, loader_data],
                     continuation,
                 })
             });
 
             Ok(Action::Call {
-                callee_bottom: 1,
+                callee: searcher,
+                args: vec![name],
                 continuation,
             })
         },
         vec![name.into(), searchers, loaded.into()],
     );
 
-    stack[0] = gc.allocate(continuation).into();
-    Ok(Action::TailCall { num_args: 0 })
+    Ok(Action::TailCall {
+        callee: gc.allocate(continuation).into(),
+        args: Vec::new(),
+    })
 }
 
 fn package_searchpath<'gc>(
@@ -294,9 +298,9 @@ fn package_searchpath<'gc>(
     _: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let name = stack.arg(0);
     let name = name.to_string()?;
@@ -310,17 +314,10 @@ fn package_searchpath<'gc>(
     let rep = stack.arg(3);
     let rep = rep.to_string_or(LUA_DIRSEP)?;
 
-    match search_path(name, path, sep, rep) {
-        Ok(filename) => {
-            stack[0] = gc.allocate_string(filename).into();
-            Ok(Action::Return { num_results: 1 })
-        }
-        Err(msg) => {
-            stack[0] = Value::Nil;
-            stack[1] = gc.allocate_string(msg).into();
-            Ok(Action::Return { num_results: 2 })
-        }
-    }
+    Ok(Action::Return(match search_path(name, path, sep, rep) {
+        Ok(filename) => vec![gc.allocate_string(filename).into()],
+        Err(msg) => vec![Value::Nil, gc.allocate_string(msg).into()],
+    }))
 }
 
 fn search_path<N, P, S, D>(name: N, path: P, sep: S, dirsep: D) -> Result<Vec<u8>, Vec<u8>>
@@ -351,11 +348,8 @@ fn searcher_preload<'gc>(
     vm: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack_mut(&window);
-
-    let name = stack.arg(0);
+) -> Result<Action<'gc>, ErrorKind> {
+    let name = thread.borrow().stack(&window).arg(0);
     let name = name.to_string()?;
 
     let preload = vm
@@ -365,20 +359,12 @@ fn searcher_preload<'gc>(
     let preload = preload.borrow_as_table().unwrap();
 
     let value = preload.get_field(gc.allocate_string(name.clone()));
-    if value.is_nil() {
-        stack[0] = gc
-            .allocate_string(bstr::concat([
-                b"no field package.preload[\'",
-                name.as_ref(),
-                b"\']",
-            ]))
-            .into();
-        Ok(Action::Return { num_results: 1 })
+    Ok(Action::Return(if value.is_nil() {
+        let msg = bstr::concat([b"no field package.preload[\'", name.as_ref(), b"\']"]);
+        vec![gc.allocate_string(msg).into()]
     } else {
-        stack[0] = value;
-        stack[1] = gc.allocate_string(B(":preload:")).into();
-        Ok(Action::Return { num_results: 2 })
-    }
+        vec![value, gc.allocate_string(B(":preload:")).into()]
+    }))
 }
 
 fn searcher_lua<'gc>(
@@ -386,9 +372,9 @@ fn searcher_lua<'gc>(
     vm: &mut Vm<'gc>,
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
-) -> Result<Action, ErrorKind> {
-    let mut thread_ref = thread.borrow_mut(gc);
-    let stack = thread_ref.stack_mut(&window);
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
 
     let name = stack.arg(0);
     let name = name.to_string()?;
@@ -409,10 +395,7 @@ fn searcher_lua<'gc>(
 
     let filename = match search_path(&name, path, b".", LUA_LSUBSEP) {
         Ok(filename) => filename,
-        Err(msg) => {
-            stack[0] = gc.allocate_string(msg).into();
-            return Ok(Action::Return { num_results: 1 });
-        }
+        Err(msg) => return Ok(Action::Return(vec![gc.allocate_string(msg).into()])),
     };
 
     let closure = filename
@@ -431,7 +414,8 @@ fn searcher_lua<'gc>(
         }
     };
 
-    stack[0] = gc.allocate(closure).into();
-    stack[1] = gc.allocate_string(filename).into();
-    Ok(Action::Return { num_results: 2 })
+    Ok(Action::Return(vec![
+        gc.allocate(closure).into(),
+        gc.allocate_string(filename).into(),
+    ]))
 }

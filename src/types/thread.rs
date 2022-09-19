@@ -58,10 +58,8 @@ impl<'gc> LuaThread<'gc> {
         &mut self.stack[window.bottom..]
     }
 
-    pub fn ensure_stack(&mut self, window: &mut StackWindow, len: usize) {
-        if self.stack.len() < window.bottom + len {
-            self.stack.resize(window.bottom + len, Value::Nil);
-        }
+    pub fn resize_stack(&mut self, window: &mut StackWindow, len: usize) {
+        self.stack.resize(window.bottom + len, Value::Nil);
     }
 
     pub fn traceback(&self) -> Vec<TracebackFrame> {
