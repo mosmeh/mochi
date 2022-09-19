@@ -30,11 +30,10 @@ pub enum ErrorKind {
     #[error("attempt to {operation} a {ty} value")]
     TypeError { operation: Operation, ty: Type },
 
-    #[error("bad argument #{nth} ({message})", nth = nth + 1)]
+    #[error("bad argument #{nth} ({message})")]
     ArgumentError { nth: usize, message: &'static str },
 
     #[error("bad argument #{nth} ({expected_type} expected, got {got})",
-        nth = nth + 1,
         got = got_type.unwrap_or("no value")
     )]
     ArgumentTypeError {

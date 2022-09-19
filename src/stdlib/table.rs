@@ -31,12 +31,12 @@ fn table_concat<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let table = stack.arg(0);
+    let table = stack.arg(1);
     let table = table.borrow_as_table()?;
-    let sep = stack.arg(1);
+    let sep = stack.arg(2);
     let sep = sep.to_string_or(B(""))?;
-    let i = stack.arg(2).to_integer_or(1)?;
-    let j = stack.arg(3).to_integer_or_else(|| table.lua_len())?;
+    let i = stack.arg(3).to_integer_or(1)?;
+    let j = stack.arg(4).to_integer_or_else(|| table.lua_len())?;
 
     let mut strings = Vec::new();
     for index in i..=j {
@@ -67,17 +67,17 @@ fn table_insert<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let table = stack.arg(0);
+    let table = stack.arg(1);
     let mut table = table.borrow_as_table_mut(gc)?;
     let len = table.lua_len();
 
     match stack.args().len() {
         2 => table.set(len + 1, stack.args()[1])?,
         3 => {
-            let pos = stack.arg(1).to_integer()?;
+            let pos = stack.arg(2).to_integer()?;
             if pos > len + 1 {
                 return Err(ErrorKind::ArgumentError {
-                    nth: 1,
+                    nth: 2,
                     message: "position out of bounds",
                 });
             }
@@ -118,14 +118,14 @@ fn table_remove<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let table = stack.arg(0);
+    let table = stack.arg(1);
     let mut table = table.borrow_as_table_mut(gc)?;
     let len = table.lua_len();
 
-    let pos = stack.arg(1).to_integer_or(len)?;
+    let pos = stack.arg(2).to_integer_or(len)?;
     if pos > len + 1 {
         return Err(ErrorKind::ArgumentError {
-            nth: 1,
+            nth: 2,
             message: "position out of bounds",
         });
     }
@@ -148,10 +148,10 @@ fn table_unpack<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let table = stack.arg(0);
+    let table = stack.arg(1);
     let table = table.borrow_as_table()?;
-    let start = stack.arg(1).to_integer_or(1)?;
-    let end = stack.arg(2).to_integer_or_else(|| table.lua_len())?;
+    let start = stack.arg(2).to_integer_or(1)?;
+    let end = stack.arg(3).to_integer_or_else(|| table.lua_len())?;
 
     Ok(Action::Return(
         (start..=end).map(|key| table.get(key)).collect(),

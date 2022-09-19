@@ -159,7 +159,7 @@ fn package_require<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let name = gc.allocate_string(stack.arg(0).to_string()?);
+    let name = gc.allocate_string(stack.arg(1).to_string()?);
 
     let loaded = vm
         .registry()
@@ -173,8 +173,8 @@ fn package_require<'gc>(
         return Ok(Action::Return(vec![value]));
     }
 
-    let closure = stack.callee();
-    let closure = closure.as_native_closure().unwrap();
+    let closure = stack.arg(0);
+    let closure = closure.as_native_closure()?;
     let package = closure
         .upvalues()
         .first()
@@ -194,8 +194,8 @@ fn package_require<'gc>(
             let mut thread = thread.borrow_mut(gc);
             let stack = thread.stack(&window);
 
-            let closure = stack.callee();
-            let closure = closure.as_native_closure().unwrap();
+            let closure = stack.arg(0);
+            let closure = closure.as_native_closure()?;
             thread.resize_stack(&mut window, 1);
 
             let name = closure.upvalues()[0];
@@ -244,8 +244,8 @@ fn package_require<'gc>(
                 };
                 let loader_data = stack.get(2).copied().unwrap_or_default();
 
-                let closure = stack.callee();
-                let closure = closure.as_native_closure().unwrap();
+                let closure = stack.arg(0);
+                let closure = closure.as_native_closure()?;
                 let name = closure.upvalues()[0];
 
                 thread.resize_stack(&mut window, 2);
@@ -262,8 +262,8 @@ fn package_require<'gc>(
                         Some(value) => *value,
                     };
 
-                    let closure = stack.callee();
-                    let closure = closure.as_native_closure().unwrap();
+                    let closure = stack.arg(0);
+                    let closure = closure.as_native_closure()?;
                     let name = closure.upvalues()[0];
                     let loaded = closure.upvalues()[2];
                     loaded.borrow_as_table_mut(gc).unwrap().set(name, value)?;
@@ -302,16 +302,16 @@ fn package_searchpath<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let name = stack.arg(0);
+    let name = stack.arg(1);
     let name = name.to_string()?;
 
-    let path = stack.arg(1);
+    let path = stack.arg(2);
     let path = path.to_string()?;
 
-    let sep = stack.arg(2);
+    let sep = stack.arg(3);
     let sep = sep.to_string_or(B("."))?;
 
-    let rep = stack.arg(3);
+    let rep = stack.arg(4);
     let rep = rep.to_string_or(LUA_DIRSEP)?;
 
     Ok(Action::Return(match search_path(name, path, sep, rep) {
@@ -349,7 +349,7 @@ fn searcher_preload<'gc>(
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let name = thread.borrow().stack(&window).arg(0);
+    let name = thread.borrow().stack(&window).arg(1);
     let name = name.to_string()?;
 
     let preload = vm
@@ -376,11 +376,11 @@ fn searcher_lua<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let name = stack.arg(0);
+    let name = stack.arg(1);
     let name = name.to_string()?;
 
-    let closure = stack.callee();
-    let closure = closure.as_native_closure().unwrap();
+    let closure = stack.arg(0);
+    let closure = closure.as_native_closure()?;
     let package = closure
         .upvalues()
         .first()

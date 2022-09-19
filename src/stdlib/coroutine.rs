@@ -31,7 +31,7 @@ fn coroutine_close<'gc>(
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let co = thread.borrow().stack(&window).arg(0).as_thread()?;
+    let co = thread.borrow().stack(&window).arg(1).as_thread()?;
     let status = get_coroutine_status(thread, co);
     if !matches!(status, CoroutineStatus::Dead | CoroutineStatus::Suspended) {
         return Err(ErrorKind::ExplicitError(format!(
@@ -60,7 +60,7 @@ fn coroutine_create<'gc>(
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let f = thread.borrow().stack(&window).arg(0).ensure_function()?;
+    let f = thread.borrow().stack(&window).arg(1).ensure_function()?;
     let co = LuaThread::with_body(f);
 
     Ok(Action::Return(vec![gc.allocate_cell(co).into()]))
@@ -72,7 +72,7 @@ fn coroutine_isyieldable<'gc>(
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let co = thread.borrow().stack(&window).arg(0);
+    let co = thread.borrow().stack(&window).arg(1);
     let co = if co.get().is_some() {
         co.as_thread()?
     } else {
@@ -91,9 +91,9 @@ fn coroutine_resume<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let mut thread = thread.borrow_mut(gc);
     let stack = thread.stack(&window);
-    let coroutine = stack.arg(0).as_thread()?;
+    let coroutine = stack.arg(1).as_thread()?;
     let args = stack.args()[1..].to_vec();
-    thread.resize_stack(&mut window, 1);
+    thread.resize_stack(&mut window, 0);
 
     Ok(Action::Resume {
         coroutine,
@@ -107,7 +107,7 @@ fn coroutine_resume<'gc>(
                 match result.get::<CoroutineResult>().unwrap() {
                     Ok(()) => {
                         let mut results = vec![true.into()];
-                        results.extend_from_slice(&stack.args()[1..]);
+                        results.extend_from_slice(&stack[1..]);
                         results
                     }
                     Err(err) => vec![
@@ -138,7 +138,7 @@ fn coroutine_status<'gc>(
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let co = thread.borrow().stack(&window).arg(0).as_thread()?;
+    let co = thread.borrow().stack(&window).arg(1).as_thread()?;
     let status = get_coroutine_status(thread, co);
     Ok(Action::Return(vec![gc
         .allocate_string(status.name().as_bytes())
@@ -151,7 +151,7 @@ fn coroutine_wrap<'gc>(
     thread: GcCell<'gc, LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let f = thread.borrow().stack(&window).arg(0).ensure_function()?;
+    let f = thread.borrow().stack(&window).arg(1).ensure_function()?;
     let co = LuaThread::with_body(f);
 
     let wrapper = NativeClosure::with_upvalues(
@@ -159,23 +159,23 @@ fn coroutine_wrap<'gc>(
             let thread = thread.borrow();
             let stack = thread.stack(&window);
 
-            let closure = stack.callee();
-            let closure = closure.as_native_closure().unwrap();
+            let closure = stack.arg(0);
+            let closure = closure.as_native_closure()?;
             let coroutine = closure.upvalues().first().unwrap().as_thread().unwrap();
 
             let continuation: Box<NativeClosureFn> = Box::new(|gc, _, thread, window| {
                 let thread = thread.borrow();
                 let stack = thread.stack(&window);
 
-                let result = stack.arg(0).as_userdata::<CoroutineResult>()?;
+                let result = stack.arg(1).as_userdata::<CoroutineResult>()?;
                 let result = result.borrow();
 
                 match result.get::<CoroutineResult>().unwrap() {
                     Ok(()) => Ok(Action::Return(stack.args()[1..].to_vec())),
                     Err(err) => {
-                        let closure = stack.callee();
-                        let closure = closure.as_native_closure().unwrap();
-                        closure
+                        stack
+                            .arg(0)
+                            .as_native_closure()?
                             .upvalues()
                             .first()
                             .unwrap()

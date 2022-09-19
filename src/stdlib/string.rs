@@ -44,11 +44,11 @@ fn string_byte<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let s = stack.arg(0);
+    let s = stack.arg(1);
     let s = s.to_string()?;
 
-    let i = stack.arg(1).to_integer_or(1)?;
-    let j = stack.arg(2).to_integer_or(i)?;
+    let i = stack.arg(2).to_integer_or(1)?;
+    let j = stack.arg(3).to_integer_or(i)?;
     let range = indices_to_range(i, j, s.len() as Integer);
 
     Ok(Action::Return(
@@ -67,7 +67,7 @@ fn string_char<'gc>(
 
     let len = stack.args().len();
     let mut bytes = Vec::with_capacity(len);
-    for nth in 0..len {
+    for nth in 1..=len {
         let ch = stack.arg(nth).to_integer()?;
         if let Ok(ch) = ch.try_into() {
             bytes.push(ch);
@@ -88,7 +88,7 @@ fn string_dump<'gc>(
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    match thread.borrow().stack(&window).arg(0).get() {
+    match thread.borrow().stack(&window).arg(1).get() {
         Some(Value::LuaClosure(closure)) => {
             let mut binary = Vec::new();
             binary_chunk::dump(&mut binary, &closure.proto)?;
@@ -98,7 +98,7 @@ fn string_dump<'gc>(
             "unable to dump given function".to_owned(),
         )),
         value => Err(ErrorKind::ArgumentTypeError {
-            nth: 0,
+            nth: 1,
             expected_type: "function",
             got_type: value.map(|value| value.ty().name()),
         }),
@@ -111,7 +111,7 @@ fn string_len<'gc>(
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let len = thread.borrow().stack(&window).arg(0).to_string()?.len() as Integer;
+    let len = thread.borrow().stack(&window).arg(1).to_string()?.len() as Integer;
     Ok(Action::Return(vec![len.into()]))
 }
 
@@ -124,7 +124,7 @@ fn string_lower<'gc>(
     let lower = thread
         .borrow()
         .stack(&window)
-        .arg(0)
+        .arg(1)
         .to_string()?
         .to_ascii_lowercase();
     Ok(Action::Return(vec![gc.allocate_string(lower).into()]))
@@ -139,11 +139,11 @@ fn string_sub<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let s = stack.arg(0);
+    let s = stack.arg(1);
     let s = s.to_string()?;
 
-    let i = stack.arg(1).to_integer()?;
-    let j = stack.arg(2).to_integer_or(-1)?;
+    let i = stack.arg(2).to_integer()?;
+    let j = stack.arg(3).to_integer_or(-1)?;
     let range = indices_to_range(i, j, s.len() as Integer);
 
     Ok(Action::Return(vec![gc.allocate_string(&s[range]).into()]))
@@ -158,10 +158,10 @@ fn string_rep<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let s = stack.arg(0);
+    let s = stack.arg(1);
     let s = s.to_string()?;
-    let n = stack.arg(1).to_integer()?;
-    let sep = stack.arg(2);
+    let n = stack.arg(2).to_integer()?;
+    let sep = stack.arg(3);
     let sep = sep.to_string_or(B(""))?;
 
     let count = n.max(0) as usize;
@@ -186,7 +186,7 @@ fn string_reverse<'gc>(
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let mut string = thread.borrow().stack(&window).arg(0).to_string()?.to_vec();
+    let mut string = thread.borrow().stack(&window).arg(1).to_string()?.to_vec();
     string.reverse();
     Ok(Action::Return(vec![gc.allocate_string(string).into()]))
 }
@@ -200,7 +200,7 @@ fn string_upper<'gc>(
     let upper = thread
         .borrow()
         .stack(&window)
-        .arg(0)
+        .arg(1)
         .to_string()?
         .to_ascii_uppercase();
     Ok(Action::Return(vec![gc.allocate_string(upper).into()]))

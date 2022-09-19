@@ -70,7 +70,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
                 let result = match stack.args().len() {
                     0 => rng.gen::<Number>().into(),
                     1 => {
-                        let upper = stack.arg(0).to_integer()?;
+                        let upper = stack.arg(1).to_integer()?;
                         if upper == 0 {
                             rng.gen::<Integer>().into()
                         } else {
@@ -78,8 +78,8 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
                         }
                     }
                     2 => {
-                        let lower = stack.arg(0).to_integer()?;
-                        let upper = stack.arg(1).to_integer()?;
+                        let lower = stack.arg(1).to_integer()?;
+                        let upper = stack.arg(2).to_integer()?;
                         random_in_range(rng.deref_mut(), lower, upper).into()
                     }
                     _ => {
@@ -100,8 +100,8 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
             let (x, y) = if stack.args().is_empty() {
                 (seed1(), seed2)
             } else {
-                let x = stack.arg(0).to_integer()?;
-                let y = stack.arg(1).to_integer_or(0)?;
+                let x = stack.arg(1).to_integer()?;
+                let y = stack.arg(2).to_integer_or(0)?;
                 (x, y)
             };
             *rng.borrow_mut() = rng_from_seeds(x, y);
@@ -119,7 +119,7 @@ fn math_abs<'gc>(
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let arg = thread.borrow().stack(&window).arg(0);
+    let arg = thread.borrow().stack(&window).arg(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
         x.abs().into()
     } else {
@@ -154,8 +154,8 @@ fn math_atan<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let thread = thread.borrow();
     let stack = thread.stack(&window);
-    let y = stack.arg(0).to_number()?;
-    let x = stack.arg(1);
+    let y = stack.arg(1).to_number()?;
+    let x = stack.arg(2);
     let result = if x.get().is_some() {
         y.atan2(x.to_number()?)
     } else {
@@ -170,7 +170,7 @@ fn math_ceil<'gc>(
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let arg = thread.borrow().stack(&window).arg(0);
+    let arg = thread.borrow().stack(&window).arg(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
     } else {
@@ -213,7 +213,7 @@ fn math_floor<'gc>(
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let arg = thread.borrow().stack(&window).arg(0);
+    let arg = thread.borrow().stack(&window).arg(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
     } else {
@@ -231,12 +231,12 @@ fn math_fmod<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let thread = thread.borrow();
     let stack = thread.stack(&window);
-    let x = stack.arg(0);
-    let y = stack.arg(1);
+    let x = stack.arg(1);
+    let y = stack.arg(2);
     let result = if let (Value::Integer(x), Value::Integer(y)) = (x.as_value()?, y.as_value()?) {
         if y == 0 {
             return Err(ErrorKind::ArgumentError {
-                nth: 1,
+                nth: 2,
                 message: "zero",
             });
         }
@@ -255,8 +255,8 @@ fn math_log<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let thread = thread.borrow();
     let stack = thread.stack(&window);
-    let x = stack.arg(0).to_number()?;
-    let base = stack.arg(1);
+    let x = stack.arg(1).to_number()?;
+    let base = stack.arg(2);
     let result = if base.get().is_some() {
         x.log(base.to_number()?)
     } else {
@@ -271,7 +271,7 @@ fn math_modf<'gc>(
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let x = thread.borrow().stack(&window).arg(0);
+    let x = thread.borrow().stack(&window).arg(1);
     let (trunc, fract) = if let Value::Integer(x) = x.as_value()? {
         (x.into(), 0.0.into())
     } else {
@@ -326,7 +326,7 @@ fn math_tointeger<'gc>(
     let result = thread
         .borrow()
         .stack(&window)
-        .arg(0)
+        .arg(1)
         .as_value()?
         .to_integer()
         .map(|i| i.into())
@@ -340,7 +340,7 @@ fn math_type<'gc>(
     thread: GcCell<LuaThread<'gc>>,
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let result = match thread.borrow().stack(&window).arg(0).as_value()? {
+    let result = match thread.borrow().stack(&window).arg(1).as_value()? {
         Value::Integer(_) => gc.allocate_string(B("integer")).into(),
         Value::Number(_) => gc.allocate_string(B("float")).into(),
         _ => Value::Nil,
@@ -356,8 +356,8 @@ fn math_ult<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let thread = thread.borrow();
     let stack = thread.stack(&window);
-    let m = stack.arg(0).to_integer()?;
-    let n = stack.arg(1).to_integer()?;
+    let m = stack.arg(1).to_integer()?;
+    let n = stack.arg(2).to_integer()?;
     Ok(Action::Return(vec![((m as u64) < (n as u64)).into()]))
 }
 
@@ -387,8 +387,8 @@ fn math_pow<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let thread = thread.borrow();
     let stack = thread.stack(&window);
-    let x = stack.arg(0).to_number()?;
-    let y = stack.arg(1).to_number()?;
+    let x = stack.arg(1).to_number()?;
+    let y = stack.arg(2).to_number()?;
     Ok(Action::Return(vec![Number::powf(x, y).into()]))
 }
 
@@ -418,7 +418,7 @@ fn unary_func<'gc, F>(
 where
     F: Fn(Number) -> Number,
 {
-    let x = thread.borrow().stack(&window).arg(0).to_number()?;
+    let x = thread.borrow().stack(&window).arg(1).to_number()?;
     Ok(Action::Return(vec![f(x).into()]))
 }
 

@@ -2,7 +2,8 @@ use crate::{
     gc::{GcCell, GcContext},
     runtime::ErrorKind,
     types::{
-        Integer, LuaThread, NativeFunction, NativeFunctionPtr, Number, Table, Type, UserData, Value,
+        Integer, LuaThread, NativeClosure, NativeFunction, NativeFunctionPtr, Number, Table, Type,
+        UserData, Value,
     },
 };
 use std::{
@@ -31,7 +32,7 @@ where
 
     fn arg(&self, nth: usize) -> Argument<'gc> {
         Argument {
-            value: self.borrow().get(nth + 1).copied(),
+            value: self.borrow().get(nth).copied(),
             nth,
         }
     }
@@ -91,6 +92,10 @@ impl<'gc> Argument<'gc> {
         } else {
             Ok(default.into())
         }
+    }
+
+    pub fn as_native_closure(&self) -> Result<&NativeClosure<'gc>, ErrorKind> {
+        self.to_type("function", Value::as_native_closure)
     }
 
     pub fn as_thread(&self) -> Result<GcCell<'gc, LuaThread<'gc>>, ErrorKind> {

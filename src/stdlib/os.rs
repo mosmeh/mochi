@@ -46,13 +46,13 @@ fn os_date<'gc>(
     let thread = thread.borrow();
     let stack = thread.stack(&window);
 
-    let format = stack.arg(0);
+    let format = stack.arg(1);
     let format = format.to_string_or(B("%c"))?;
 
-    let time = stack.arg(1).to_integer_or_else(|| Utc::now().timestamp())?;
+    let time = stack.arg(2).to_integer_or_else(|| Utc::now().timestamp())?;
     if NaiveDateTime::from_timestamp_opt(time, 0).is_none() {
         return Err(ErrorKind::ArgumentError {
-            nth: 1,
+            nth: 2,
             message: "time out-of-bounds",
         });
     }
@@ -113,8 +113,8 @@ fn os_difftime<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let thread = thread.borrow();
     let stack = thread.stack(&window);
-    let t2 = stack.arg(0).to_number()?;
-    let t1 = stack.arg(1).to_number()?;
+    let t2 = stack.arg(1).to_number()?;
+    let t1 = stack.arg(2).to_number()?;
     Ok(Action::Return(vec![(t2 - t1).into()]))
 }
 
@@ -128,7 +128,7 @@ fn os_exit<'gc>(
     const EXIT_SUCCESS: i32 = 0;
     const EXIT_FAILURE: i32 = 1;
 
-    let code = thread.borrow().stack(&window).arg(0);
+    let code = thread.borrow().stack(&window).arg(1);
     let code = match code.get() {
         Some(Value::Boolean(success)) => {
             if success {
@@ -153,7 +153,7 @@ fn os_getenv<'gc>(
     let env = thread
         .borrow()
         .stack(&window)
-        .arg(0)
+        .arg(1)
         .to_string()?
         .to_os_str()
         .ok()
@@ -197,7 +197,7 @@ fn os_time<'gc>(
         }
     }
 
-    let table = thread.borrow().stack(&window).arg(0);
+    let table = thread.borrow().stack(&window).arg(1);
     if table.get().is_none() {
         return Ok(Action::Return(vec![Utc::now().timestamp().into()]));
     }
