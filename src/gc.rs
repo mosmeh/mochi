@@ -28,10 +28,11 @@ pub struct GcHeap {
 impl Default for GcHeap {
     fn default() -> Self {
         let mut gc = GcContext {
-            pause: 200,
-            step_multiplier: 100,
-            step_size: 13,
+            pause: Cell::new(200),
+            step_multiplier: Cell::new(100),
+            step_size: Cell::new(13),
 
+            is_running: Cell::new(true),
             phase: Cell::new(Phase::Pause),
             current_white: Default::default(),
             allocated_bytes: Default::default(),
@@ -70,7 +71,31 @@ impl GcHeap {
     }
 
     pub fn step(&mut self) {
-        self.gc.step();
+        if self.gc.is_running() {
+            self.gc.step();
+        }
+    }
+
+    pub fn full_gc(&mut self) {
+        self.gc.full_gc();
+    }
+
+    pub fn force_step(&mut self, kbytes: isize) -> bool {
+        let did_step = if kbytes == 0 {
+            self.gc.set_debt(0);
+            self.gc.step();
+            true
+        } else {
+            let debt = kbytes * 1024 + self.gc.debt();
+            self.gc.set_debt(debt);
+            if debt > 0 {
+                self.gc.step();
+                true
+            } else {
+                false
+            }
+        };
+        did_step && self.gc.phase.get() == Phase::Pause
     }
 }
 
@@ -81,10 +106,11 @@ const WORK2MEM: usize = std::mem::size_of::<GcBox<Value>>();
 type GcPtr<T> = NonNull<GcBox<T>>;
 
 pub struct GcContext {
-    pause: usize,
-    step_multiplier: usize,
-    step_size: usize,
+    pause: Cell<usize>,
+    step_multiplier: Cell<usize>,
+    step_size: Cell<usize>,
 
+    is_running: Cell<bool>,
     phase: Cell<Phase>,
     current_white: Cell<bool>,
     allocated_bytes: Cell<usize>,
@@ -114,12 +140,53 @@ impl Drop for GcContext {
 }
 
 impl GcContext {
+    pub fn is_running(&self) -> bool {
+        self.is_running.get()
+    }
+
+    pub fn stop(&self) {
+        self.is_running.set(false);
+    }
+
+    pub fn restart(&self) {
+        self.is_running.set(true);
+        self.set_debt(0);
+    }
+
     pub fn total_bytes(&self) -> usize {
         (self.allocated_bytes.get() as isize + self.debt.get()) as usize
     }
 
     pub fn debt(&self) -> isize {
         self.debt.get()
+    }
+
+    pub fn pause(&self) -> usize {
+        self.pause.get()
+    }
+
+    pub fn set_pause(&self, pause: usize) {
+        self.pause.set(pause);
+    }
+
+    pub fn step_multiplier(&self) -> usize {
+        self.step_multiplier.get()
+    }
+
+    pub fn set_step_multiplier(&self, step_multiplier: usize) {
+        self.step_multiplier.set(step_multiplier);
+    }
+
+    pub fn step_size(&self) -> usize {
+        self.step_size.get()
+    }
+
+    pub fn set_step_size(&self, step_size: usize) {
+        self.step_size.set(step_size);
+    }
+
+    pub fn should_perform_gc(&self) -> bool {
+        self.is_running() && self.debt() > 0
     }
 
     pub fn allocate<T: GarbageCollect>(&self, value: T) -> Gc<T> {
@@ -166,28 +233,60 @@ impl GcContext {
         LuaString(Gc::new(interned))
     }
 
-    fn step(&mut self) {
-        let mut debt = self.debt.get();
-        let step_size = 1 << self.step_size;
+    fn full_gc(&mut self) {
+        if matches!(self.phase.get(), Phase::Propagate | Phase::Atomic) {
+            self.phase.set(Phase::Sweep);
+            self.sweep.set(self.all.get());
+            self.prev_sweep.take();
+        }
+        while self.phase.get() != Phase::Pause {
+            self.do_single_step();
+        }
         loop {
-            let work = self.do_single_step() / self.step_multiplier;
-            debt -= work as isize;
+            self.do_single_step();
             if self.phase.get() == Phase::Pause {
-                let estimate = self.estimate.get() / PAUSEADJ;
-                let threshold = estimate * self.pause;
-                debt = self.allocated_bytes.get() as isize + self.debt.get() - threshold as isize;
-                if debt > 0 {
-                    debt = 0;
-                }
-                break;
-            }
-            if debt <= -step_size {
                 break;
             }
         }
+        debug_assert_eq!(self.estimate.get(), self.total_bytes());
+        loop {
+            self.do_single_step();
+            if self.phase.get() == Phase::Pause {
+                break;
+            }
+        }
+        self.set_debt_for_pause_phase();
+    }
+
+    fn step(&mut self) {
+        let mut debt = self.debt.get();
+        let step_size = 1 << self.step_size.get();
+        let step_multiplier = self.step_multiplier.get();
+        loop {
+            let work = self.do_single_step() / step_multiplier;
+            debt -= work as isize;
+            if self.phase.get() == Phase::Pause {
+                self.set_debt_for_pause_phase();
+                return;
+            }
+            if debt <= -step_size {
+                self.set_debt(debt);
+                return;
+            }
+        }
+    }
+
+    fn set_debt(&self, debt: isize) {
         self.allocated_bytes
             .set((self.allocated_bytes.get() as isize + self.debt.get() - debt) as usize);
         self.debt.set(debt);
+    }
+
+    fn set_debt_for_pause_phase(&self) {
+        let estimate = self.estimate.get() / PAUSEADJ;
+        let threshold = estimate * self.pause.get();
+        let debt = self.allocated_bytes.get() as isize + self.debt.get() - threshold as isize;
+        self.set_debt(if debt > 0 { 0 } else { debt });
     }
 
     fn write_barrier<T: GarbageCollect>(&self, ptr: GcPtr<T>) {

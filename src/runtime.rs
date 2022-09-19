@@ -19,7 +19,7 @@ use crate::{
     },
     Error, LuaClosure,
 };
-use std::{ops::ControlFlow, path::Path};
+use std::path::Path;
 
 pub(crate) type CoroutineResult = Result<(), ErrorKind>;
 
@@ -76,27 +76,29 @@ impl Runtime {
         )?;
 
         loop {
-            match self.heap.with(execute_until_gc) {
-                Ok(ControlFlow::Continue(())) => self.heap.step(),
-                Ok(ControlFlow::Break(())) => return Ok(()),
+            let result: Result<_, RuntimeError> = self.heap.with(|gc, vm| {
+                let mut vm = vm.borrow_mut(gc);
+                while let Some(thread) = vm.current_thread() {
+                    if let Some(action) = vm.execute_single_step(gc, thread)? {
+                        return Ok(action);
+                    }
+                }
+                Ok(RuntimeAction::Exit)
+            });
+            match result {
+                Ok(RuntimeAction::StepGc) => self.heap.step(),
+                Ok(RuntimeAction::MutateGc(mutator)) => mutator(&mut self.heap),
+                Ok(RuntimeAction::Exit) => return Ok(()),
                 Err(err) => return Err(Box::new(err)),
             }
         }
     }
 }
 
-fn execute_until_gc<'gc>(
-    gc: &'gc GcContext,
-    vm: GcCell<'gc, Vm<'gc>>,
-) -> Result<ControlFlow<(), ()>, RuntimeError> {
-    let mut vm = vm.borrow_mut(gc);
-    while let Some(thread) = vm.thread_stack.last().copied() {
-        vm.execute_single_step(gc, thread)?;
-        if gc.debt() > 0 {
-            return Ok(ControlFlow::Continue(()));
-        }
-    }
-    Ok(ControlFlow::Break(()))
+enum RuntimeAction {
+    StepGc,
+    MutateGc(Box<dyn Fn(&mut GcHeap)>),
+    Exit,
 }
 
 #[derive(Debug)]
@@ -192,6 +194,10 @@ impl<'gc> Vm<'gc> {
         self.main_thread
     }
 
+    pub fn current_thread(&self) -> Option<GcCell<'gc, LuaThread<'gc>>> {
+        self.thread_stack.last().copied()
+    }
+
     pub fn globals(&self) -> GcCell<'gc, Table<'gc>> {
         self.globals
     }
@@ -252,9 +258,10 @@ impl<'gc> Vm<'gc> {
         &mut self,
         gc: &'gc GcContext,
         thread: GcCell<'gc, LuaThread<'gc>>,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Option<RuntimeAction>, RuntimeError> {
         match self.execute_next_frame(gc, thread) {
-            Ok(()) => (),
+            Ok(Some(action)) => return Ok(Some(action)),
+            Ok(None) => (),
             Err(kind) => {
                 self.thread_stack.pop().unwrap();
                 {
@@ -276,19 +283,20 @@ impl<'gc> Vm<'gc> {
                     .stack
                     .push(gc.allocate_cell(result).into());
             }
-        };
-        Ok(())
+        }
+        Ok(gc.should_perform_gc().then_some(RuntimeAction::StepGc))
     }
 
     fn execute_next_frame(
         &mut self,
         gc: &'gc GcContext,
         thread: GcCell<'gc, LuaThread<'gc>>,
-    ) -> Result<(), ErrorKind> {
+    ) -> Result<Option<RuntimeAction>, ErrorKind> {
         let mut thread_ref = thread.borrow_mut(gc);
         if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
             drop(thread_ref);
-            return self.execute_lua_frame(gc, thread);
+            self.execute_lua_frame(gc, thread)?;
+            return Ok(None);
         }
 
         let current_frame = thread_ref.frames.pop();
@@ -333,7 +341,7 @@ impl<'gc> Vm<'gc> {
                     coroutine_ref.stack.push(gc.allocate_cell(result).into());
                     coroutine_ref.stack.append(&mut values);
                 }
-                return Ok(());
+                return Ok(None);
             }
         };
 
@@ -405,7 +413,7 @@ impl<'gc> Vm<'gc> {
                             .borrow_mut(gc)
                             .stack
                             .push(gc.allocate_cell(result).into());
-                        return Ok(());
+                        return Ok(None);
                     }
                 }
 
@@ -436,9 +444,19 @@ impl<'gc> Vm<'gc> {
                 resumer_ref.stack.push(gc.allocate_cell(result).into());
                 resumer_ref.stack.append(&mut values);
             }
+            Action::MutateGc {
+                mutator,
+                continuation,
+            } => {
+                *thread_ref.frames.last_mut().unwrap() = Frame::Continuation(ContinuationFrame {
+                    bottom,
+                    continuation: Box::new(continuation),
+                });
+                return Ok(Some(RuntimeAction::MutateGc(mutator)));
+            }
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn deferred_call_index_metamethod<K>(

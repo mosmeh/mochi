@@ -793,7 +793,7 @@ impl<'gc> Vm<'gc> {
                 OpCode::ExtraArg => unreachable!(),
             }
 
-            if gc.debt() > 0 {
+            if gc.should_perform_gc() {
                 thread_ref.current_lua_frame().pc = state.pc;
                 return Ok(());
             }

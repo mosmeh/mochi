@@ -1,6 +1,6 @@
 use super::{thread::StackWindow, LuaThread};
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
+    gc::{GarbageCollect, Gc, GcCell, GcContext, GcHeap, Tracer},
     runtime::{ErrorKind, Instruction, Vm},
     types::{LuaString, Value},
 };
@@ -23,6 +23,10 @@ pub enum Action<'gc> {
         continuation: Box<NativeClosureFn>,
     },
     Yield(Vec<Value<'gc>>),
+    MutateGc {
+        mutator: Box<dyn Fn(&mut GcHeap)>,
+        continuation: Box<NativeClosureFn>,
+    },
 }
 
 pub type NativeFunctionPtr = for<'gc> fn(

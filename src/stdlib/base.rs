@@ -66,13 +66,88 @@ fn base_collectgarbage<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    mut window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let opt = thread.borrow().stack(&window).arg(1);
-    let opt = opt.to_string()?;
+    let mut thread = thread.borrow_mut(gc);
+    let stack = thread.stack_mut(&window);
+
+    let opt = stack.arg(1);
+    let opt = opt.to_string_or(B("collect"))?;
+
     let result = match opt.as_ref() {
+        b"collect" => {
+            return Ok(Action::MutateGc {
+                mutator: Box::new(|heap| {
+                    heap.full_gc();
+                }),
+                continuation: Box::new(|_, _, _, _| Ok(Action::Return(vec![0.into()]))),
+            })
+        }
+        b"stop" => {
+            gc.stop();
+            0.into()
+        }
+        b"restart" => {
+            gc.restart();
+            0.into()
+        }
         b"count" => ((gc.total_bytes() as Number) / 1024.0).into(),
-        opt => todo!("{}", opt.as_bstr()),
+        b"step" => {
+            let step = stack.arg(2).to_integer_or(0)?;
+            thread.resize_stack(&mut window, 0);
+            return Ok(Action::MutateGc {
+                mutator: Box::new(move |heap| {
+                    let finished_cycle = heap.force_step(step as isize);
+                    heap.with(|gc, vm| {
+                        vm.borrow()
+                            .current_thread()
+                            .unwrap()
+                            .borrow_mut(gc)
+                            .stack
+                            .push(finished_cycle.into());
+                    });
+                }),
+                continuation: Box::new(|_, _, thread, window| {
+                    let result = thread.borrow().stack(&window).arg(0).as_value()?;
+                    Ok(Action::Return(vec![result]))
+                }),
+            });
+        }
+        b"isrunning" => gc.is_running().into(),
+        b"incremental" => {
+            let pause = stack.arg(2).to_integer_or(0)?;
+            let step_multiplier = stack.arg(3).to_integer_or(0)?;
+            let step_size = stack.arg(4).to_integer_or(0)?;
+            if pause != 0 {
+                gc.set_pause(pause as usize);
+            }
+            if step_multiplier != 0 {
+                gc.set_step_multiplier(step_multiplier as usize);
+            }
+            if step_size != 0 {
+                gc.set_step_size(step_size as usize);
+            }
+            gc.allocate_string(B("incremental")).into()
+        }
+        b"generational" => Value::Nil,
+        b"setpause" => {
+            let pause = stack.arg(2).to_integer_or(0)?;
+            let prev_pause = gc.pause();
+            gc.set_pause(pause as usize);
+            (prev_pause as Integer).into()
+        }
+        b"setstepmul" => {
+            let step_multiplier = stack.arg(2).to_integer_or(0)?;
+            let prev_step_multiplier = gc.step_multiplier();
+            gc.set_step_multiplier(step_multiplier as usize);
+            (prev_step_multiplier as Integer).into()
+        }
+        _ => {
+            return Err(ErrorKind::ArgumentError {
+                nth: 1,
+                message: "invalid option",
+            })
+        }
     };
     Ok(Action::Return(vec![result]))
 }
