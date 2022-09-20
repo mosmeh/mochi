@@ -385,6 +385,14 @@ impl<'gc> Value<'gc> {
         None
     }
 
+    pub fn borrow_as_userdata<T: Any>(&self) -> Option<Ref<T>> {
+        if let Self::UserData(ud) = self {
+            Ref::filter_map(ud.borrow(), |ud| ud.get()).ok()
+        } else {
+            None
+        }
+    }
+
     pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
         match self {
             Self::Table(table) => table.borrow().metatable(),

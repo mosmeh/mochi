@@ -5,6 +5,7 @@ use crate::{
     types::{Action, LuaThread, NativeClosure, NativeClosureFn, StackWindow, Table, ThreadStatus},
 };
 use bstr::B;
+use std::ops::Deref;
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
@@ -101,21 +102,19 @@ fn coroutine_resume<'gc>(
         continuation: Box::new(|gc, _, thread, window| {
             let thread = thread.borrow();
             let stack = thread.stack(&window);
-            let result = stack.arg(0).as_userdata::<CoroutineResult>()?;
-            let result = result.borrow();
-            Ok(Action::Return(
-                match result.get::<CoroutineResult>().unwrap() {
-                    Ok(()) => {
-                        let mut results = vec![true.into()];
-                        results.extend_from_slice(&stack[1..]);
-                        results
-                    }
-                    Err(err) => vec![
-                        false.into(),
-                        gc.allocate_string(err.to_string().into_bytes()).into(),
-                    ],
-                },
-            ))
+            let result = stack.arg(0);
+            let result = result.borrow_as_userdata::<CoroutineResult>()?;
+            Ok(Action::Return(match result.deref() {
+                Ok(()) => {
+                    let mut results = vec![true.into()];
+                    results.extend_from_slice(&stack[1..]);
+                    results
+                }
+                Err(err) => vec![
+                    false.into(),
+                    gc.allocate_string(err.to_string().into_bytes()).into(),
+                ],
+            }))
         }),
     })
 }
@@ -167,10 +166,9 @@ fn coroutine_wrap<'gc>(
                 let thread = thread.borrow();
                 let stack = thread.stack(&window);
 
-                let result = stack.arg(1).as_userdata::<CoroutineResult>()?;
-                let result = result.borrow();
-
-                match result.get::<CoroutineResult>().unwrap() {
+                let result = stack.arg(1);
+                let result = result.borrow_as_userdata::<CoroutineResult>()?;
+                match result.deref() {
                     Ok(()) => Ok(Action::Return(stack.args()[1..].to_vec())),
                     Err(err) => {
                         stack
