@@ -156,7 +156,7 @@ fn math_atan<'gc>(
     let stack = thread.stack(&window);
     let y = stack.arg(1).to_number()?;
     let x = stack.arg(2);
-    let result = if x.get().is_some() {
+    let result = if x.is_present() {
         y.atan2(x.to_number()?)
     } else {
         y.atan()
@@ -257,7 +257,7 @@ fn math_log<'gc>(
     let stack = thread.stack(&window);
     let x = stack.arg(1).to_number()?;
     let base = stack.arg(2);
-    let result = if base.get().is_some() {
+    let result = if base.is_present() {
         x.log(base.to_number()?)
     } else {
         x.ln()

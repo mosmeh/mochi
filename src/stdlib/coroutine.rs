@@ -74,7 +74,7 @@ fn coroutine_isyieldable<'gc>(
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
     let co = thread.borrow().stack(&window).arg(1);
-    let co = if co.get().is_some() {
+    let co = if co.is_present() {
         co.as_thread()?
     } else {
         thread

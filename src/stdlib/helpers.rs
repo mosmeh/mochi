@@ -44,6 +44,10 @@ pub struct Argument<'gc> {
 }
 
 impl<'gc> Argument<'gc> {
+    pub fn is_present(&self) -> bool {
+        self.value.is_some()
+    }
+
     pub fn get(&self) -> Option<Value<'gc>> {
         self.value
     }

@@ -159,7 +159,7 @@ fn base_dofile<'gc>(
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
     let filename = thread.borrow().stack(&window).arg(1);
-    let closure = if filename.get().is_some() {
+    let closure = if filename.is_present() {
         let filename = filename.to_string()?;
         let path = filename
             .to_path()
@@ -476,7 +476,7 @@ fn base_tonumber<'gc>(
         Value::Number(x) => Value::Number(x),
         Value::String(s) => {
             let base = stack.arg(2);
-            let maybe_value = if base.get().is_some() {
+            let maybe_value = if base.is_present() {
                 let base = base.to_integer()?;
                 if !(2..=36).contains(&base) {
                     return Err(ErrorKind::ArgumentError {
