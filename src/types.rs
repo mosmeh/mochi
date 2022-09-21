@@ -393,6 +393,17 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    pub fn borrow_as_userdata_mut<'a, T: Any>(
+        &'a self,
+        gc: &'gc GcContext,
+    ) -> Option<RefMut<'a, T>> {
+        if let Self::UserData(ud) = self {
+            RefMut::filter_map(ud.borrow_mut(gc), |ud| ud.get_mut()).ok()
+        } else {
+            None
+        }
+    }
+
     pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
         match self {
             Self::Table(table) => table.borrow().metatable(),

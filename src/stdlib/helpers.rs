@@ -3,7 +3,7 @@ use crate::{
     runtime::ErrorKind,
     types::{
         Integer, LuaThread, NativeClosure, NativeFunction, NativeFunctionPtr, Number, Table, Type,
-        Value,
+        UserData, Value,
     },
 };
 use std::{
@@ -106,6 +106,10 @@ impl<'gc> Argument<'gc> {
         self.to_type("thread", Value::as_thread)
     }
 
+    pub fn as_userdata<T: Any>(&self) -> Result<GcCell<'gc, UserData<'gc>>, ErrorKind> {
+        self.to_type("userdata", |value| value.as_userdata::<T>())
+    }
+
     pub fn borrow_as_table(&self) -> Result<Ref<Table<'gc>>, ErrorKind> {
         self.to_type("table", Value::borrow_as_table)
     }
@@ -116,6 +120,13 @@ impl<'gc> Argument<'gc> {
 
     pub fn borrow_as_userdata<T: Any>(&self) -> Result<Ref<T>, ErrorKind> {
         self.to_type("userdata", |value| value.borrow_as_userdata())
+    }
+
+    pub fn borrow_as_userdata_mut<'a, T: Any>(
+        &'a self,
+        gc: &'gc GcContext,
+    ) -> Result<RefMut<'a, T>, ErrorKind> {
+        self.to_type("userdata", |value| value.borrow_as_userdata_mut(gc))
     }
 
     pub fn ensure_function(&self) -> Result<Value<'gc>, ErrorKind> {
