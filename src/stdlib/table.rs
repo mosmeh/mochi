@@ -44,7 +44,7 @@ fn table_concat<'gc>(
         if let Some(string) = value.to_string() {
             strings.push(string.to_vec());
         } else {
-            return Err(ErrorKind::ExplicitError(format!(
+            return Err(ErrorKind::Other(format!(
                 "invalid value ({}) at index {} in table for 'concat'",
                 value.ty().name(),
                 index
@@ -87,11 +87,7 @@ fn table_insert<'gc>(
             }
             table.set(pos, stack.args()[2])?;
         }
-        _ => {
-            return Err(ErrorKind::ExplicitError(
-                "wrong number of arguments to 'insert'".to_owned(),
-            ))
-        }
+        _ => return Err(ErrorKind::other("wrong number of arguments to 'insert'")),
     };
     Ok(Action::Return(Vec::new()))
 }

@@ -393,15 +393,13 @@ impl<'gc> Vm<'gc> {
 
                 let mut coroutine_ref = coroutine.borrow_mut(gc);
                 let resume_result = match coroutine_ref.status {
-                    ThreadStatus::Error(_) => Err(ErrorKind::ExplicitError(
-                        "cannot resume dead coroutine".to_owned(),
-                    )),
-                    ThreadStatus::Unresumable if coroutine_ref.frames.is_empty() => Err(
-                        ErrorKind::ExplicitError("cannot resume dead coroutine".to_owned()),
-                    ),
-                    ThreadStatus::Unresumable => Err(ErrorKind::ExplicitError(
-                        "cannot resume non-suspended coroutine".to_owned(),
-                    )),
+                    ThreadStatus::Error(_) => Err(ErrorKind::other("cannot resume dead coroutine")),
+                    ThreadStatus::Unresumable if coroutine_ref.frames.is_empty() => {
+                        Err(ErrorKind::other("cannot resume dead coroutine"))
+                    }
+                    ThreadStatus::Unresumable => {
+                        Err(ErrorKind::other("cannot resume non-suspended coroutine"))
+                    }
                     ThreadStatus::Resumable => Ok(()),
                 };
                 match resume_result {
@@ -425,8 +423,8 @@ impl<'gc> Vm<'gc> {
                 match self.thread_stack.len() {
                     0 => unreachable!(),
                     1 => {
-                        return Err(ErrorKind::ExplicitError(
-                            "attempt to yield from outside a coroutine".to_owned(),
+                        return Err(ErrorKind::other(
+                            "attempt to yield from outside a coroutine",
                         ))
                     }
                     _ => (),

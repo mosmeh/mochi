@@ -35,7 +35,7 @@ fn coroutine_close<'gc>(
     let co = thread.borrow().stack(&window).arg(1).as_thread()?;
     let status = get_coroutine_status(thread, co);
     if !matches!(status, CoroutineStatus::Dead | CoroutineStatus::Suspended) {
-        return Err(ErrorKind::ExplicitError(format!(
+        return Err(ErrorKind::Other(format!(
             "cannot close a {} coroutine",
             status
         )));

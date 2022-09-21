@@ -58,7 +58,7 @@ fn base_assert<'gc>(
     } else if let Some(error_obj) = stack.arg(2).get() {
         Err(ErrorKind::from_error_object(error_obj))
     } else {
-        Err(ErrorKind::ExplicitError("assertion failed!".to_owned()))
+        Err(ErrorKind::other("assertion failed!"))
     }
 }
 
@@ -163,14 +163,14 @@ fn base_dofile<'gc>(
         let filename = filename.to_string()?;
         let path = filename
             .to_path()
-            .map_err(|e| ErrorKind::ExplicitError(e.to_string()))?;
+            .map_err(|e| ErrorKind::Other(e.to_string()))?;
         vm.load_file(gc, path)
-            .map_err(|e| ErrorKind::ExplicitError(e.to_string()))?
+            .map_err(|e| ErrorKind::Other(e.to_string()))?
     } else {
         let mut bytes = Vec::new();
         std::io::stdin().read_to_end(&mut bytes)?;
         vm.load(gc, &bytes, B("=stdin"))
-            .map_err(|e| ErrorKind::ExplicitError(e.to_string()))?
+            .map_err(|e| ErrorKind::Other(e.to_string()))?
     };
 
     Ok(Action::TailCall {

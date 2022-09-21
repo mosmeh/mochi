@@ -1,5 +1,5 @@
 use crate::types::{TableError, TracebackFrame, Type, Value};
-use std::fmt::Display;
+use std::{borrow::Cow, fmt::Display};
 
 #[derive(Debug, thiserror::Error)]
 pub struct RuntimeError {
@@ -24,9 +24,6 @@ impl Display for RuntimeError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {
-    #[error("{0}")]
-    ExplicitError(String),
-
     #[error("attempt to {operation} a {ty} value")]
     TypeError { operation: Operation, ty: Type },
 
@@ -47,12 +44,14 @@ pub enum ErrorKind {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error("{0}")]
+    Other(String),
 }
 
 impl Clone for ErrorKind {
     fn clone(&self) -> Self {
         match self {
-            Self::ExplicitError(s) => Self::ExplicitError(s.clone()),
             Self::TypeError { operation, ty } => Self::TypeError {
                 operation: *operation,
                 ty: *ty,
@@ -69,18 +68,23 @@ impl Clone for ErrorKind {
             },
             Self::Table(e) => Self::Table(e.clone()),
             Self::Io(e) => Self::Io(std::io::Error::new(e.kind(), e.to_string())),
+            Self::Other(s) => Self::Other(s.clone()),
         }
     }
 }
 
 impl ErrorKind {
+    pub fn other<'a, S: Into<Cow<'a, str>>>(s: S) -> Self {
+        Self::Other(s.into().into_owned())
+    }
+
     pub fn from_error_object(error_object: Value) -> Self {
         let msg = if let Some(s) = error_object.to_string() {
             String::from_utf8_lossy(&s).to_string()
         } else {
             format!("(error object is a {} value)", error_object.ty().name())
         };
-        Self::ExplicitError(msg)
+        Self::Other(msg)
     }
 }
 

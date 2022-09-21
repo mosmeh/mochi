@@ -88,7 +88,7 @@ fn os_date<'gc>(
             Some(ch) => char::from(*ch).to_string(),
             None => "".to_owned(),
         };
-        return Err(ErrorKind::ExplicitError(format!(
+        return Err(ErrorKind::Other(format!(
             "invalid conversion specifier '%{}'",
             invalid_spec
         )));
@@ -183,14 +183,14 @@ fn os_time<'gc>(
         let value = table.get_field(gc.allocate_string(field));
         let field = field.as_bstr();
         if value.is_nil() {
-            default.into().ok_or_else(|| {
-                ErrorKind::ExplicitError(format!("field '{}' missing in date table", field))
-            })
+            default
+                .into()
+                .ok_or_else(|| ErrorKind::Other(format!("field '{}' missing in date table", field)))
         } else if let Some(i) = value.to_integer() {
             i.try_into()
-                .map_err(|_| ErrorKind::ExplicitError(format!("field '{}' is out-of-bound", field)))
+                .map_err(|_| ErrorKind::Other(format!("field '{}' is out-of-bound", field)))
         } else {
-            Err(ErrorKind::ExplicitError(format!(
+            Err(ErrorKind::Other(format!(
                 "field '{}' is not an integer",
                 field
             )))
@@ -216,9 +216,7 @@ fn os_time<'gc>(
         )
         .earliest()
         .ok_or_else(|| {
-            ErrorKind::ExplicitError(
-                "time result cannot be represented in this installation".to_owned(),
-            )
+            ErrorKind::other("time result cannot be represented in this installation")
         })?;
     set_datetime_to_table(gc, &mut table, &datetime);
 

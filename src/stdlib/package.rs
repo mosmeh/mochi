@@ -183,9 +183,9 @@ fn package_require<'gc>(
         .unwrap();
 
     let searchers = package.get_field(gc.allocate_string(B("searchers")));
-    searchers.borrow_as_table().ok_or_else(|| {
-        ErrorKind::ExplicitError("'package.searchers' must be a table".to_owned())
-    })?;
+    searchers
+        .borrow_as_table()
+        .ok_or_else(|| ErrorKind::other("'package.searchers' must be a table"))?;
 
     let i = Cell::new(0);
     let msg = Rc::new(RefCell::new(Vec::new()));
@@ -206,7 +206,7 @@ fn package_require<'gc>(
 
             let searcher = searchers.get(next_i);
             if searcher.is_nil() {
-                return Err(ErrorKind::ExplicitError(format!(
+                return Err(ErrorKind::Other(format!(
                     "module '{}' not found:{}",
                     name.to_string().unwrap().as_bstr(),
                     msg.borrow().as_bstr()
@@ -391,7 +391,7 @@ fn searcher_lua<'gc>(
     let path = package.get_field(gc.allocate_string(B("path")));
     let path = path
         .to_string()
-        .ok_or_else(|| ErrorKind::ExplicitError("'package.path' must be a string".to_owned()))?;
+        .ok_or_else(|| ErrorKind::other("'package.path' must be a string"))?;
 
     let filename = match search_path(&name, path, b".", LUA_LSUBSEP) {
         Ok(filename) => filename,
@@ -405,7 +405,7 @@ fn searcher_lua<'gc>(
     let closure = match closure {
         Ok(closure) => closure,
         Err(err) => {
-            return Err(ErrorKind::ExplicitError(format!(
+            return Err(ErrorKind::Other(format!(
                 "error loading module '{}' from file '{}':\n\t{}",
                 name.as_bstr(),
                 filename.as_bstr(),

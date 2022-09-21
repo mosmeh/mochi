@@ -82,11 +82,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
                         let upper = stack.arg(2).to_integer()?;
                         random_in_range(rng.deref_mut(), lower, upper).into()
                     }
-                    _ => {
-                        return Err(ErrorKind::ExplicitError(
-                            "wrong number of arguments".to_owned(),
-                        ))
-                    }
+                    _ => return Err(ErrorKind::other("wrong number of arguments")),
                 };
                 Ok(Action::Return(vec![result]))
             })),

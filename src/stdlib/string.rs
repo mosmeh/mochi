@@ -94,9 +94,9 @@ fn string_dump<'gc>(
             binary_chunk::dump(&mut binary, &closure.proto)?;
             Ok(Action::Return(vec![gc.allocate_string(binary).into()]))
         }
-        Some(value) if value.ty() == Type::Function => Err(ErrorKind::ExplicitError(
-            "unable to dump given function".to_owned(),
-        )),
+        Some(value) if value.ty() == Type::Function => {
+            Err(ErrorKind::other("unable to dump given function"))
+        }
         value => Err(ErrorKind::ArgumentTypeError {
             nth: 1,
             expected_type: "function",
