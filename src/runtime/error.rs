@@ -1,5 +1,5 @@
 use crate::types::{TableError, TracebackFrame, Type, Value};
-use std::{borrow::Cow, fmt::Display};
+use std::{borrow::Cow, fmt::Display, sync::Arc};
 
 #[derive(Debug, thiserror::Error)]
 pub struct RuntimeError {
@@ -47,6 +47,9 @@ pub enum ErrorKind {
 
     #[error("{0}")]
     Other(String),
+
+    #[error(transparent)]
+    External(Arc<dyn std::error::Error + Send + Sync>),
 }
 
 impl Clone for ErrorKind {
@@ -69,6 +72,7 @@ impl Clone for ErrorKind {
             Self::Table(e) => Self::Table(e.clone()),
             Self::Io(e) => Self::Io(std::io::Error::new(e.kind(), e.to_string())),
             Self::Other(s) => Self::Other(s.clone()),
+            Self::External(err) => Self::External(err.clone()),
         }
     }
 }

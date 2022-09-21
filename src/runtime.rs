@@ -41,10 +41,7 @@ impl Runtime {
         self.heap
     }
 
-    pub fn execute<F>(
-        &mut self,
-        f: F,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
+    pub fn execute<F>(&mut self, f: F) -> Result<(), RuntimeError>
     where
         F: for<'gc> FnOnce(
             &'gc GcContext,
@@ -54,26 +51,36 @@ impl Runtime {
             Box<dyn std::error::Error + Send + Sync + 'static>,
         >,
     {
-        self.heap.with(
-            |gc, vm| -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-                let value = f(gc, vm)?;
+        let result = self.heap.with(|gc, vm| {
+            let value = match f(gc, vm) {
+                Ok(value) => value,
+                Err(err) => return Err(ErrorKind::External(err.into())),
+            };
 
-                let mut vm = vm.borrow_mut(gc);
-                let main_thread = vm.main_thread;
-                main_thread.borrow_mut(gc).status = ThreadStatus::Unresumable;
-                assert!(vm.thread_stack.is_empty());
-                vm.thread_stack.push(main_thread);
+            let mut vm = vm.borrow_mut(gc);
+            let main_thread = vm.main_thread;
+            main_thread.borrow_mut(gc).status = ThreadStatus::Unresumable;
+            assert!(vm.thread_stack.is_empty());
+            vm.thread_stack.push(main_thread);
 
-                let mut thread_ref = main_thread.borrow_mut(gc);
-                assert!(thread_ref.stack.is_empty());
-                assert!(thread_ref.frames.is_empty());
-                assert!(thread_ref.open_upvalues.is_empty());
-                thread_ref.stack.push(value);
-                thread_ref.deferred_call(0)?;
+            let mut thread_ref = main_thread.borrow_mut(gc);
+            assert!(thread_ref.stack.is_empty());
+            assert!(thread_ref.frames.is_empty());
+            assert!(thread_ref.open_upvalues.is_empty());
+            thread_ref.stack.push(value);
+            thread_ref.deferred_call(0)?;
 
-                Ok(())
-            },
-        )?;
+            Ok(())
+        });
+        match result {
+            Ok(()) => (),
+            Err(kind) => {
+                return Err(RuntimeError {
+                    kind,
+                    traceback: Vec::new(),
+                })
+            }
+        }
 
         loop {
             let result: Result<_, RuntimeError> = self.heap.with(|gc, vm| {
@@ -89,7 +96,7 @@ impl Runtime {
                 Ok(RuntimeAction::StepGc) => self.heap.step(),
                 Ok(RuntimeAction::MutateGc(mutator)) => mutator(&mut self.heap),
                 Ok(RuntimeAction::Exit) => return Ok(()),
-                Err(err) => return Err(Box::new(err)),
+                Err(err) => return Err(err),
             }
         }
     }
