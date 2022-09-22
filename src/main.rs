@@ -3,7 +3,7 @@ use bstr::{ByteSlice, ByteVec, B};
 use clap::{Parser, Subcommand};
 use mochi_lua::{
     gc::GcHeap,
-    runtime::{OpCode, Runtime},
+    runtime::{OpCode, Runtime, RuntimeError},
     types::{Integer, LineRange, LuaClosureProto, Table, UpvalueDescription, Value},
 };
 use rustyline::{error::ReadlineError, Editor};
@@ -95,34 +95,83 @@ fn main() -> Result<()> {
         }
     }
 
+    do_repl(&mut runtime)
+}
+
+fn do_repl(runtime: &mut Runtime) -> Result<()> {
     let mut rl = Editor::<()>::new()?;
+    let mut buf = String::new();
     loop {
-        match rl.readline("> ") {
+        let is_first_line = buf.is_empty();
+        let prompt =
+            runtime.heap().with(|gc, vm| {
+                let prompt = vm.borrow().globals().borrow().get_field(gc.allocate_string(
+                    if is_first_line {
+                        B("_PROMPT")
+                    } else {
+                        B("_PROMPT2")
+                    },
+                ));
+                if !prompt.is_nil() {
+                    let mut bytes = Vec::new();
+                    if prompt.fmt_bytes(&mut bytes).is_ok() {
+                        return bytes.to_str_lossy().to_string();
+                    }
+                }
+                if is_first_line { "> " } else { ">> " }.to_owned()
+            });
+
+        match rl.readline(&prompt) {
             Ok(line) => {
-                rl.add_history_entry(&line);
-                if let Err(err) = evaluate(&mut runtime, &line) {
+                const SOURCE: &str = "=stdin";
+
+                if is_first_line {
+                    let result = runtime.execute(|gc, vm| {
+                        let closure = vm.borrow().load(gc, format!("print({})", line), SOURCE)?;
+                        Ok(gc.allocate(closure).into())
+                    });
+                    if result.is_ok() {
+                        rl.add_history_entry(line);
+                        continue;
+                    }
+                } else {
+                    buf.push('\n');
+                }
+                buf.push_str(&line);
+
+                let result = runtime.execute(|gc, vm| match vm.borrow().load(gc, &buf, SOURCE) {
+                    Ok(closure) => Ok(gc.allocate(closure).into()),
+                    Err(err) => Err(err.into()),
+                });
+                if let Err(RuntimeError {
+                    kind: mochi_lua::runtime::ErrorKind::External(err),
+                    ..
+                }) = &result
+                {
+                    match err.downcast_ref::<mochi_lua::Error>() {
+                        #[cfg(feature = "luac")]
+                        Some(mochi_lua::Error::RLua(rlua::Error::SyntaxError {
+                            incomplete_input: true,
+                            ..
+                        })) => continue,
+                        #[cfg(not(feature = "luac"))]
+                        Some(mochi_lua::Error::Parse(mochi_lua::parser::ParseError {
+                            incomplete_input: true,
+                            ..
+                        })) => continue,
+                        _ => (),
+                    }
+                }
+                if let Err(err) = result {
                     eprintln!("{}", err);
                 }
+                rl.add_history_entry(&buf);
+                buf.clear();
             }
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => return Ok(()),
             Err(err) => return Err(err.into()),
         }
     }
-}
-
-fn evaluate(runtime: &mut Runtime, line: &str) -> Result<()> {
-    const SOURCE: &str = "=stdin";
-    runtime
-        .execute(|gc, vm| {
-            let vm = vm.borrow();
-            let closure = if let Ok(closure) = vm.load(gc, format!("print({})", line), SOURCE) {
-                closure
-            } else {
-                vm.load(gc, line, SOURCE)?
-            };
-            Ok(gc.allocate(closure).into())
-        })
-        .map_err(Error::msg)
 }
 
 impl CompileCommand {

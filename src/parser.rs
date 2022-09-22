@@ -25,18 +25,17 @@ pub struct ParseError {
     pub source: String,
     pub lineno: usize,
     pub next_token: Option<String>,
+
+    pub incomplete_input: bool,
 }
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}:{}: {} near {}",
-            self.source,
-            self.lineno,
-            self.kind,
-            stringify_token_or_eof(&self.next_token),
-        )
+        write!(f, "{}:{}: {}", self.source, self.lineno, self.kind)?;
+        if let Some(token) = &self.next_token {
+            write!(f, " near {}", token)?;
+        }
+        Ok(())
     }
 }
 
@@ -63,9 +62,9 @@ impl ErrorKind {
     }
 }
 
-fn stringify_token_or_eof(maybe_token: &Option<String>) -> String {
-    if let Some(token) = maybe_token {
-        format!("'{}'", token)
+fn stringify_token_or_eof<S: ToString>(token: &Option<S>) -> String {
+    if let Some(token) = token {
+        format!("'{}'", token.to_string())
     } else {
         "<eof>".to_owned()
     }
@@ -82,16 +81,17 @@ pub fn parse<R: Read, S: AsRef<str>>(
         Err(kind) => {
             let source = crate::chunk_id_from_source(source.as_ref()).to_string();
             let lineno = parser.lexer.lineno();
-            let next_token = if let Ok(t) = parser.lexer.peek() {
-                t.map(ToString::to_string)
+            let (next_token, incomplete_input) = if let Ok(t) = parser.lexer.peek() {
+                (Some(stringify_token_or_eof(&t)), t.is_none())
             } else {
-                Some("<unknown>".to_owned())
+                (None, false)
             };
             Err(ParseError {
                 kind,
                 source,
                 lineno,
                 next_token,
+                incomplete_input,
             })
         }
     }
@@ -669,7 +669,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
             Ok(())
         } else {
             Err(ErrorKind::unexpected_token(stringify_token_or_eof(
-                &expected.map(|token| token.to_string()),
+                &expected,
             )))
         }
     }
