@@ -338,7 +338,11 @@ impl<'gc> CodeGenerator<'gc> {
         &mut self,
         statement: LocalVariableStatement<'gc>,
     ) -> Result<(), CodegenError> {
-        if statement.variables.iter().any(|(_, attr)| attr.is_some()) {
+        if statement
+            .variables
+            .iter()
+            .any(|var| var.attribute.is_some())
+        {
             todo!("attribute")
         }
 
@@ -346,7 +350,7 @@ impl<'gc> CodeGenerator<'gc> {
             .emit_assigned_values(statement.values, statement.variables.len())?
             .into_iter();
 
-        for (variable, _) in statement.variables {
+        for variable in statement.variables {
             let register = if let Some(register) = value_registers.next() {
                 register
             } else {
@@ -354,7 +358,7 @@ impl<'gc> CodeGenerator<'gc> {
             };
             self.current_frame()
                 .local_variable_stack
-                .push((Some(variable), register));
+                .push((Some(variable.name), register));
         }
 
         Ok(())

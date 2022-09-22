@@ -8,11 +8,12 @@ use crate::{
     types::LuaString,
 };
 use ast::{
-    AssignmentStatement, Attribute, BinaryOp, BinaryOpExpression, Block, Chunk, Expression,
-    ForStatement, FunctionArguments, FunctionCallStatement, FunctionExpression, FunctionParameter,
-    FunctionStatement, IfStatement, LocalVariableStatement, Primary, RepeatStatement,
-    ReturnStatement, Statement, Suffix, SuffixedExpression, TableConstructorExpression, TableField,
-    TableRecordKey, UnaryOp, UnaryOpExpression, Variable, WhileStatement,
+    AssignmentStatement, BinaryOp, BinaryOpExpression, Block, Chunk, Expression, ForStatement,
+    FunctionArguments, FunctionCallStatement, FunctionExpression, FunctionParameter,
+    FunctionStatement, IfStatement, LocalVariable, LocalVariableStatement, Primary,
+    RepeatStatement, ReturnStatement, Statement, Suffix, SuffixedExpression,
+    TableConstructorExpression, TableField, TableRecordKey, UnaryOp, UnaryOpExpression, Variable,
+    WhileStatement,
 };
 use std::io::Read;
 
@@ -23,9 +24,6 @@ pub enum ParseError {
 
     #[error("unexpected symbol")]
     UnexpectedSymbol,
-
-    #[error("unknown attribute '{0}'")]
-    UnknownAttribute(String),
 
     #[error("syntax error")]
     SyntaxError,
@@ -288,21 +286,12 @@ impl<'gc, R: Read> Parser<'gc, R> {
             let name = self.expect_name()?;
             let attribute = if self.lexer.consume_if_eq(Token::Lt)? {
                 let attr = self.expect_name()?;
-                let attr = match attr.as_bytes() {
-                    b"const" => Attribute::Const,
-                    b"close" => Attribute::Close,
-                    _ => {
-                        return Err(ParseError::UnknownAttribute(
-                            String::from_utf8_lossy(&attr).to_string(),
-                        ))
-                    }
-                };
                 self.expect(Token::Gt)?;
                 Some(attr)
             } else {
                 None
             };
-            variables.push((name, attribute));
+            variables.push(LocalVariable { name, attribute });
             if !self.lexer.consume_if_eq(Token::Comma)? {
                 break;
             }

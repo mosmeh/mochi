@@ -82,8 +82,14 @@ pub enum FunctionParameter<'gc> {
 
 #[derive(Debug, Clone)]
 pub struct LocalVariableStatement<'gc> {
-    pub variables: Vec<(LuaString<'gc>, Option<Attribute>)>,
+    pub variables: Vec<LocalVariable<'gc>>,
     pub values: Vec<Expression<'gc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalVariable<'gc> {
+    pub name: LuaString<'gc>,
+    pub attribute: Option<LuaString<'gc>>,
 }
 
 #[derive(Debug, Clone)]
@@ -106,12 +112,6 @@ pub enum Variable<'gc> {
         table: SuffixedExpression<'gc>,
         field: LuaString<'gc>,
     },
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Attribute {
-    Const,
-    Close,
 }
 
 #[derive(Debug, Clone)]
