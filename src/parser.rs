@@ -15,42 +15,86 @@ use ast::{
     TableConstructorExpression, TableField, TableRecordKey, UnaryOp, UnaryOpExpression, Variable,
     WhileStatement,
 };
-use std::io::Read;
+use std::{borrow::Cow, io::Read};
 
 #[derive(Debug, thiserror::Error)]
-pub enum ParseError {
-    #[error("{} expected near {}", .expected, .got)]
-    UnexpectedToken { expected: String, got: String },
+pub struct ParseError {
+    #[source]
+    pub kind: ErrorKind,
+
+    pub source: String,
+    pub lineno: usize,
+    pub next_token: Option<String>,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{}: {} near {}",
+            self.source,
+            self.lineno,
+            self.kind,
+            stringify_token_or_eof(&self.next_token),
+        )
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ErrorKind {
+    #[error("syntax error")]
+    SyntaxError,
+
+    #[error("{expected} expected")]
+    UnexpectedToken { expected: String },
 
     #[error("unexpected symbol")]
     UnexpectedSymbol,
-
-    #[error("syntax error")]
-    SyntaxError,
 
     #[error(transparent)]
     Lexer(#[from] LexerError),
 }
 
-impl ParseError {
-    fn unexpected_token<'gc>(expected: &str, got: impl Into<Option<Token<'gc>>>) -> Self {
+impl ErrorKind {
+    fn unexpected_token<'a, I: Into<Cow<'a, str>>>(expected: I) -> Self {
         Self::UnexpectedToken {
-            expected: expected.to_owned(),
-            got: stringify_token_or_eof(got),
+            expected: expected.into().to_string(),
         }
     }
 }
 
-fn stringify_token_or_eof<'gc>(token: impl Into<Option<Token<'gc>>>) -> String {
-    if let Some(token) = token.into() {
+fn stringify_token_or_eof(maybe_token: &Option<String>) -> String {
+    if let Some(token) = maybe_token {
         format!("'{}'", token)
     } else {
         "<eof>".to_owned()
     }
 }
 
-pub fn parse<R: Read>(gc: &GcContext, reader: R) -> Result<Chunk, ParseError> {
-    Parser::new(gc, reader)?.parse_chunk()
+pub fn parse<R: Read, S: AsRef<str>>(
+    gc: &GcContext,
+    source: S,
+    reader: R,
+) -> Result<Chunk, ParseError> {
+    let mut parser = Parser::new(gc, reader);
+    match parser.parse_chunk() {
+        Ok(chunk) => Ok(chunk),
+        Err(kind) => {
+            let source = crate::chunk_id_from_source(source.as_ref()).to_string();
+            let lineno = parser.lexer.lineno();
+            let next_token = if let Ok(t) = parser.lexer.peek() {
+                t.map(ToString::to_string)
+            } else {
+                Some("<unknown>".to_owned())
+            };
+            Err(ParseError {
+                kind,
+                source,
+                lineno,
+                next_token,
+            })
+        }
+    }
 }
 
 struct Parser<'gc, R: Read> {
@@ -58,19 +102,20 @@ struct Parser<'gc, R: Read> {
 }
 
 impl<'gc, R: Read> Parser<'gc, R> {
-    fn new(gc: &'gc GcContext, reader: R) -> Result<Self, ParseError> {
-        Ok(Self {
-            lexer: Lexer::new(gc, reader)?,
-        })
+    fn new(gc: &'gc GcContext, reader: R) -> Self {
+        Self {
+            lexer: Lexer::new(gc, reader),
+        }
     }
 
-    fn parse_chunk(&mut self) -> Result<Chunk<'gc>, ParseError> {
+    fn parse_chunk(&mut self) -> Result<Chunk<'gc>, ErrorKind> {
+        self.lexer.skip_prelude()?;
         let block = self.parse_block()?;
         self.expect(None)?;
         Ok(Chunk(block))
     }
 
-    fn parse_block(&mut self) -> Result<Block<'gc>, ParseError> {
+    fn parse_block(&mut self) -> Result<Block<'gc>, ErrorKind> {
         let mut statements = Vec::new();
         loop {
             match self.lexer.peek()? {
@@ -94,7 +139,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
         }
     }
 
-    fn parse_return_statement(&mut self) -> Result<ReturnStatement<'gc>, ParseError> {
+    fn parse_return_statement(&mut self) -> Result<ReturnStatement<'gc>, ErrorKind> {
         self.expect(Token::Return)?;
         let list = match self.lexer.peek()? {
             None
@@ -107,7 +152,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
         Ok(ReturnStatement(list))
     }
 
-    fn parse_statement(&mut self) -> Result<Statement<'gc>, ParseError> {
+    fn parse_statement(&mut self) -> Result<Statement<'gc>, ErrorKind> {
         match self.lexer.peek()?.unwrap() {
             Token::If => Ok(Statement::If(self.parse_if_statement()?)),
             Token::While => Ok(Statement::While(self.parse_while_statement()?)),
@@ -134,7 +179,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
         }
     }
 
-    fn parse_if_statement(&mut self) -> Result<IfStatement<'gc>, ParseError> {
+    fn parse_if_statement(&mut self) -> Result<IfStatement<'gc>, ErrorKind> {
         self.expect(Token::If)?;
         let condition = self.parse_expr()?;
         self.expect(Token::Then)?;
@@ -160,7 +205,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
         })
     }
 
-    fn parse_while_statement(&mut self) -> Result<WhileStatement<'gc>, ParseError> {
+    fn parse_while_statement(&mut self) -> Result<WhileStatement<'gc>, ErrorKind> {
         self.expect(Token::While)?;
         let condition = self.parse_expr()?;
         self.expect(Token::Do)?;
@@ -169,14 +214,14 @@ impl<'gc, R: Read> Parser<'gc, R> {
         Ok(WhileStatement { condition, body })
     }
 
-    fn parse_do_statement(&mut self) -> Result<Block<'gc>, ParseError> {
+    fn parse_do_statement(&mut self) -> Result<Block<'gc>, ErrorKind> {
         self.expect(Token::Do)?;
         let body = self.parse_block()?;
         self.expect(Token::End)?;
         Ok(body)
     }
 
-    fn parse_for_statement(&mut self) -> Result<ForStatement<'gc>, ParseError> {
+    fn parse_for_statement(&mut self) -> Result<ForStatement<'gc>, ErrorKind> {
         self.expect(Token::For)?;
         let first_variable = self.expect_name()?;
         match self.lexer.peek()? {
@@ -217,16 +262,11 @@ impl<'gc, R: Read> Parser<'gc, R> {
                     body,
                 })
             }
-            got => Err(ParseError::UnexpectedToken {
-                expected: "'=' or 'in'".to_owned(),
-                got: got
-                    .map(|t| format!("'{}'", t))
-                    .unwrap_or_else(|| "<eof>".to_owned()),
-            }),
+            _ => Err(ErrorKind::unexpected_token("'=' or 'in'")),
         }
     }
 
-    fn parse_repeat_statement(&mut self) -> Result<RepeatStatement<'gc>, ParseError> {
+    fn parse_repeat_statement(&mut self) -> Result<RepeatStatement<'gc>, ErrorKind> {
         self.expect(Token::Repeat)?;
         let body = self.parse_block()?;
         self.expect(Token::Until)?;
@@ -234,7 +274,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
         Ok(RepeatStatement { body, condition })
     }
 
-    fn parse_func_statement(&mut self) -> Result<FunctionStatement<'gc>, ParseError> {
+    fn parse_func_statement(&mut self) -> Result<FunctionStatement<'gc>, ErrorKind> {
         self.expect(Token::Function)?;
         let name = self.expect_name()?;
         let mut fields = Vec::new();
@@ -257,7 +297,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
                         params.push(FunctionParameter::VarArg);
                         break;
                     }
-                    got => return Err(ParseError::unexpected_token("<name> or '...'", got)),
+                    _ => return Err(ErrorKind::unexpected_token("<name> or '...'")),
                 }
                 if !self.lexer.consume_if_eq(Token::Comma)? {
                     break;
@@ -278,9 +318,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
         })
     }
 
-    fn parse_local_variable_statement(
-        &mut self,
-    ) -> Result<LocalVariableStatement<'gc>, ParseError> {
+    fn parse_local_variable_statement(&mut self) -> Result<LocalVariableStatement<'gc>, ErrorKind> {
         let mut variables = Vec::new();
         loop {
             let name = self.expect_name()?;
@@ -304,24 +342,24 @@ impl<'gc, R: Read> Parser<'gc, R> {
         Ok(LocalVariableStatement { variables, values })
     }
 
-    fn parse_label(&mut self) -> Result<LuaString<'gc>, ParseError> {
+    fn parse_label(&mut self) -> Result<LuaString<'gc>, ErrorKind> {
         self.expect(Token::DoubleColon)?;
         let label = self.expect_name()?;
         self.expect(Token::DoubleColon)?;
         Ok(label)
     }
 
-    fn parse_goto_statement(&mut self) -> Result<LuaString<'gc>, ParseError> {
+    fn parse_goto_statement(&mut self) -> Result<LuaString<'gc>, ErrorKind> {
         self.expect(Token::Goto)?;
         self.expect_name()
     }
 
-    fn parse_expr_statement(&mut self) -> Result<Statement<'gc>, ParseError> {
-        fn suffixed_to_variable(mut suffixed: SuffixedExpression) -> Result<Variable, ParseError> {
+    fn parse_expr_statement(&mut self) -> Result<Statement<'gc>, ErrorKind> {
+        fn suffixed_to_variable(mut suffixed: SuffixedExpression) -> Result<Variable, ErrorKind> {
             match suffixed.suffixes.pop() {
                 None => match suffixed.primary {
                     Primary::Name(name) => Ok(Variable::Name(name)),
-                    Primary::Expression(_) => Err(ParseError::SyntaxError),
+                    Primary::Expression(_) => Err(ErrorKind::SyntaxError),
                 },
                 Some(Suffix::Field(field)) => Ok(Variable::Field {
                     table: suffixed,
@@ -332,7 +370,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
                     index,
                 }),
                 Some(Suffix::FunctionCall { .. } | Suffix::MethodCall { .. }) => {
-                    Err(ParseError::SyntaxError)
+                    Err(ErrorKind::SyntaxError)
                 }
             }
         }
@@ -342,7 +380,8 @@ impl<'gc, R: Read> Parser<'gc, R> {
         if let Some(Token::Assign | Token::Comma) = self.lexer.peek()? {
             let mut lhs = vec![suffixed_to_variable(suffixed)?];
             while self.lexer.consume_if_eq(Token::Comma)? {
-                lhs.push(suffixed_to_variable(self.parse_suffixed_expr()?)?);
+                let suffixed = self.parse_suffixed_expr()?;
+                lhs.push(suffixed_to_variable(suffixed)?);
             }
             self.expect(Token::Assign)?;
             let rhs = self.parse_expr_list()?;
@@ -356,11 +395,11 @@ impl<'gc, R: Read> Parser<'gc, R> {
         ) {
             Ok(Statement::FunctionCall(FunctionCallStatement(suffixed)))
         } else {
-            Err(ParseError::SyntaxError)
+            Err(ErrorKind::SyntaxError)
         }
     }
 
-    fn parse_expr_list(&mut self) -> Result<Vec<Expression<'gc>>, ParseError> {
+    fn parse_expr_list(&mut self) -> Result<Vec<Expression<'gc>>, ErrorKind> {
         let mut list = vec![self.parse_expr()?];
         while self.lexer.consume_if_eq(Token::Comma)? {
             list.push(self.parse_expr()?);
@@ -368,11 +407,11 @@ impl<'gc, R: Read> Parser<'gc, R> {
         Ok(list)
     }
 
-    fn parse_expr(&mut self) -> Result<Expression<'gc>, ParseError> {
+    fn parse_expr(&mut self) -> Result<Expression<'gc>, ErrorKind> {
         self.parse_sub_expr(0)
     }
 
-    fn parse_sub_expr(&mut self, min_priority: usize) -> Result<Expression<'gc>, ParseError> {
+    fn parse_sub_expr(&mut self, min_priority: usize) -> Result<Expression<'gc>, ErrorKind> {
         const UNARY_PRIORITY: usize = 12;
         fn binary_priority(op: BinaryOp) -> (usize, usize) {
             match op {
@@ -489,7 +528,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
         Ok(expr)
     }
 
-    fn parse_func_expr(&mut self) -> Result<FunctionExpression<'gc>, ParseError> {
+    fn parse_func_expr(&mut self) -> Result<FunctionExpression<'gc>, ErrorKind> {
         self.expect(Token::Function)?;
         self.expect(Token::LeftParen)?;
 
@@ -502,7 +541,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
                         params.push(FunctionParameter::VarArg);
                         break;
                     }
-                    got => return Err(ParseError::unexpected_token("<name> or '...'", got)),
+                    _ => return Err(ErrorKind::unexpected_token("<name> or '...'")),
                 }
                 if !self.lexer.consume_if_eq(Token::Comma)? {
                     break;
@@ -517,7 +556,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
         Ok(FunctionExpression { params, body })
     }
 
-    fn parse_func_args(&mut self) -> Result<FunctionArguments<'gc>, ParseError> {
+    fn parse_func_args(&mut self) -> Result<FunctionArguments<'gc>, ErrorKind> {
         match self.lexer.peek()?.cloned() {
             Some(Token::LeftParen) => {
                 self.lexer.consume()?;
@@ -537,11 +576,11 @@ impl<'gc, R: Read> Parser<'gc, R> {
                 self.lexer.consume()?;
                 Ok(FunctionArguments::String(s))
             }
-            got => Err(ParseError::unexpected_token("function arguments", got)),
+            _ => Err(ErrorKind::unexpected_token("function arguments")),
         }
     }
 
-    fn parse_suffixed_expr(&mut self) -> Result<SuffixedExpression<'gc>, ParseError> {
+    fn parse_suffixed_expr(&mut self) -> Result<SuffixedExpression<'gc>, ErrorKind> {
         let primary = self.parse_primary()?;
         let mut suffixes = Vec::new();
         loop {
@@ -575,7 +614,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
         Ok(SuffixedExpression { primary, suffixes })
     }
 
-    fn parse_primary(&mut self) -> Result<Primary<'gc>, ParseError> {
+    fn parse_primary(&mut self) -> Result<Primary<'gc>, ErrorKind> {
         match self.lexer.peek()? {
             Some(Token::LeftParen) => {
                 self.expect(Token::LeftParen)?;
@@ -584,11 +623,11 @@ impl<'gc, R: Read> Parser<'gc, R> {
                 Ok(Primary::Expression(expr.into()))
             }
             Some(Token::Name(_)) => Ok(Primary::Name(self.expect_name()?)),
-            _ => Err(ParseError::UnexpectedSymbol),
+            _ => Err(ErrorKind::UnexpectedSymbol),
         }
     }
 
-    fn parse_table_constructor(&mut self) -> Result<TableConstructorExpression<'gc>, ParseError> {
+    fn parse_table_constructor(&mut self) -> Result<TableConstructorExpression<'gc>, ErrorKind> {
         self.expect(Token::LeftCurlyBracket)?;
         let mut fields = Vec::new();
         loop {
@@ -623,23 +662,22 @@ impl<'gc, R: Read> Parser<'gc, R> {
         }
     }
 
-    fn expect(&mut self, expected: impl Into<Option<Token<'gc>>>) -> Result<(), ParseError> {
+    fn expect(&mut self, expected: impl Into<Option<Token<'gc>>>) -> Result<(), ErrorKind> {
         let got = self.lexer.consume()?;
         let expected = expected.into();
         if got == expected {
             Ok(())
         } else {
-            Err(ParseError::unexpected_token(
-                &stringify_token_or_eof(expected),
-                got,
-            ))
+            Err(ErrorKind::unexpected_token(stringify_token_or_eof(
+                &expected.map(|token| token.to_string()),
+            )))
         }
     }
 
-    fn expect_name(&mut self) -> Result<LuaString<'gc>, ParseError> {
+    fn expect_name(&mut self) -> Result<LuaString<'gc>, ErrorKind> {
         match self.lexer.consume()? {
             Some(Token::Name(name)) => Ok(name),
-            got => Err(ParseError::unexpected_token("<name>", got)),
+            _ => Err(ErrorKind::unexpected_token("<name>")),
         }
     }
 }

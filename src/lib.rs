@@ -15,6 +15,7 @@ mod stdlib;
 use bstr::ByteVec;
 use gc::GcContext;
 use std::{
+    borrow::Cow,
     fmt::Debug,
     fs::File,
     io::{BufReader, Cursor, Read},
@@ -70,7 +71,7 @@ where
     #[cfg(not(feature = "luac"))]
     {
         let reader = Cursor::new(&bytes);
-        let chunk = parser::parse(gc, reader)?;
+        let chunk = parser::parse(gc, String::from_utf8_lossy(source.as_ref()), reader)?;
         let source = gc.allocate_string(source.as_ref());
         let proto = codegen::codegen(gc, source, chunk)?;
         Ok(proto)
@@ -92,3 +93,41 @@ macro_rules! count  {
 }
 
 pub(crate) use count;
+
+fn chunk_id_from_source(source: &str) -> Cow<str> {
+    const LUA_IDSIZE: usize = 60;
+    const RETS: &str = "...";
+    const PRE: &str = "[string \"";
+    const POS: &str = "\"]";
+
+    match source.chars().next() {
+        Some('=') => source.chars().take(LUA_IDSIZE).skip(1).collect(),
+        Some('@') => {
+            let filename_len = source.len() - 1;
+            if filename_len < LUA_IDSIZE {
+                source.strip_prefix('@').unwrap().into()
+            } else {
+                let reversed: String = source
+                    .chars()
+                    .rev()
+                    .take(filename_len.min(LUA_IDSIZE - RETS.len() - 1))
+                    .collect();
+                let mut ellipsized = RETS.to_owned();
+                ellipsized.extend(reversed.chars().rev());
+                ellipsized.into()
+            }
+        }
+        _ => {
+            const MAX_STR_LEN: usize = LUA_IDSIZE - PRE.len() - RETS.len() - POS.len() - 1;
+            let mut lines = source.lines();
+            let first_line = lines.next().unwrap_or_default();
+            let is_multiline = lines.next().is_some();
+            if !is_multiline && first_line.len() < MAX_STR_LEN {
+                format!("{PRE}{first_line}{POS}").into()
+            } else {
+                let truncated: String = first_line.chars().take(MAX_STR_LEN).collect();
+                format!("{PRE}{truncated}{RETS}{POS}").into()
+            }
+        }
+    }
+}

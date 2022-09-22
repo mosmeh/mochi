@@ -41,11 +41,16 @@ pub struct Lexer<'gc, R: Read> {
 }
 
 impl<'gc, R: Read> Lexer<'gc, R> {
-    pub fn new(gc: &'gc GcContext, reader: R) -> Result<Self, LexerError> {
-        Ok(Self {
-            inner: LexerInner::new(gc, reader)?,
+    pub fn new(gc: &'gc GcContext, reader: R) -> Self {
+        Self {
+            inner: LexerInner::new(gc, reader),
             peeked: VecDeque::with_capacity(2),
-        })
+        }
+    }
+
+    pub fn skip_prelude(&mut self) -> Result<(), LexerError> {
+        self.inner.consume_prelude()?;
+        Ok(())
     }
 
     pub fn consume(&mut self) -> Result<Option<Token<'gc>>, LexerError> {
@@ -89,35 +94,43 @@ impl<'gc, R: Read> Lexer<'gc, R> {
         }
         Ok(self.peeked.get(1))
     }
+
+    pub fn lineno(&self) -> usize {
+        self.inner.lineno
+    }
 }
 
 struct LexerInner<'gc, R: Read> {
     gc: &'gc GcContext,
     bytes: Bytes<R>,
     peeked: Option<u8>,
+    lineno: usize,
 }
 
 impl<'gc, R: Read> LexerInner<'gc, R> {
-    fn new(gc: &'gc GcContext, reader: R) -> std::io::Result<LexerInner<'gc, R>> {
-        let mut lexer = Self {
+    fn new(gc: &'gc GcContext, reader: R) -> LexerInner<'gc, R> {
+        Self {
             gc,
             bytes: reader.bytes(),
             peeked: None,
-        };
+            lineno: 1,
+        }
+    }
 
+    fn consume_prelude(&mut self) -> std::io::Result<()> {
         const BOM: &[u8] = b"\xef\xbb\xbf";
         for ch in BOM {
-            if !lexer.consume_if_eq(*ch)? {
+            if !self.consume_if_eq(*ch)? {
                 break;
             }
         }
 
         // shebang
-        if lexer.consume_if_eq(b'#')? {
-            while lexer.consume_if(|ch| !is_newline(ch))?.is_some() {}
+        if self.consume_if_eq(b'#')? {
+            while self.consume_if(|ch| !is_newline(ch))?.is_some() {}
         }
 
-        Ok(lexer)
+        Ok(())
     }
 
     fn consume_token(&mut self) -> Result<Option<Token<'gc>>, LexerError> {
@@ -256,6 +269,7 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
     fn consume_newline(&mut self) -> std::io::Result<()> {
         let ch = self.consume_if(is_newline)?.unwrap();
         self.consume_if(|next| is_newline(next) && next != ch)?;
+        self.lineno += 1;
         Ok(())
     }
 
