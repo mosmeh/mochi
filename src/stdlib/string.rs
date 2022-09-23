@@ -51,9 +51,11 @@ fn string_byte<'gc>(
     let j = stack.arg(3).to_integer_or(i)?;
     let range = indices_to_range(i, j, s.len() as Integer);
 
-    Ok(Action::Return(
-        s[range].iter().map(|b| (*b as Integer).into()).collect(),
-    ))
+    Ok(Action::Return(if range.is_empty() {
+        Vec::new()
+    } else {
+        s[range].iter().map(|b| (*b as Integer).into()).collect()
+    }))
 }
 
 fn string_char<'gc>(
@@ -146,7 +148,9 @@ fn string_sub<'gc>(
     let j = stack.arg(3).to_integer_or(-1)?;
     let range = indices_to_range(i, j, s.len() as Integer);
 
-    Ok(Action::Return(vec![gc.allocate_string(&s[range]).into()]))
+    Ok(Action::Return(vec![gc
+        .allocate_string(if range.is_empty() { b"" } else { &s[range] })
+        .into()]))
 }
 
 fn string_rep<'gc>(
@@ -208,15 +212,15 @@ fn string_upper<'gc>(
 
 fn indices_to_range(i: Integer, j: Integer, len: Integer) -> Range<usize> {
     let start = match i {
+        1.. => i - 1,
         0 => 0,
         _ if i < -len => 0,
-        1.. => i - 1,
         _ => len + i,
     } as usize;
     let end = match j {
+        _ if j > len => len,
         0.. => j,
         _ if j < -len => 0,
-        _ if j > len => len,
         _ => len + j + 1,
     } as usize;
     start..end
