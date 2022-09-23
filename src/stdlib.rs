@@ -8,6 +8,7 @@ mod os;
 mod package;
 mod string;
 mod table;
+mod utf8;
 
 use crate::{
     gc::{GcCell, GcContext},
@@ -32,6 +33,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) {
         (B("coroutine"), coroutine::load),
         (B("package"), package::load),
         (B("string"), string::load),
+        (B("utf8"), utf8::load),
         (B("table"), table::load),
         (B("math"), math::load),
         (B("io"), io::load),
