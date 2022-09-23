@@ -1,13 +1,13 @@
-mod file;
-
-use super::helpers::{set_functions_to_table, StackExt};
+use super::{
+    file::{self, FileError, FileHandle, FullyBufferedFile, LineBufferedFile, LuaFile},
+    helpers::{set_functions_to_table, StackExt},
+};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Metamethod, Vm},
     types::{Action, Integer, LuaThread, StackWindow, Table, Type, UserData, Value},
 };
 use bstr::{ByteSlice, B};
-use file::{FileError, FileHandle, FullyBufferedFile, LineBufferedFile, LuaFile};
 use std::{
     fs::OpenOptions,
     io::{Read, Seek, SeekFrom, Write},
@@ -80,7 +80,7 @@ fn io_close<'gc>(
     window: StackWindow,
 ) -> Result<Action<'gc>, ErrorKind> {
     let file = thread.borrow().stack(&window).arg(1);
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         if file.is_present() {
             file.borrow_as_userdata_mut::<FileHandle>(gc)?.close()?;
         } else {
@@ -106,7 +106,7 @@ fn io_flush<'gc>(
         .borrow()
         .get_field(gc.allocate_string(IO_OUTPUT));
     let mut output = output.borrow_as_userdata_mut::<FileHandle>(gc).unwrap();
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         if let Some(output) = output.get_mut() {
             output.flush()?;
             Ok(vec![true.into()])
@@ -162,7 +162,7 @@ fn io_open<'gc>(
         }
     };
 
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         let handle = open_file(gc, &vm.registry().borrow(), &options, filename)?;
         Ok(vec![gc.allocate_cell(handle).into()])
     })
@@ -199,7 +199,7 @@ fn io_read<'gc>(
         .get_field(gc.allocate_string(IO_INPUT));
     let mut input = input.borrow_as_userdata_mut::<FileHandle>(gc).unwrap();
 
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         if let Some(input) = input.get_mut() {
             common_read(gc, input, stack, 1)
         } else {
@@ -243,7 +243,7 @@ fn io_write<'gc>(
         .get_field(gc.allocate_string(IO_OUTPUT));
     let mut output_ref = output.borrow_as_userdata_mut::<FileHandle>(gc).unwrap();
 
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         if let Some(output_ref) = output_ref.get_mut() {
             for i in 1..stack.len() {
                 output_ref.write_all(stack.arg(i).to_string()?.as_ref())?;
@@ -263,7 +263,7 @@ fn file_close<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let handle = thread.borrow().stack(&window).arg(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         handle.close()?;
         Ok(vec![true.into()])
     })
@@ -277,7 +277,7 @@ fn file_flush<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let handle = thread.borrow().stack(&window).arg(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         if let Some(file) = handle.get_mut() {
             file.flush()?;
             Ok(vec![true.into()])
@@ -299,7 +299,7 @@ fn file_read<'gc>(
     let handle = stack.arg(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         let file = if let Some(file) = handle.get_mut() {
             file
         } else {
@@ -325,7 +325,7 @@ fn file_seek<'gc>(
     let whence = whence.to_string_or(B("cur"))?;
     let offset = stack.arg(3).to_integer_or(0)?;
 
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         let pos = match whence.as_ref() {
             b"set" => {
                 if let Ok(offset) = offset.try_into() {
@@ -376,7 +376,7 @@ fn file_setvbuf<'gc>(
         None
     };
 
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         match mode.as_ref() {
             b"no" => handle.replace_with(LuaFile::NonBuffered)?,
             b"full" => handle.replace_with(|file| {
@@ -417,7 +417,7 @@ fn file_write<'gc>(
     let handle = stack.arg(1);
     let mut handle_ref = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
-    translate_and_return_error(gc, || {
+    file::translate_and_return_error(gc, || {
         if let Some(file) = handle_ref.get_mut() {
             for i in 2..stack.len() {
                 let s = stack.arg(i);
@@ -442,7 +442,7 @@ fn common_io_input_or_output<'gc, K: AsRef<[u8]>>(
     let file = thread.borrow().stack(&window).arg(1);
     let registry = vm.registry();
     let key = gc.allocate_string(key.as_ref());
-    translate_and_raise_error(|| {
+    file::translate_and_raise_error(|| {
         let handle = match file.get() {
             None | Some(Value::Nil) => return Ok(vec![registry.borrow().get_field(key)]),
             Some(Value::String(filename)) => {
@@ -570,39 +570,4 @@ fn open_file<'gc, P: AsRef<[u8]>>(
         registry,
         FullyBufferedFile::new(file),
     ))
-}
-
-fn translate_and_raise_error<'gc, F>(f: F) -> Result<Action<'gc>, ErrorKind>
-where
-    F: FnOnce() -> Result<Vec<Value<'gc>>, FileError>,
-{
-    match f() {
-        Ok(values) => Ok(Action::Return(values)),
-        Err(FileError::Runtime(kind)) => Err(kind),
-        Err(err) => Err(ErrorKind::Other(err.to_string())),
-    }
-}
-
-fn translate_and_return_error<'gc, F>(gc: &'gc GcContext, f: F) -> Result<Action<'gc>, ErrorKind>
-where
-    F: FnOnce() -> Result<Vec<Value<'gc>>, FileError>,
-{
-    match f() {
-        Ok(values) => Ok(Action::Return(values)),
-        Err(FileError::Runtime(kind)) => Err(kind),
-        Err(FileError::Io(err)) => Ok(Action::Return(vec![
-            Value::Nil,
-            gc.allocate_string(err.to_string().into_bytes()).into(),
-            err.raw_os_error()
-                .map(|errno| (errno as Integer).into())
-                .unwrap_or_default(),
-        ])),
-        Err(err @ (FileError::Closed | FileError::DefaultFileClosed { .. })) => {
-            Err(ErrorKind::Other(err.to_string()))
-        }
-        Err(err) => Ok(Action::Return(vec![
-            Value::Nil,
-            gc.allocate_string(err.to_string().into_bytes()).into(),
-        ])),
-    }
 }

@@ -1,4 +1,7 @@
-use super::helpers::{set_functions_to_table, StackExt};
+use super::{
+    file,
+    helpers::{set_functions_to_table, StackExt},
+};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
@@ -18,6 +21,8 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
             (B("difftime"), os_difftime),
             (B("exit"), os_exit),
             (B("getenv"), os_getenv),
+            (B("remove"), os_remove),
+            (B("rename"), os_rename),
             (B("time"), os_time),
         ],
     );
@@ -162,6 +167,52 @@ fn os_getenv<'gc>(
         .map(|s| gc.allocate_string(s).into())
         .unwrap_or_default();
     Ok(Action::Return(vec![env]))
+}
+
+fn os_remove<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action<'gc>, ErrorKind> {
+    let filename = thread.borrow().stack(&window).arg(1);
+    let filename = filename.to_string()?;
+    file::translate_and_return_error(gc, || {
+        let path = filename.to_path()?;
+        match std::fs::remove_file(path) {
+            Ok(()) => (),
+            Err(_) => {
+                // FIXME: should try remove_dir() only when kind() is
+                // - IsADirectory on Linux
+                // - PermissionDenied on POSIX
+                // TODO: do this once IsADirectory gets stabilized
+                std::fs::remove_dir(path)?;
+            }
+        }
+        Ok(vec![true.into()])
+    })
+}
+
+fn os_rename<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
+
+    let old_name = stack.arg(1);
+    let old_name = old_name.to_string()?;
+    let new_name = stack.arg(2);
+    let new_name = new_name.to_string()?;
+
+    file::translate_and_return_error(gc, || {
+        let old_path = old_name.to_path()?;
+        let new_path = new_name.to_path()?;
+        std::fs::rename(old_path, new_path)?;
+        Ok(vec![true.into()])
+    })
 }
 
 fn os_time<'gc>(
