@@ -725,21 +725,20 @@ impl<'gc> Vm<'gc> {
                     return Ok(());
                 }
                 OpCode::VarArg => {
+                    let a = insn.a();
                     let n = insn.c();
                     let num_wanted = if n > 0 {
                         n as usize - 1
                     } else {
                         saved_current_frame.num_extra_args
                     };
+
+                    thread_ref.current_lua_frame().pc = state.pc;
+                    thread_ref
+                        .stack
+                        .resize(saved_current_frame.base + a + num_wanted, Value::Nil);
+
                     if num_wanted > 0 {
-                        thread_ref.current_lua_frame().pc = state.pc;
-
-                        let a = insn.a();
-
-                        thread_ref
-                            .stack
-                            .resize(saved_current_frame.base + a + num_wanted, Value::Nil);
-
                         let extra_args_bottom =
                             saved_current_frame.base - 1 - saved_current_frame.num_extra_args;
                         let num_copied = num_wanted.min(saved_current_frame.num_extra_args);
@@ -755,9 +754,9 @@ impl<'gc> Vm<'gc> {
                                 ..saved_current_frame.base + a + num_wanted]
                                 .fill(Value::Nil);
                         }
-
-                        return Ok(());
                     }
+
+                    return Ok(());
                 }
                 OpCode::VarArgPrep => {
                     let num_fixed_args = insn.a();
