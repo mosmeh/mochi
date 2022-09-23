@@ -23,6 +23,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
             (B("getenv"), os_getenv),
             (B("remove"), os_remove),
             (B("rename"), os_rename),
+            (B("setlocale"), os_setlocale),
             (B("time"), os_time),
         ],
     );
@@ -213,6 +214,38 @@ fn os_rename<'gc>(
         std::fs::rename(old_path, new_path)?;
         Ok(vec![true.into()])
     })
+}
+
+fn os_setlocale<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    thread: GcCell<LuaThread<'gc>>,
+    window: StackWindow,
+) -> Result<Action<'gc>, ErrorKind> {
+    let thread = thread.borrow();
+    let stack = thread.stack(&window);
+
+    let locale = stack.arg(1);
+    let locale = locale.to_string_or(B("C"))?;
+    let category = stack.arg(2);
+    let category = category.to_string_or(B("all"))?;
+    if !matches!(
+        category.as_ref(),
+        b"all" | b"collate" | b"ctype" | b"monetary" | b"numeric" | b"time",
+    ) {
+        return Err(ErrorKind::ArgumentError {
+            nth: 2,
+            message: "invalid option",
+        });
+    }
+
+    Ok(Action::Return(vec![
+        if matches!(locale.as_ref(), b"C" | b"") {
+            gc.allocate_string(B("C")).into()
+        } else {
+            Value::Nil
+        },
+    ]))
 }
 
 fn os_time<'gc>(
