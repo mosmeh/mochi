@@ -5,8 +5,8 @@ mod thread;
 mod user_data;
 
 pub use function::{
-    Action, Continuation, LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeClosureFn,
-    NativeFunction, NativeFunctionPtr, RegisterIndex, Upvalue, UpvalueDescription, UpvalueIndex,
+    Action, Continuation, LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeFunction,
+    NativeFunctionPtr, RegisterIndex, Upvalue, UpvalueDescription, UpvalueIndex,
 };
 pub use string::LuaString;
 pub use table::{Table, TableError};

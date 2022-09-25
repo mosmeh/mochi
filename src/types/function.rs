@@ -113,61 +113,111 @@ impl<'gc> From<Gc<'gc, LuaClosureProto<'gc>>> for LuaClosure<'gc> {
     }
 }
 
-pub type NativeClosureFn = dyn for<'gc> Fn(
-    &'gc GcContext,
-    &mut Vm<'gc>,
-    Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind>;
-
-pub struct NativeClosure<'gc> {
-    func: Box<NativeClosureFn>,
-    upvalues: Box<[Value<'gc>]>,
+trait NativeClosureFn<'gc>: GarbageCollect {
+    fn call(
+        &self,
+        gc: &'gc GcContext,
+        vm: &mut Vm<'gc>,
+        args: Vec<Value<'gc>>,
+    ) -> Result<Action<'gc>, ErrorKind>;
 }
+
+pub struct NativeClosure<'gc>(Box<dyn NativeClosureFn<'gc> + 'gc>);
 
 impl std::fmt::Debug for NativeClosure<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NativeClosure")
-            .field("upvalues", &self.upvalues)
-            .finish()
+        f.debug_struct("NativeClosure").finish()
     }
 }
 
 unsafe impl GarbageCollect for NativeClosure<'_> {
     fn trace(&self, tracer: &mut Tracer) {
-        self.upvalues.trace(tracer);
+        self.0.trace(tracer);
     }
 }
 
 impl<'gc> NativeClosure<'gc> {
-    pub fn new<T>(func: T) -> Self
+    pub fn new<F>(f: F) -> Self
     where
-        T: 'static
-            + for<'a> Fn(&'a GcContext, &mut Vm<'a>, Vec<Value<'a>>) -> Result<Action<'a>, ErrorKind>,
+        F: 'static
+            + Fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
     {
-        Self {
-            func: Box::new(func),
-            upvalues: Default::default(),
+        struct SimpleNativeClosure<F>(F);
+
+        impl<'gc, F> NativeClosureFn<'gc> for SimpleNativeClosure<F>
+        where
+            F: Fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
+        {
+            fn call(
+                &self,
+                gc: &'gc GcContext,
+                vm: &mut Vm<'gc>,
+                args: Vec<Value<'gc>>,
+            ) -> Result<Action<'gc>, ErrorKind> {
+                (self.0)(gc, vm, args)
+            }
         }
+
+        unsafe impl<F> GarbageCollect for SimpleNativeClosure<F> {
+            fn needs_trace() -> bool {
+                false
+            }
+        }
+
+        Self(Box::new(SimpleNativeClosure(f)))
     }
 
-    pub fn with_upvalues<T, U>(func: T, upvalues: U) -> Self
+    pub fn with_upvalue<F, U>(upvalue: U, f: F) -> Self
     where
-        T: 'static
-            + for<'a> Fn(&'a GcContext, &mut Vm<'a>, Vec<Value<'a>>) -> Result<Action<'a>, ErrorKind>,
-        U: Into<Box<[Value<'gc>]>>,
+        F: 'static
+            + Fn(&'gc GcContext, &mut Vm<'gc>, &U, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
+        U: 'gc + GarbageCollect,
     {
-        Self {
-            func: Box::new(func),
-            upvalues: upvalues.into(),
+        struct UpvalueNativeClosure<F, U> {
+            f: F,
+            upvalue: U,
         }
+
+        impl<'gc, F, U> NativeClosureFn<'gc> for UpvalueNativeClosure<F, U>
+        where
+            F: Fn(
+                &'gc GcContext,
+                &mut Vm<'gc>,
+                &U,
+                Vec<Value<'gc>>,
+            ) -> Result<Action<'gc>, ErrorKind>,
+            U: 'gc + GarbageCollect,
+        {
+            fn call(
+                &self,
+                gc: &'gc GcContext,
+                vm: &mut Vm<'gc>,
+                args: Vec<Value<'gc>>,
+            ) -> Result<Action<'gc>, ErrorKind> {
+                (self.f)(gc, vm, &self.upvalue, args)
+            }
+        }
+
+        unsafe impl<F, U: GarbageCollect> GarbageCollect for UpvalueNativeClosure<F, U> {
+            fn needs_trace() -> bool {
+                U::needs_trace()
+            }
+
+            fn trace(&self, tracer: &mut Tracer) {
+                self.upvalue.trace(tracer);
+            }
+        }
+
+        Self(Box::new(UpvalueNativeClosure { f, upvalue }))
     }
 
-    pub fn function(&self) -> &NativeClosureFn {
-        &self.func
-    }
-
-    pub fn upvalues(&self) -> &[Value<'gc>] {
-        &self.upvalues
+    pub fn call(
+        &self,
+        gc: &'gc GcContext,
+        vm: &mut Vm<'gc>,
+        args: Vec<Value<'gc>>,
+    ) -> Result<Action<'gc>, ErrorKind> {
+        (self.0).call(gc, vm, args)
     }
 }
 

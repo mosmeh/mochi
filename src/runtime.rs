@@ -333,9 +333,11 @@ impl<'gc> Vm<'gc> {
             Some(Frame::Native(NativeFrame { bottom })) => {
                 let bottom = *bottom;
                 let callee = thread_ref.stack[bottom];
-                let func = match &callee {
-                    Value::NativeFunction(func) => &func.0,
-                    Value::NativeClosure(closure) => closure.function(),
+                let args = thread_ref.stack.split_off(bottom);
+                drop(thread_ref);
+                let result = match &callee {
+                    Value::NativeFunction(func) => (func.0)(gc, self, args),
+                    Value::NativeClosure(closure) => closure.call(gc, self, args),
                     Value::LuaClosure(_) => unreachable!(),
                     value => {
                         return Err(ErrorKind::TypeError {
@@ -344,9 +346,7 @@ impl<'gc> Vm<'gc> {
                         })
                     }
                 };
-                let args = thread_ref.stack.split_off(bottom);
-                drop(thread_ref);
-                (bottom, func(gc, self, args))
+                (bottom, result)
             }
             Some(Frame::CallContinuation {
                 frame:

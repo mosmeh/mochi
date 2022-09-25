@@ -42,18 +42,35 @@ unsafe impl GarbageCollect for () {
     }
 }
 
-unsafe impl<T, U> GarbageCollect for (T, U)
+unsafe impl<T1, T2> GarbageCollect for (T1, T2)
 where
-    T: GarbageCollect,
-    U: GarbageCollect,
+    T1: GarbageCollect,
+    T2: GarbageCollect,
 {
     fn needs_trace() -> bool {
-        T::needs_trace() || U::needs_trace()
+        T1::needs_trace() || T2::needs_trace()
     }
 
     fn trace(&self, tracer: &mut Tracer) {
         self.0.trace(tracer);
         self.1.trace(tracer);
+    }
+}
+
+unsafe impl<T1, T2, T3> GarbageCollect for (T1, T2, T3)
+where
+    T1: GarbageCollect,
+    T2: GarbageCollect,
+    T3: GarbageCollect,
+{
+    fn needs_trace() -> bool {
+        T1::needs_trace() || T2::needs_trace() || T3::needs_trace()
+    }
+
+    fn trace(&self, tracer: &mut Tracer) {
+        self.0.trace(tracer);
+        self.1.trace(tracer);
+        self.2.trace(tracer);
     }
 }
 

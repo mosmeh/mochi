@@ -137,38 +137,23 @@ fn coroutine_wrap<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let f = args.nth(1).ensure_function()?;
     let co = LuaThread::with_body(f);
+    let coroutine = gc.allocate_cell(co);
 
-    let wrapper = NativeClosure::with_upvalues(
-        |_, _, args| {
-            let closure = args.nth(0);
-            let closure = closure.as_native_closure()?;
-            let coroutine = closure.upvalues().first().unwrap().as_thread().unwrap();
-
-            Ok(Action::Resume {
-                coroutine,
-                args: args.without_callee().to_vec(),
-                continuation: Continuation::with_context(
-                    args[0],
-                    |gc, _, original_callee, result| match result {
-                        Ok(results) => Ok(Action::Return(results)),
-                        Err(err) => {
-                            original_callee
-                                .as_native_closure()
-                                .unwrap()
-                                .upvalues()
-                                .first()
-                                .unwrap()
-                                .borrow_as_thread_mut(gc)
-                                .unwrap()
-                                .close();
-                            Err(err)
-                        }
-                    },
-                ),
-            })
-        },
-        vec![gc.allocate_cell(co).into()],
-    );
+    let wrapper = NativeClosure::with_upvalue(coroutine, |_, _, &coroutine, args| {
+        Ok(Action::Resume {
+            coroutine,
+            args: args.without_callee().to_vec(),
+            continuation: Continuation::with_context(coroutine, |gc, _, coroutine, result| {
+                match result {
+                    Ok(results) => Ok(Action::Return(results)),
+                    Err(err) => {
+                        coroutine.borrow_mut(gc).close();
+                        Err(err)
+                    }
+                }
+            }),
+        })
+    });
 
     Ok(Action::Return(vec![gc.allocate(wrapper).into()]))
 }

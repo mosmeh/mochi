@@ -88,10 +88,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     let mut globals = globals.borrow_mut(gc);
     globals.set_field(
         gc.allocate_string(B("require")),
-        gc.allocate(NativeClosure::with_upvalues(
-            package_require,
-            vec![package.into()],
-        )),
+        gc.allocate(NativeClosure::with_upvalue(package, package_require)),
     );
 
     let registry = vm.registry();
@@ -129,11 +126,8 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     table.set_field(gc.allocate_string(B("preload")), package_preload);
     let package_searchers = vec![
         NativeFunction::new(searcher_preload).into(),
-        gc.allocate(NativeClosure::with_upvalues(
-            searcher_lua,
-            vec![package.into()],
-        ))
-        .into(),
+        gc.allocate(NativeClosure::with_upvalue(package, searcher_lua))
+            .into(),
     ];
     table.set_field(
         gc.allocate_string(B("searchers")),
@@ -150,6 +144,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
 fn package_require<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
+    package: &GcCell<'gc, Table<'gc>>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let name = gc.allocate_string(args.nth(1).to_string()?);
@@ -166,38 +161,26 @@ fn package_require<'gc>(
         return Ok(Action::Return(vec![value]));
     }
 
-    let closure = args.nth(0);
-    let closure = closure.as_native_closure()?;
-    let package = closure
-        .upvalues()
-        .first()
-        .unwrap()
-        .borrow_as_table()
-        .unwrap();
-
-    let searchers = package.get_field(gc.allocate_string(B("searchers")));
-    searchers
-        .borrow_as_table()
+    let searchers = package
+        .borrow()
+        .get_field(gc.allocate_string(B("searchers")));
+    let searchers = searchers
+        .as_table()
         .ok_or_else(|| ErrorKind::other("'package.searchers' must be a table"))?;
 
     let i = Cell::new(0);
     let msg = Rc::new(RefCell::new(Vec::new()));
-    let continuation = NativeClosure::with_upvalues(
-        move |_, _, args| {
-            let closure = args.nth(0);
-            let closure = closure.as_native_closure()?;
-
-            let name = closure.upvalues()[0];
-            let searchers = closure.upvalues()[1].borrow_as_table().unwrap();
-
+    let continuation = NativeClosure::with_upvalue(
+        (name, searchers, loaded),
+        move |_, _, &(name, searchers, loaded), args| {
             let next_i = i.get() + 1;
             i.set(next_i);
 
-            let searcher = searchers.get(next_i);
+            let searcher = searchers.borrow().get(next_i);
             if searcher.is_nil() {
                 return Err(ErrorKind::Other(format!(
                     "module '{}' not found:{}",
-                    name.to_string().unwrap().as_bstr(),
+                    name.as_bstr(),
                     msg.borrow().as_bstr()
                 )));
             }
@@ -205,10 +188,10 @@ fn package_require<'gc>(
             let msg = msg.clone();
             Ok(Action::Call {
                 callee: searcher,
-                args: vec![name],
+                args: vec![name.into()],
                 continuation: Continuation::with_context(
-                    args[0],
-                    move |_, _, original_callee, results: Vec<Value>| {
+                    (args[0], name, loaded),
+                    move |_, _, (original_callee, name, loaded), results: Vec<Value>| {
                         let loader = match results.first() {
                             Some(
                                 value @ Value::NativeFunction(_)
@@ -235,25 +218,17 @@ fn package_require<'gc>(
                         };
                         let loader_data = results.get(1).copied().unwrap_or_default();
 
-                        let closure = original_callee.as_native_closure().unwrap();
-                        let name = closure.upvalues()[0];
-
                         Ok(Action::Call {
                             callee: loader,
-                            args: vec![name, loader_data],
+                            args: vec![name.into(), loader_data],
                             continuation: Continuation::with_context(
-                                (original_callee, loader_data),
-                                |gc, _, (closure, loader_data), results: Vec<Value>| {
+                                (name, loaded, loader_data),
+                                |gc, _, (name, loaded, loader_data), results: Vec<Value>| {
                                     let value = match results.first() {
                                         Some(Value::Nil) | None => Value::Boolean(true),
                                         Some(value) => *value,
                                     };
-
-                                    let closure = closure.as_native_closure().unwrap();
-                                    let name = closure.upvalues()[0];
-                                    let loaded = closure.upvalues()[2];
-                                    loaded.borrow_as_table_mut(gc).unwrap().set(name, value)?;
-
+                                    loaded.borrow_mut(gc).set(name, value)?;
                                     Ok(Action::Return(vec![value, loader_data]))
                                 },
                             ),
@@ -262,7 +237,6 @@ fn package_require<'gc>(
                 ),
             })
         },
-        vec![name.into(), searchers, loaded.into()],
     );
 
     Ok(Action::TailCall {
@@ -343,21 +317,13 @@ fn searcher_preload<'gc>(
 fn searcher_lua<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
+    package: &GcCell<'gc, Table<'gc>>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let name = args.nth(1);
     let name = name.to_string()?;
 
-    let closure = args.nth(0);
-    let closure = closure.as_native_closure()?;
-    let package = closure
-        .upvalues()
-        .first()
-        .unwrap()
-        .borrow_as_table()
-        .unwrap();
-
-    let path = package.get_field(gc.allocate_string(B("path")));
+    let path = package.borrow().get_field(gc.allocate_string(B("path")));
     let path = path
         .to_string()
         .ok_or_else(|| ErrorKind::other("'package.path' must be a string"))?;
