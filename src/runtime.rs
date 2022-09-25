@@ -108,9 +108,15 @@ enum RuntimeAction {
 #[derive(Debug)]
 pub(crate) enum Frame<'gc> {
     Lua(LuaFrame),
-    Native(NativeFrame),
+    Native {
+        bottom: usize,
+    },
     CallContinuation {
-        frame: ContinuationFrame<'gc, Vec<Value<'gc>>>,
+        inner: ContinuationFrame<'gc, Vec<Value<'gc>>>,
+        callee_bottom: usize,
+    },
+    ProtectedCallContinuation {
+        inner: ContinuationFrame<'gc, Result<Vec<Value<'gc>>, ErrorKind>>,
         callee_bottom: usize,
     },
     ResumeContinuation(ContinuationFrame<'gc, Result<Vec<Value<'gc>>, ErrorKind>>),
@@ -120,10 +126,12 @@ pub(crate) enum Frame<'gc> {
 unsafe impl GarbageCollect for Frame<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         match self {
-            Self::Lua(_) | Self::Native(_) => (),
-            Self::CallContinuation { frame, .. } => frame.trace(tracer),
-            Self::ResumeContinuation(frame) => frame.trace(tracer),
-            Self::MutateGcContinuation(frame) => frame.trace(tracer),
+            Self::Lua(_) | Self::Native { .. } => (),
+            Self::CallContinuation { inner, .. } => inner.trace(tracer),
+            Self::ProtectedCallContinuation { inner, .. } | Self::ResumeContinuation(inner) => {
+                inner.trace(tracer)
+            }
+            Self::MutateGcContinuation(inner) => inner.trace(tracer),
         }
     }
 }
@@ -144,17 +152,6 @@ impl LuaFrame {
             pc: 0,
             num_extra_args: 0,
         }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct NativeFrame {
-    bottom: usize,
-}
-
-impl NativeFrame {
-    pub fn new(bottom: usize) -> Self {
-        Self { bottom }
     }
 }
 
@@ -292,9 +289,21 @@ impl<'gc> Vm<'gc> {
             Ok(Some(action)) => return Ok(Some(action)),
             Ok(None) => (),
             Err(kind) => {
-                self.thread_stack.pop().unwrap();
+                let mut thread_ref = thread.borrow_mut(gc);
+                if let Some((i, frame)) = thread_ref
+                    .frames
+                    .iter_mut()
+                    .enumerate()
+                    .rfind(|(_, frame)| matches!(frame, Frame::ProtectedCallContinuation { .. }))
                 {
-                    let mut thread_ref = thread.borrow_mut(gc);
+                    if let Frame::ProtectedCallContinuation { inner, .. } = frame {
+                        inner.continuation.as_mut().unwrap().set_args(Err(kind));
+                    } else {
+                        unreachable!()
+                    }
+                    thread_ref.frames.truncate(i + 1);
+                } else {
+                    self.thread_stack.pop().unwrap();
                     thread_ref.status = ThreadStatus::Error(kind.clone());
 
                     if self.thread_stack.is_empty() {
@@ -302,13 +311,15 @@ impl<'gc> Vm<'gc> {
                         *thread_ref = LuaThread::new();
                         return Err(RuntimeError { kind, traceback });
                     }
-                }
+                    drop(thread_ref);
 
-                let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
-                if let Frame::ResumeContinuation(frame) = resumer_ref.frames.last_mut().unwrap() {
-                    frame.continuation.as_mut().unwrap().set_args(Err(kind));
-                } else {
-                    unreachable!()
+                    let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
+                    if let Frame::ResumeContinuation(frame) = resumer_ref.frames.last_mut().unwrap()
+                    {
+                        frame.continuation.as_mut().unwrap().set_args(Err(kind));
+                    } else {
+                        unreachable!()
+                    }
                 }
             }
         }
@@ -330,7 +341,7 @@ impl<'gc> Vm<'gc> {
         let mut current_frame = thread_ref.frames.pop();
         let (bottom, result) = match &mut current_frame {
             Some(Frame::Lua(_)) => unreachable!(),
-            Some(Frame::Native(NativeFrame { bottom })) => {
+            Some(Frame::Native { bottom, .. }) => {
                 let bottom = *bottom;
                 let callee = thread_ref.stack[bottom];
                 let args = thread_ref.stack.split_off(bottom);
@@ -349,7 +360,7 @@ impl<'gc> Vm<'gc> {
                 (bottom, result)
             }
             Some(Frame::CallContinuation {
-                frame:
+                inner:
                     ContinuationFrame {
                         bottom,
                         continuation,
@@ -358,6 +369,23 @@ impl<'gc> Vm<'gc> {
             }) => {
                 let mut continuation = continuation.take().unwrap();
                 continuation.set_args(thread_ref.stack.split_off(*callee_bottom));
+                drop(thread_ref);
+                (*bottom, continuation.call(gc, self))
+            }
+            Some(Frame::ProtectedCallContinuation {
+                inner:
+                    ContinuationFrame {
+                        bottom,
+                        continuation,
+                    },
+                callee_bottom,
+            }) => {
+                let mut continuation = continuation.take().unwrap();
+                match continuation.args() {
+                    Some(Ok(_)) => unreachable!(),
+                    Some(Err(_)) => (),
+                    None => continuation.set_args(Ok(thread_ref.stack.split_off(*callee_bottom))),
+                }
                 drop(thread_ref);
                 (*bottom, continuation.call(gc, self))
             }
@@ -409,7 +437,24 @@ impl<'gc> Vm<'gc> {
             } => {
                 thread_ref.stack.truncate(bottom);
                 *thread_ref.frames.last_mut().unwrap() = Frame::CallContinuation {
-                    frame: ContinuationFrame {
+                    inner: ContinuationFrame {
+                        bottom,
+                        continuation: Some(continuation),
+                    },
+                    callee_bottom: bottom,
+                };
+                thread_ref.stack.push(callee);
+                thread_ref.stack.append(&mut args);
+                thread_ref.deferred_call(bottom)?;
+            }
+            Action::ProtectedCall {
+                callee,
+                mut args,
+                continuation,
+            } => {
+                thread_ref.stack.truncate(bottom);
+                *thread_ref.frames.last_mut().unwrap() = Frame::ProtectedCallContinuation {
+                    inner: ContinuationFrame {
                         bottom,
                         continuation: Some(continuation),
                     },
@@ -607,7 +652,7 @@ impl<'gc> LuaThread<'gc> {
             Ok(Action::ReturnArguments)
         });
         self.frames.push(Frame::CallContinuation {
-            frame: ContinuationFrame {
+            inner: ContinuationFrame {
                 bottom: current_bottom,
                 continuation: Some(continuation),
             },

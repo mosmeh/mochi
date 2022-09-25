@@ -1,7 +1,7 @@
 use super::{LineRange, Upvalue, Value};
 use crate::{
     gc::{GarbageCollect, GcCell, Tracer},
-    runtime::{ErrorKind, Frame, LuaFrame, NativeFrame, Operation},
+    runtime::{ErrorKind, Frame, LuaFrame, Operation},
 };
 use std::{collections::BTreeMap, fmt::Display};
 
@@ -76,7 +76,7 @@ impl<'gc> LuaThread<'gc> {
                 Ok(())
             }
             Value::NativeFunction(_) | Value::NativeClosure(_) => {
-                self.frames.push(Frame::Native(NativeFrame::new(bottom)));
+                self.frames.push(Frame::Native { bottom });
                 Ok(())
             }
             value => Err(ErrorKind::TypeError {

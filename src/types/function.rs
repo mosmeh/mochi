@@ -12,6 +12,11 @@ pub enum Action<'gc> {
         args: Vec<Value<'gc>>,
         continuation: Continuation<'gc, Vec<Value<'gc>>>,
     },
+    ProtectedCall {
+        callee: Value<'gc>,
+        args: Vec<Value<'gc>>,
+        continuation: Continuation<'gc, Result<Vec<Value<'gc>>, ErrorKind>>,
+    },
     TailCall {
         callee: Value<'gc>,
         args: Vec<Value<'gc>>,
@@ -255,6 +260,7 @@ pub struct UpvalueIndex(pub u8);
 
 trait ContinuationFn<'gc, T>: GarbageCollect {
     fn call(&mut self, gc: &'gc GcContext, vm: &mut Vm<'gc>) -> Result<Action<'gc>, ErrorKind>;
+    fn args(&self) -> Option<&T>;
     fn set_args(&mut self, args: T);
 }
 
@@ -286,6 +292,10 @@ impl<'gc, T: 'gc> Continuation<'gc, T> {
                 vm: &mut Vm<'gc>,
             ) -> Result<Action<'gc>, ErrorKind> {
                 (self.f)(gc, vm, self.args.take().unwrap())
+            }
+
+            fn args(&self) -> Option<&T> {
+                self.args.as_ref()
             }
 
             fn set_args(&mut self, args: T) {
@@ -334,6 +344,10 @@ impl<'gc, T: 'gc> Continuation<'gc, T> {
                 )
             }
 
+            fn args(&self) -> Option<&T> {
+                self.args.as_ref()
+            }
+
             fn set_args(&mut self, result: T) {
                 self.args = Some(result);
             }
@@ -365,6 +379,10 @@ impl<'gc, T: 'gc> Continuation<'gc, T> {
         vm: &mut Vm<'gc>,
     ) -> Result<Action<'gc>, ErrorKind> {
         self.0.call(gc, vm)
+    }
+
+    pub(crate) fn args(&self) -> Option<&T> {
+        self.0.args()
     }
 
     pub(crate) fn set_args(&mut self, args: T) {

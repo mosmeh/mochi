@@ -24,6 +24,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
             (B("load"), base_load),
             (B("next"), base_next),
             (B("pairs"), base_pairs),
+            (B("pcall"), base_pcall),
             (B("print"), base_print),
             (B("rawequal"), base_rawequal),
             (B("rawget"), base_rawget),
@@ -286,6 +287,32 @@ fn base_pairs<'gc>(
         table,
         Value::Nil,
     ]))
+}
+
+fn base_pcall<'gc>(
+    _: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
+) -> Result<Action<'gc>, ErrorKind> {
+    let f = args.nth(1).as_value()?;
+    Ok(Action::ProtectedCall {
+        callee: f,
+        args: args.without_callee()[1..].to_vec(),
+        continuation: Continuation::new(|gc, _, result: Result<Vec<Value>, ErrorKind>| {
+            Ok(Action::Return(match result {
+                Ok(mut results) => {
+                    results.insert(0, true.into());
+                    results
+                }
+                Err(err) => {
+                    vec![
+                        false.into(),
+                        gc.allocate_string(err.to_string().into_bytes()).into(),
+                    ]
+                }
+            }))
+        }),
+    })
 }
 
 fn base_print<'gc>(
