@@ -9,6 +9,10 @@ use crate::{
 };
 use bstr::{ByteSlice, ByteVec, B};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
+use std::{
+    ffi::OsStr,
+    process::{Command, ExitStatus},
+};
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
@@ -19,6 +23,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
             (B("clock"), os_clock),
             (B("date"), os_date),
             (B("difftime"), os_difftime),
+            (B("execute"), os_execute),
             (B("exit"), os_exit),
             (B("getenv"), os_getenv),
             (B("remove"), os_remove),
@@ -114,6 +119,74 @@ fn os_difftime<'gc>(
     let t2 = args.nth(1).to_number()?;
     let t1 = args.nth(2).to_number()?;
     Ok(Action::Return(vec![(t2 - t1).into()]))
+}
+
+fn os_execute<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
+) -> Result<Action<'gc>, ErrorKind> {
+    fn system<S: AsRef<OsStr>>(line: S) -> std::io::Result<ExitStatus> {
+        let mut command = {
+            #[cfg(windows)]
+            {
+                let mut command = Command::new("cmd");
+                command.arg("/C");
+                command
+            }
+            #[cfg(not(windows))]
+            {
+                let mut command = Command::new("/bin/sh");
+                command.arg("-c");
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::CommandExt;
+                    command.arg0("sh");
+                }
+                command
+            }
+        };
+        command.arg(line).status()
+    }
+
+    let command = args.nth(1);
+    match command.get() {
+        None | Some(Value::Nil) => {
+            let shell_exists = system("exit 0")
+                .map(|status| status.success())
+                .unwrap_or_default();
+            Ok(Action::Return(vec![shell_exists.into()]))
+        }
+        Some(_) => {
+            let command = command.to_string()?;
+            file::translate_and_return_error(gc, || {
+                let status = system(command.to_os_str()?)?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    if let Some(signal) = status.signal() {
+                        return Ok(vec![
+                            Value::Nil,
+                            gc.allocate_string(B("signal")).into(),
+                            (signal as Integer).into(),
+                        ]);
+                    }
+                }
+                Ok(vec![
+                    if status.success() {
+                        true.into()
+                    } else {
+                        Value::Nil
+                    },
+                    gc.allocate_string(B("exit")).into(),
+                    status
+                        .code()
+                        .map(|code| (code as Integer).into())
+                        .unwrap_or_default(),
+                ])
+            })
+        }
+    }
 }
 
 fn os_exit<'gc>(
