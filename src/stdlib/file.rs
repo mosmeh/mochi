@@ -1,7 +1,7 @@
 use crate::{
     gc::GcContext,
-    runtime::ErrorKind,
-    types::{Action, Integer, Value},
+    runtime::{Action, ErrorKind},
+    types::{Integer, Value},
 };
 use std::{
     fs::File,

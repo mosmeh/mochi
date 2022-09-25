@@ -4,8 +4,8 @@ use super::{
 };
 use crate::{
     gc::{GcCell, GcContext},
-    runtime::{ErrorKind, Vm},
-    types::{Action, Integer, Table, Value},
+    runtime::{Action, ErrorKind, Vm},
+    types::{Integer, Table, Value},
 };
 use bstr::{ByteSlice, ByteVec, B};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};

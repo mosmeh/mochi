@@ -2,8 +2,8 @@ use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     binary_chunk,
     gc::{GcCell, GcContext},
-    runtime::{ErrorKind, Metamethod, Vm},
-    types::{Action, Integer, Table, Type, Value},
+    runtime::{Action, ErrorKind, Metamethod, Vm},
+    types::{Integer, Table, Type, Value},
 };
 use bstr::B;
 use std::ops::Range;

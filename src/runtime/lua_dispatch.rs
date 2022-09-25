@@ -1,7 +1,7 @@
 use super::{ops, ErrorKind, ExecutionState, OpCode, Operation, Vm};
 use crate::{
-    gc::{GcCell, GcContext},
-    types::{Integer, LuaThread, Number, Table, Upvalue, UpvalueDescription, Value},
+    gc::GcContext,
+    types::{Integer, Number, Table, Upvalue, UpvalueDescription, Value},
     LuaClosure,
 };
 use std::{
@@ -10,11 +10,8 @@ use std::{
 };
 
 impl<'gc> Vm<'gc> {
-    pub(super) fn execute_lua_frame(
-        &self,
-        gc: &'gc GcContext,
-        thread: GcCell<'gc, LuaThread<'gc>>,
-    ) -> Result<(), ErrorKind> {
+    pub(super) fn execute_lua_frame(&self, gc: &'gc GcContext) -> Result<(), ErrorKind> {
+        let thread = self.current_thread();
         let mut thread_ref = thread.borrow_mut(gc);
         let saved_current_frame = thread_ref.current_lua_frame().clone();
 

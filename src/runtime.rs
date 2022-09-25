@@ -1,21 +1,23 @@
 pub(crate) mod instruction;
 
+mod action;
 mod error;
-mod main_loop;
+mod frame;
+mod lua_dispatch;
 mod metamethod;
 mod opcode;
 mod ops;
 
+pub use action::{Action, Continuation};
 pub use error::{ErrorKind, Operation, RuntimeError};
+pub(crate) use frame::{ContinuationFrame, Frame, LuaFrame};
 pub use instruction::Instruction;
-pub(crate) use metamethod::Metamethod;
+pub use metamethod::Metamethod;
 pub use opcode::OpCode;
 
 use crate::{
     gc::{GarbageCollect, GcCell, GcContext, GcHeap, Tracer},
-    types::{
-        Action, Continuation, LuaString, LuaThread, Table, ThreadStatus, Type, Upvalue, Value,
-    },
+    types::{LuaString, LuaThread, Table, ThreadStatus, Type, Upvalue, Value},
     Error, LuaClosure,
 };
 use std::path::Path;
@@ -82,8 +84,8 @@ impl Runtime {
         loop {
             let result: Result<_, RuntimeError> = self.heap.with(|gc, vm| {
                 let mut vm = vm.borrow_mut(gc);
-                while let Some(thread) = vm.thread_stack.last().copied() {
-                    if let Some(action) = vm.execute_single_step(gc, thread)? {
+                while !vm.thread_stack.is_empty() {
+                    if let Some(action) = vm.execute_single_step(gc)? {
                         return Ok(action);
                     }
                 }
@@ -103,75 +105,6 @@ enum RuntimeAction {
     StepGc,
     MutateGc(Box<dyn Fn(&mut GcHeap)>),
     Exit,
-}
-
-#[derive(Debug)]
-pub(crate) enum Frame<'gc> {
-    Lua(LuaFrame),
-    Native {
-        bottom: usize,
-    },
-    CallContinuation {
-        inner: ContinuationFrame<'gc, Vec<Value<'gc>>>,
-        callee_bottom: usize,
-    },
-    ProtectedCallContinuation {
-        inner: ContinuationFrame<'gc, Result<Vec<Value<'gc>>, ErrorKind>>,
-        callee_bottom: usize,
-    },
-    ResumeContinuation(ContinuationFrame<'gc, Result<Vec<Value<'gc>>, ErrorKind>>),
-    MutateGcContinuation(ContinuationFrame<'gc, ()>),
-}
-
-unsafe impl GarbageCollect for Frame<'_> {
-    fn trace(&self, tracer: &mut Tracer) {
-        match self {
-            Self::Lua(_) | Self::Native { .. } => (),
-            Self::CallContinuation { inner, .. } => inner.trace(tracer),
-            Self::ProtectedCallContinuation { inner, .. } | Self::ResumeContinuation(inner) => {
-                inner.trace(tracer)
-            }
-            Self::MutateGcContinuation(inner) => inner.trace(tracer),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct LuaFrame {
-    pub(crate) bottom: usize,
-    base: usize,
-    pc: usize,
-    num_extra_args: usize,
-}
-
-impl LuaFrame {
-    pub fn new(bottom: usize) -> Self {
-        Self {
-            bottom,
-            base: bottom + 1,
-            pc: 0,
-            num_extra_args: 0,
-        }
-    }
-}
-
-pub(crate) struct ContinuationFrame<'gc, R> {
-    bottom: usize,
-    continuation: Option<Continuation<'gc, R>>,
-}
-
-impl<R> std::fmt::Debug for ContinuationFrame<'_, R> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ContinuationFrame")
-            .field("bottom", &self.bottom)
-            .finish()
-    }
-}
-
-unsafe impl<R> GarbageCollect for ContinuationFrame<'_, R> {
-    fn trace(&self, tracer: &mut Tracer) {
-        self.continuation.trace(tracer);
-    }
 }
 
 pub struct Vm<'gc> {
@@ -283,12 +216,12 @@ impl<'gc> Vm<'gc> {
     fn execute_single_step(
         &mut self,
         gc: &'gc GcContext,
-        thread: GcCell<'gc, LuaThread<'gc>>,
     ) -> Result<Option<RuntimeAction>, RuntimeError> {
-        match self.execute_next_frame(gc, thread) {
+        match self.execute_next_frame(gc) {
             Ok(Some(action)) => return Ok(Some(action)),
             Ok(None) => (),
             Err(kind) => {
+                let thread = self.current_thread();
                 let mut thread_ref = thread.borrow_mut(gc);
                 if let Some((i, frame)) = thread_ref
                     .frames
@@ -324,245 +257,6 @@ impl<'gc> Vm<'gc> {
             }
         }
         Ok(gc.should_perform_gc().then_some(RuntimeAction::StepGc))
-    }
-
-    fn execute_next_frame(
-        &mut self,
-        gc: &'gc GcContext,
-        thread: GcCell<'gc, LuaThread<'gc>>,
-    ) -> Result<Option<RuntimeAction>, ErrorKind> {
-        let mut thread_ref = thread.borrow_mut(gc);
-        if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
-            drop(thread_ref);
-            self.execute_lua_frame(gc, thread)?;
-            return Ok(None);
-        }
-
-        let mut current_frame = thread_ref.frames.pop();
-        let (bottom, result) = match &mut current_frame {
-            Some(Frame::Lua(_)) => unreachable!(),
-            Some(Frame::Native { bottom, .. }) => {
-                let bottom = *bottom;
-                let callee = thread_ref.stack[bottom];
-                let args = thread_ref.stack.split_off(bottom);
-                drop(thread_ref);
-                let result = match &callee {
-                    Value::NativeFunction(func) => (func.0)(gc, self, args),
-                    Value::NativeClosure(closure) => closure.call(gc, self, args),
-                    Value::LuaClosure(_) => unreachable!(),
-                    value => {
-                        return Err(ErrorKind::TypeError {
-                            operation: Operation::Call,
-                            ty: value.ty(),
-                        })
-                    }
-                };
-                (bottom, result)
-            }
-            Some(Frame::CallContinuation {
-                inner:
-                    ContinuationFrame {
-                        bottom,
-                        continuation,
-                    },
-                callee_bottom,
-            }) => {
-                let mut continuation = continuation.take().unwrap();
-                continuation.set_args(thread_ref.stack.split_off(*callee_bottom));
-                drop(thread_ref);
-                (*bottom, continuation.call(gc, self))
-            }
-            Some(Frame::ProtectedCallContinuation {
-                inner:
-                    ContinuationFrame {
-                        bottom,
-                        continuation,
-                    },
-                callee_bottom,
-            }) => {
-                let mut continuation = continuation.take().unwrap();
-                match continuation.args() {
-                    Some(Ok(_)) => unreachable!(),
-                    Some(Err(_)) => (),
-                    None => continuation.set_args(Ok(thread_ref.stack.split_off(*callee_bottom))),
-                }
-                drop(thread_ref);
-                (*bottom, continuation.call(gc, self))
-            }
-            Some(Frame::ResumeContinuation(ContinuationFrame {
-                bottom,
-                continuation,
-            })) => {
-                drop(thread_ref);
-                (*bottom, continuation.take().unwrap().call(gc, self))
-            }
-            Some(Frame::MutateGcContinuation(ContinuationFrame {
-                bottom,
-                continuation,
-            })) => {
-                drop(thread_ref);
-                (*bottom, continuation.take().unwrap().call(gc, self))
-            }
-            None => {
-                let coroutine = self.thread_stack.pop().unwrap();
-                debug_assert!(GcCell::ptr_eq(&coroutine, &thread));
-
-                let values = std::mem::take(&mut thread_ref.stack);
-                if let Some(coroutine) = self.thread_stack.last() {
-                    if let Frame::ResumeContinuation(frame) =
-                        coroutine.borrow_mut(gc).frames.last_mut().unwrap()
-                    {
-                        frame.continuation.as_mut().unwrap().set_args(Ok(values));
-                    } else {
-                        unreachable!()
-                    }
-                }
-                return Ok(None);
-            }
-        };
-
-        let mut thread_ref = thread.borrow_mut(gc);
-        thread_ref.frames.push(current_frame.unwrap());
-
-        let action = match result {
-            Ok(action) => action,
-            Err(kind) => return Err(kind),
-        };
-
-        match action {
-            Action::Call {
-                callee,
-                mut args,
-                continuation,
-            } => {
-                thread_ref.stack.truncate(bottom);
-                *thread_ref.frames.last_mut().unwrap() = Frame::CallContinuation {
-                    inner: ContinuationFrame {
-                        bottom,
-                        continuation: Some(continuation),
-                    },
-                    callee_bottom: bottom,
-                };
-                thread_ref.stack.push(callee);
-                thread_ref.stack.append(&mut args);
-                thread_ref.deferred_call(bottom)?;
-            }
-            Action::ProtectedCall {
-                callee,
-                mut args,
-                continuation,
-            } => {
-                thread_ref.stack.truncate(bottom);
-                *thread_ref.frames.last_mut().unwrap() = Frame::ProtectedCallContinuation {
-                    inner: ContinuationFrame {
-                        bottom,
-                        continuation: Some(continuation),
-                    },
-                    callee_bottom: bottom,
-                };
-                thread_ref.stack.push(callee);
-                thread_ref.stack.append(&mut args);
-                thread_ref.deferred_call(bottom)?;
-            }
-            Action::TailCall { callee, mut args } => {
-                thread_ref.frames.pop().unwrap();
-                thread_ref.stack.truncate(bottom);
-                thread_ref.stack.push(callee);
-                thread_ref.stack.append(&mut args);
-                thread_ref.deferred_call(bottom)?;
-            }
-            Action::Return(mut results) => {
-                thread_ref.frames.pop().unwrap();
-                thread_ref.stack.truncate(bottom);
-                thread_ref.stack.append(&mut results);
-            }
-            Action::ReturnArguments => {
-                thread_ref.frames.pop().unwrap();
-            }
-            Action::Resume {
-                coroutine,
-                mut args,
-                continuation,
-            } => {
-                thread_ref.stack.truncate(bottom);
-                *thread_ref.frames.last_mut().unwrap() =
-                    Frame::ResumeContinuation(ContinuationFrame {
-                        bottom,
-                        continuation: Some(continuation),
-                    });
-                drop(thread_ref);
-
-                let mut coroutine_ref = coroutine.borrow_mut(gc);
-                let resume_result = match coroutine_ref.status {
-                    ThreadStatus::Error(_) => Err(ErrorKind::other("cannot resume dead coroutine")),
-                    ThreadStatus::Unresumable if coroutine_ref.frames.is_empty() => {
-                        Err(ErrorKind::other("cannot resume dead coroutine"))
-                    }
-                    ThreadStatus::Unresumable => {
-                        Err(ErrorKind::other("cannot resume non-suspended coroutine"))
-                    }
-                    ThreadStatus::Resumable => Ok(()),
-                };
-                match resume_result {
-                    Ok(()) => (),
-                    Err(err) => {
-                        drop(coroutine_ref);
-                        if let Frame::ResumeContinuation(frame) =
-                            thread.borrow_mut(gc).frames.last_mut().unwrap()
-                        {
-                            frame.continuation.as_mut().unwrap().set_args(Err(err));
-                        } else {
-                            unreachable!()
-                        }
-                        return Ok(None);
-                    }
-                }
-
-                self.thread_stack.push(coroutine);
-                coroutine_ref.status = ThreadStatus::Unresumable;
-                coroutine_ref.stack.append(&mut args);
-            }
-            Action::Yield(values) => {
-                match self.thread_stack.len() {
-                    0 => unreachable!(),
-                    1 => {
-                        return Err(ErrorKind::other(
-                            "attempt to yield from outside a coroutine",
-                        ))
-                    }
-                    _ => (),
-                }
-
-                let resumer = self.thread_stack.pop().unwrap();
-                debug_assert!(GcCell::ptr_eq(&resumer, &thread));
-
-                thread_ref.stack.truncate(bottom);
-                thread_ref.frames.pop().unwrap();
-                thread_ref.status = ThreadStatus::Resumable;
-
-                let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
-                if let Frame::ResumeContinuation(frame) = resumer_ref.frames.last_mut().unwrap() {
-                    frame.continuation.as_mut().unwrap().set_args(Ok(values));
-                } else {
-                    unreachable!()
-                }
-            }
-            Action::MutateGc {
-                mutator,
-                mut continuation,
-            } => {
-                thread_ref.stack.truncate(bottom);
-                continuation.set_args(());
-                *thread_ref.frames.last_mut().unwrap() =
-                    Frame::MutateGcContinuation(ContinuationFrame {
-                        bottom,
-                        continuation: Some(continuation),
-                    });
-                return Ok(Some(RuntimeAction::MutateGc(mutator)));
-            }
-        }
-
-        Ok(None)
     }
 
     fn deferred_call_index_metamethod<K>(

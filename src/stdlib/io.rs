@@ -4,8 +4,8 @@ use super::{
 };
 use crate::{
     gc::{GcCell, GcContext},
-    runtime::{ErrorKind, Metamethod, Vm},
-    types::{Action, Integer, Table, Type, UserData, Value},
+    runtime::{Action, ErrorKind, Metamethod, Vm},
+    types::{Integer, Table, Type, UserData, Value},
 };
 use bstr::{ByteSlice, B};
 use std::{

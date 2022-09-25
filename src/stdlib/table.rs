@@ -1,8 +1,8 @@
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
-    runtime::{ErrorKind, Vm},
-    types::{Action, Integer, Table, Value},
+    runtime::{Action, ErrorKind, Vm},
+    types::{Integer, Table, Value},
 };
 use bstr::B;
 

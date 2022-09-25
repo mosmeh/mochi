@@ -1,8 +1,8 @@
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
-    runtime::{ErrorKind, Vm},
-    types::{Action, Continuation, Integer, LuaClosure, NativeFunction, Number, Table, Value},
+    runtime::{Action, Continuation, ErrorKind, Vm},
+    types::{Integer, LuaClosure, NativeFunction, Number, Table, Value},
     LUA_VERSION,
 };
 use bstr::{ByteSlice, B};

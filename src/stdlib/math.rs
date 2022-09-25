@@ -1,9 +1,9 @@
 use super::helpers::ArgumentsExt;
 use crate::{
     gc::{GcCell, GcContext},
-    runtime::{ErrorKind, Vm},
+    runtime::{Action, ErrorKind, Vm},
     stdlib::helpers::set_functions_to_table,
-    types::{Action, Integer, NativeClosure, Number, Table, Value},
+    types::{Integer, NativeClosure, Number, Table, Value},
 };
 use bstr::B;
 use rand::{Rng, RngCore, SeedableRng};

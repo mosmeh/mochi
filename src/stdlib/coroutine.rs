@@ -1,8 +1,8 @@
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
-    runtime::{ErrorKind, Vm},
-    types::{Action, Continuation, LuaThread, NativeClosure, Table, ThreadStatus, Value},
+    runtime::{Action, Continuation, ErrorKind, Vm},
+    types::{LuaThread, NativeClosure, Table, ThreadStatus, Value},
 };
 use bstr::B;
 

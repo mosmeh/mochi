@@ -1,8 +1,8 @@
 use super::helpers::ArgumentsExt;
 use crate::{
     gc::{GcCell, GcContext},
-    runtime::{ErrorKind, Vm},
-    types::{Action, Continuation, NativeClosure, NativeFunction, Table, Value},
+    runtime::{Action, Continuation, ErrorKind, Vm},
+    types::{NativeClosure, NativeFunction, Table, Value},
     LUA_VERSION,
 };
 use bstr::{ByteSlice, ByteVec, B};
