@@ -1,8 +1,8 @@
-use super::helpers::{set_functions_to_table, StackExt};
+use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Action, Integer, LuaThread, StackWindow, Table, Value},
+    types::{Action, Integer, Table, Value},
 };
 use bstr::B;
 
@@ -25,18 +25,14 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 fn table_concat<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let table = stack.arg(1);
+    let table = args.nth(1);
     let table = table.borrow_as_table()?;
-    let sep = stack.arg(2);
+    let sep = args.nth(2);
     let sep = sep.to_string_or(B(""))?;
-    let i = stack.arg(3).to_integer_or(1)?;
-    let j = stack.arg(4).to_integer_or_else(|| table.lua_len())?;
+    let i = args.nth(3).to_integer_or(1)?;
+    let j = args.nth(4).to_integer_or_else(|| table.lua_len())?;
 
     let mut strings = Vec::new();
     for index in i..=j {
@@ -61,20 +57,16 @@ fn table_concat<'gc>(
 fn table_insert<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let table = stack.arg(1);
+    let table = args.nth(1);
     let mut table = table.borrow_as_table_mut(gc)?;
     let len = table.lua_len();
 
-    match stack.args().len() {
-        2 => table.set(len + 1, stack.args()[1])?,
+    match args.without_callee().len() {
+        2 => table.set(len + 1, args.without_callee()[1])?,
         3 => {
-            let pos = stack.arg(2).to_integer()?;
+            let pos = args.nth(2).to_integer()?;
             if pos > len + 1 {
                 return Err(ErrorKind::ArgumentError {
                     nth: 2,
@@ -85,7 +77,7 @@ fn table_insert<'gc>(
                 let value = table.get(i);
                 table.set(i + 1, value)?;
             }
-            table.set(pos, stack.args()[2])?;
+            table.set(pos, args.without_callee()[2])?;
         }
         _ => return Err(ErrorKind::other("wrong number of arguments to 'insert'")),
     };
@@ -95,30 +87,26 @@ fn table_insert<'gc>(
 fn table_pack<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-    let mut table = Table::from(stack.args().to_vec());
-    table.set_field(gc.allocate_string(B("n")), stack.args().len() as Integer);
+    let mut table = Table::from(args.without_callee().to_vec());
+    table.set_field(
+        gc.allocate_string(B("n")),
+        args.without_callee().len() as Integer,
+    );
     Ok(Action::Return(vec![gc.allocate_cell(table).into()]))
 }
 
 fn table_remove<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let table = stack.arg(1);
+    let table = args.nth(1);
     let mut table = table.borrow_as_table_mut(gc)?;
     let len = table.lua_len();
 
-    let pos = stack.arg(2).to_integer_or(len)?;
+    let pos = args.nth(2).to_integer_or(len)?;
     if pos > len + 1 {
         return Err(ErrorKind::ArgumentError {
             nth: 2,
@@ -138,16 +126,12 @@ fn table_remove<'gc>(
 fn table_unpack<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let table = stack.arg(1);
+    let table = args.nth(1);
     let table = table.borrow_as_table()?;
-    let start = stack.arg(2).to_integer_or(1)?;
-    let end = stack.arg(3).to_integer_or_else(|| table.lua_len())?;
+    let start = args.nth(2).to_integer_or(1)?;
+    let end = args.nth(3).to_integer_or_else(|| table.lua_len())?;
 
     Ok(Action::Return(
         (start..=end).map(|key| table.get(key)).collect(),

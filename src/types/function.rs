@@ -1,4 +1,4 @@
-use super::{thread::StackWindow, LuaThread};
+use super::LuaThread;
 use crate::{
     gc::{GarbageCollect, Gc, GcCell, GcContext, GcHeap, Tracer},
     runtime::{ErrorKind, Instruction, Vm},
@@ -10,31 +10,28 @@ pub enum Action<'gc> {
     Call {
         callee: Value<'gc>,
         args: Vec<Value<'gc>>,
-        continuation: Box<NativeClosureFn>,
+        continuation: Continuation<'gc, Vec<Value<'gc>>>,
     },
     TailCall {
         callee: Value<'gc>,
         args: Vec<Value<'gc>>,
     },
     Return(Vec<Value<'gc>>),
+    ReturnArguments,
     Resume {
         coroutine: GcCell<'gc, LuaThread<'gc>>,
         args: Vec<Value<'gc>>,
-        continuation: Box<NativeClosureFn>,
+        continuation: Continuation<'gc, Result<Vec<Value<'gc>>, ErrorKind>>,
     },
     Yield(Vec<Value<'gc>>),
     MutateGc {
         mutator: Box<dyn Fn(&mut GcHeap)>,
-        continuation: Box<NativeClosureFn>,
+        continuation: Continuation<'gc, ()>,
     },
 }
 
-pub type NativeFunctionPtr = for<'gc> fn(
-    &'gc GcContext,
-    &mut Vm<'gc>,
-    GcCell<'gc, LuaThread<'gc>>,
-    StackWindow,
-) -> Result<Action<'gc>, ErrorKind>;
+pub type NativeFunctionPtr =
+    for<'gc> fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>;
 
 #[derive(Clone, Copy)]
 pub struct NativeFunction(pub NativeFunctionPtr);
@@ -119,8 +116,7 @@ impl<'gc> From<Gc<'gc, LuaClosureProto<'gc>>> for LuaClosure<'gc> {
 pub type NativeClosureFn = dyn for<'gc> Fn(
     &'gc GcContext,
     &mut Vm<'gc>,
-    GcCell<'gc, LuaThread<'gc>>,
-    StackWindow,
+    Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind>;
 
 pub struct NativeClosure<'gc> {
@@ -146,12 +142,7 @@ impl<'gc> NativeClosure<'gc> {
     pub fn new<T>(func: T) -> Self
     where
         T: 'static
-            + for<'a> Fn(
-                &'a GcContext,
-                &mut Vm<'a>,
-                GcCell<'a, LuaThread<'a>>,
-                StackWindow,
-            ) -> Result<Action<'a>, ErrorKind>,
+            + for<'a> Fn(&'a GcContext, &mut Vm<'a>, Vec<Value<'a>>) -> Result<Action<'a>, ErrorKind>,
     {
         Self {
             func: Box::new(func),
@@ -162,12 +153,7 @@ impl<'gc> NativeClosure<'gc> {
     pub fn with_upvalues<T, U>(func: T, upvalues: U) -> Self
     where
         T: 'static
-            + for<'a> Fn(
-                &'a GcContext,
-                &mut Vm<'a>,
-                GcCell<'a, LuaThread<'a>>,
-                StackWindow,
-            ) -> Result<Action<'a>, ErrorKind>,
+            + for<'a> Fn(&'a GcContext, &mut Vm<'a>, Vec<Value<'a>>) -> Result<Action<'a>, ErrorKind>,
         U: Into<Box<[Value<'gc>]>>,
     {
         Self {
@@ -216,3 +202,122 @@ pub struct RegisterIndex(pub u8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UpvalueIndex(pub u8);
+
+trait ContinuationFn<'gc, T>: GarbageCollect {
+    fn call(&mut self, gc: &'gc GcContext, vm: &mut Vm<'gc>) -> Result<Action<'gc>, ErrorKind>;
+    fn set_args(&mut self, args: T);
+}
+
+pub struct Continuation<'gc, T>(Box<dyn ContinuationFn<'gc, T> + 'gc>);
+
+unsafe impl<R> GarbageCollect for Continuation<'_, R> {
+    fn trace(&self, tracer: &mut Tracer) {
+        self.0.trace(tracer);
+    }
+}
+
+impl<'gc, T: 'gc> Continuation<'gc, T> {
+    pub fn new<F>(f: F) -> Self
+    where
+        F: 'static + Fn(&'gc GcContext, &mut Vm<'gc>, T) -> Result<Action<'gc>, ErrorKind>,
+    {
+        struct SimpleContinuation<R, F> {
+            args: Option<R>,
+            f: F,
+        }
+
+        impl<'gc, T, F> ContinuationFn<'gc, T> for SimpleContinuation<T, F>
+        where
+            F: Fn(&'gc GcContext, &mut Vm<'gc>, T) -> Result<Action<'gc>, ErrorKind>,
+        {
+            fn call(
+                &mut self,
+                gc: &'gc GcContext,
+                vm: &mut Vm<'gc>,
+            ) -> Result<Action<'gc>, ErrorKind> {
+                (self.f)(gc, vm, self.args.take().unwrap())
+            }
+
+            fn set_args(&mut self, args: T) {
+                self.args = Some(args);
+            }
+        }
+
+        unsafe impl<T, F> GarbageCollect for SimpleContinuation<T, F> {
+            fn needs_trace() -> bool {
+                false
+            }
+        }
+
+        Self(Box::new(SimpleContinuation {
+            f: Box::new(f),
+            args: None,
+        }))
+    }
+
+    pub fn with_context<C, F>(context: C, f: F) -> Self
+    where
+        C: 'gc + GarbageCollect,
+        F: 'static + Fn(&'gc GcContext, &mut Vm<'gc>, C, T) -> Result<Action<'gc>, ErrorKind>,
+    {
+        struct ContextContinuation<C, R, F> {
+            context: Option<C>,
+            args: Option<R>,
+            f: F,
+        }
+
+        impl<'gc, C, T, F> ContinuationFn<'gc, T> for ContextContinuation<C, T, F>
+        where
+            C: 'gc + GarbageCollect,
+            F: Fn(&'gc GcContext, &mut Vm<'gc>, C, T) -> Result<Action<'gc>, ErrorKind>,
+        {
+            fn call(
+                &mut self,
+                gc: &'gc GcContext,
+                vm: &mut Vm<'gc>,
+            ) -> Result<Action<'gc>, ErrorKind> {
+                (self.f)(
+                    gc,
+                    vm,
+                    self.context.take().unwrap(),
+                    self.args.take().unwrap(),
+                )
+            }
+
+            fn set_args(&mut self, result: T) {
+                self.args = Some(result);
+            }
+        }
+
+        unsafe impl<C, T, F> GarbageCollect for ContextContinuation<C, T, F>
+        where
+            C: GarbageCollect,
+        {
+            fn needs_trace() -> bool {
+                C::needs_trace()
+            }
+
+            fn trace(&self, tracer: &mut Tracer) {
+                self.context.trace(tracer);
+            }
+        }
+
+        Self(Box::new(ContextContinuation {
+            context: Some(context),
+            args: None,
+            f,
+        }))
+    }
+
+    pub(crate) fn call(
+        mut self,
+        gc: &'gc GcContext,
+        vm: &mut Vm<'gc>,
+    ) -> Result<Action<'gc>, ErrorKind> {
+        self.0.call(gc, vm)
+    }
+
+    pub(crate) fn set_args(&mut self, args: T) {
+        self.0.set_args(args);
+    }
+}

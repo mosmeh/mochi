@@ -1,9 +1,9 @@
-use super::helpers::StackExt;
+use super::helpers::ArgumentsExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
     stdlib::helpers::set_functions_to_table,
-    types::{Action, Integer, LuaThread, NativeClosure, Number, StackWindow, Table, Value},
+    types::{Action, Integer, NativeClosure, Number, Table, Value},
 };
 use bstr::B;
 use rand::{Rng, RngCore, SeedableRng};
@@ -63,14 +63,12 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
         let rng = rng.clone();
         table.set_field(
             gc.allocate_string(B("random")),
-            gc.allocate(NativeClosure::new(move |_, _, thread, window| {
-                let thread = thread.borrow();
-                let stack = thread.stack(&window);
+            gc.allocate(NativeClosure::new(move |_, _, args| {
                 let mut rng = rng.borrow_mut();
-                let result = match stack.args().len() {
+                let result = match args.without_callee().len() {
                     0 => rng.gen::<Number>().into(),
                     1 => {
-                        let upper = stack.arg(1).to_integer()?;
+                        let upper = args.nth(1).to_integer()?;
                         if upper == 0 {
                             rng.gen::<Integer>().into()
                         } else {
@@ -78,8 +76,8 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
                         }
                     }
                     2 => {
-                        let lower = stack.arg(1).to_integer()?;
-                        let upper = stack.arg(2).to_integer()?;
+                        let lower = args.nth(1).to_integer()?;
+                        let upper = args.nth(2).to_integer()?;
                         random_in_range(rng.deref_mut(), lower, upper).into()
                     }
                     _ => return Err(ErrorKind::other("wrong number of arguments")),
@@ -90,14 +88,12 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
     }
     table.set_field(
         gc.allocate_string(B("randomseed")),
-        gc.allocate(NativeClosure::new(move |_, _, thread, window| {
-            let thread = thread.borrow();
-            let stack = thread.stack(&window);
-            let (x, y) = if stack.args().is_empty() {
+        gc.allocate(NativeClosure::new(move |_, _, args| {
+            let (x, y) = if args.without_callee().is_empty() {
                 (seed1(), seed2)
             } else {
-                let x = stack.arg(1).to_integer()?;
-                let y = stack.arg(2).to_integer_or(0)?;
+                let x = args.nth(1).to_integer()?;
+                let y = args.nth(2).to_integer_or(0)?;
                 (x, y)
             };
             *rng.borrow_mut() = rng_from_seeds(x, y);
@@ -112,10 +108,9 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 fn math_abs<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let arg = thread.borrow().stack(&window).arg(1);
+    let arg = args.nth(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
         x.abs().into()
     } else {
@@ -126,32 +121,27 @@ fn math_abs<'gc>(
 
 fn math_acos<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::acos)
+    unary_func(vm, args, Number::acos)
 }
 
 fn math_asin<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::asin)
+    unary_func(vm, args, Number::asin)
 }
 
 fn math_atan<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-    let y = stack.arg(1).to_number()?;
-    let x = stack.arg(2);
+    let y = args.nth(1).to_number()?;
+    let x = args.nth(2);
     let result = if x.is_present() {
         y.atan2(x.to_number()?)
     } else {
@@ -163,10 +153,9 @@ fn math_atan<'gc>(
 fn math_ceil<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let arg = thread.borrow().stack(&window).arg(1);
+    let arg = args.nth(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
     } else {
@@ -178,38 +167,34 @@ fn math_ceil<'gc>(
 
 fn math_cos<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::cos)
+    unary_func(vm, args, Number::cos)
 }
 
 fn math_deg<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::to_degrees)
+    unary_func(vm, args, Number::to_degrees)
 }
 
 fn math_exp<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::exp)
+    unary_func(vm, args, Number::exp)
 }
 
 fn math_floor<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let arg = thread.borrow().stack(&window).arg(1);
+    let arg = args.nth(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
     } else {
@@ -222,13 +207,10 @@ fn math_floor<'gc>(
 fn math_fmod<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-    let x = stack.arg(1);
-    let y = stack.arg(2);
+    let x = args.nth(1);
+    let y = args.nth(2);
     let result = if let (Value::Integer(x), Value::Integer(y)) = (x.as_value()?, y.as_value()?) {
         if y == 0 {
             return Err(ErrorKind::ArgumentError {
@@ -246,13 +228,10 @@ fn math_fmod<'gc>(
 fn math_log<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-    let x = stack.arg(1).to_number()?;
-    let base = stack.arg(2);
+    let x = args.nth(1).to_number()?;
+    let base = args.nth(2);
     let result = if base.is_present() {
         x.log(base.to_number()?)
     } else {
@@ -264,10 +243,9 @@ fn math_log<'gc>(
 fn math_modf<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let x = thread.borrow().stack(&window).arg(1);
+    let x = args.nth(1);
     let (trunc, fract) = if let Value::Integer(x) = x.as_value()? {
         (x.into(), 0.0.into())
     } else {
@@ -279,50 +257,43 @@ fn math_modf<'gc>(
 
 fn math_rad<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::to_radians)
+    unary_func(vm, args, Number::to_radians)
 }
 
 fn math_sin<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::sin)
+    unary_func(vm, args, Number::sin)
 }
 
 fn math_sqrt<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::sqrt)
+    unary_func(vm, args, Number::sqrt)
 }
 
 fn math_tan<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::tan)
+    unary_func(vm, args, Number::tan)
 }
 
 fn math_tointeger<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let result = thread
-        .borrow()
-        .stack(&window)
-        .arg(1)
+    let result = args
+        .nth(1)
         .as_value()?
         .to_integer()
         .map(|i| i.into())
@@ -333,10 +304,9 @@ fn math_tointeger<'gc>(
 fn math_type<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let result = match thread.borrow().stack(&window).arg(1).as_value()? {
+    let result = match args.nth(1).as_value()? {
         Value::Integer(_) => gc.allocate_string(B("integer")).into(),
         Value::Number(_) => gc.allocate_string(B("float")).into(),
         _ => Value::Nil,
@@ -347,74 +317,64 @@ fn math_type<'gc>(
 fn math_ult<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-    let m = stack.arg(1).to_integer()?;
-    let n = stack.arg(2).to_integer()?;
+    let m = args.nth(1).to_integer()?;
+    let n = args.nth(2).to_integer()?;
     Ok(Action::Return(vec![((m as u64) < (n as u64)).into()]))
 }
 
 fn math_cosh<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::cosh)
+    unary_func(vm, args, Number::cosh)
 }
 
 fn math_log10<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::log10)
+    unary_func(vm, args, Number::log10)
 }
 
 fn math_pow<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-    let x = stack.arg(1).to_number()?;
-    let y = stack.arg(2).to_number()?;
+    let x = args.nth(1).to_number()?;
+    let y = args.nth(2).to_number()?;
     Ok(Action::Return(vec![Number::powf(x, y).into()]))
 }
 
 fn math_sinh<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::sinh)
+    unary_func(vm, args, Number::sinh)
 }
 
 fn math_tanh<'gc>(
     _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    unary_func(thread, window, Number::tanh)
+    unary_func(vm, args, Number::tanh)
 }
 
 fn unary_func<'gc, F>(
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    _: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
     f: F,
 ) -> Result<Action<'gc>, ErrorKind>
 where
     F: Fn(Number) -> Number,
 {
-    let x = thread.borrow().stack(&window).arg(1).to_number()?;
+    let x = args.nth(1).to_number()?;
     Ok(Action::Return(vec![f(x).into()]))
 }
 

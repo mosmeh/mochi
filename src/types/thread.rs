@@ -9,13 +9,14 @@ use std::{collections::BTreeMap, fmt::Display};
 pub struct LuaThread<'gc> {
     pub(crate) status: ThreadStatus,
     pub(crate) stack: Vec<Value<'gc>>,
-    pub(crate) frames: Vec<Frame>,
+    pub(crate) frames: Vec<Frame<'gc>>,
     pub(crate) open_upvalues: BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
 }
 
 unsafe impl GarbageCollect for LuaThread<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.stack.trace(tracer);
+        self.frames.trace(tracer);
         self.open_upvalues.trace(tracer);
     }
 }
@@ -50,18 +51,6 @@ impl<'gc> LuaThread<'gc> {
         };
     }
 
-    pub fn stack(&self, window: &StackWindow) -> &[Value<'gc>] {
-        &self.stack[window.bottom..]
-    }
-
-    pub fn stack_mut(&mut self, window: &StackWindow) -> &mut [Value<'gc>] {
-        &mut self.stack[window.bottom..]
-    }
-
-    pub fn resize_stack(&mut self, window: &mut StackWindow, len: usize) {
-        self.stack.resize(window.bottom + len, Value::Nil);
-    }
-
     pub fn traceback(&self) -> Vec<TracebackFrame> {
         self.frames
             .iter()
@@ -75,7 +64,7 @@ impl<'gc> LuaThread<'gc> {
                         lines_defined: proto.lines_defined.clone(),
                     }
                 }
-                Frame::Native(_) | Frame::Continuation(_) => TracebackFrame::Native,
+                _ => TracebackFrame::Native,
             })
             .collect()
     }
@@ -109,10 +98,6 @@ impl Default for ThreadStatus {
     fn default() -> Self {
         Self::Resumable
     }
-}
-
-pub struct StackWindow {
-    pub(crate) bottom: usize,
 }
 
 #[derive(Debug)]

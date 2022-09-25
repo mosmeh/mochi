@@ -1,11 +1,8 @@
-use super::helpers::StackExt;
+use super::helpers::ArgumentsExt;
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{
-        Action, LuaThread, NativeClosure, NativeClosureFn, NativeFunction, StackWindow, Table,
-        Value,
-    },
+    types::{Action, Continuation, NativeClosure, NativeFunction, Table, Value},
     LUA_VERSION,
 };
 use bstr::{ByteSlice, ByteVec, B};
@@ -153,13 +150,9 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
 fn package_require<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let name = gc.allocate_string(stack.arg(1).to_string()?);
+    let name = gc.allocate_string(args.nth(1).to_string()?);
 
     let loaded = vm
         .registry()
@@ -173,7 +166,7 @@ fn package_require<'gc>(
         return Ok(Action::Return(vec![value]));
     }
 
-    let closure = stack.arg(0);
+    let closure = args.nth(0);
     let closure = closure.as_native_closure()?;
     let package = closure
         .upvalues()
@@ -190,13 +183,9 @@ fn package_require<'gc>(
     let i = Cell::new(0);
     let msg = Rc::new(RefCell::new(Vec::new()));
     let continuation = NativeClosure::with_upvalues(
-        move |gc, _, thread, mut window| {
-            let mut thread = thread.borrow_mut(gc);
-            let stack = thread.stack(&window);
-
-            let closure = stack.arg(0);
+        move |_, _, args| {
+            let closure = args.nth(0);
             let closure = closure.as_native_closure()?;
-            thread.resize_stack(&mut window, 1);
 
             let name = closure.upvalues()[0];
             let searchers = closure.upvalues()[1].borrow_as_table().unwrap();
@@ -214,74 +203,63 @@ fn package_require<'gc>(
             }
 
             let msg = msg.clone();
-            let continuation: Box<NativeClosureFn> = Box::new(move |gc, _, thread, mut window| {
-                let mut thread = thread.borrow_mut(gc);
-                let stack = thread.stack(&window);
-
-                let loader = match stack.get(1) {
-                    Some(
-                        value @ Value::NativeFunction(_)
-                        | value @ Value::LuaClosure(_)
-                        | value @ Value::NativeClosure(_),
-                    ) => *value,
-                    Some(value) => {
-                        if let Some(s) = value.to_string() {
-                            let mut msg = msg.borrow_mut();
-                            msg.push_str(b"\n\t");
-                            msg.extend_from_slice(&s);
-                        }
-                        return Ok(Action::TailCall {
-                            callee: stack[0],
-                            args: vec![],
-                        });
-                    }
-                    _ => {
-                        return Ok(Action::TailCall {
-                            callee: stack[0],
-                            args: vec![],
-                        })
-                    }
-                };
-                let loader_data = stack.get(2).copied().unwrap_or_default();
-
-                let closure = stack.arg(0);
-                let closure = closure.as_native_closure()?;
-                let name = closure.upvalues()[0];
-
-                thread.resize_stack(&mut window, 2);
-                let stack = thread.stack_mut(&window);
-                stack[1] = loader_data;
-
-                let continuation: Box<NativeClosureFn> = Box::new(|gc, _, thread, window| {
-                    let thread = thread.borrow();
-                    let stack = thread.stack(&window);
-
-                    let loader_data = stack[1];
-                    let value = match stack.get(2) {
-                        Some(Value::Nil) | None => Value::Boolean(true),
-                        Some(value) => *value,
-                    };
-
-                    let closure = stack.arg(0);
-                    let closure = closure.as_native_closure()?;
-                    let name = closure.upvalues()[0];
-                    let loaded = closure.upvalues()[2];
-                    loaded.borrow_as_table_mut(gc).unwrap().set(name, value)?;
-
-                    Ok(Action::Return(vec![value, loader_data]))
-                });
-
-                Ok(Action::Call {
-                    callee: loader,
-                    args: vec![name, loader_data],
-                    continuation,
-                })
-            });
-
             Ok(Action::Call {
                 callee: searcher,
                 args: vec![name],
-                continuation,
+                continuation: Continuation::with_context(
+                    args[0],
+                    move |_, _, original_callee, results: Vec<Value>| {
+                        let loader = match results.first() {
+                            Some(
+                                value @ Value::NativeFunction(_)
+                                | value @ Value::LuaClosure(_)
+                                | value @ Value::NativeClosure(_),
+                            ) => *value,
+                            Some(value) => {
+                                if let Some(s) = value.to_string() {
+                                    let mut msg = msg.borrow_mut();
+                                    msg.push_str(b"\n\t");
+                                    msg.extend_from_slice(&s);
+                                }
+                                return Ok(Action::TailCall {
+                                    callee: original_callee,
+                                    args: Vec::new(),
+                                });
+                            }
+                            _ => {
+                                return Ok(Action::TailCall {
+                                    callee: original_callee,
+                                    args: Vec::new(),
+                                })
+                            }
+                        };
+                        let loader_data = results.get(1).copied().unwrap_or_default();
+
+                        let closure = original_callee.as_native_closure().unwrap();
+                        let name = closure.upvalues()[0];
+
+                        Ok(Action::Call {
+                            callee: loader,
+                            args: vec![name, loader_data],
+                            continuation: Continuation::with_context(
+                                (original_callee, loader_data),
+                                |gc, _, (closure, loader_data), results: Vec<Value>| {
+                                    let value = match results.first() {
+                                        Some(Value::Nil) | None => Value::Boolean(true),
+                                        Some(value) => *value,
+                                    };
+
+                                    let closure = closure.as_native_closure().unwrap();
+                                    let name = closure.upvalues()[0];
+                                    let loaded = closure.upvalues()[2];
+                                    loaded.borrow_as_table_mut(gc).unwrap().set(name, value)?;
+
+                                    Ok(Action::Return(vec![value, loader_data]))
+                                },
+                            ),
+                        })
+                    },
+                ),
             })
         },
         vec![name.into(), searchers, loaded.into()],
@@ -296,22 +274,18 @@ fn package_require<'gc>(
 fn package_searchpath<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let name = stack.arg(1);
+    let name = args.nth(1);
     let name = name.to_string()?;
 
-    let path = stack.arg(2);
+    let path = args.nth(2);
     let path = path.to_string()?;
 
-    let sep = stack.arg(3);
+    let sep = args.nth(3);
     let sep = sep.to_string_or(B("."))?;
 
-    let rep = stack.arg(4);
+    let rep = args.nth(4);
     let rep = rep.to_string_or(LUA_DIRSEP)?;
 
     Ok(Action::Return(match search_path(name, path, sep, rep) {
@@ -346,10 +320,9 @@ where
 fn searcher_preload<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let name = thread.borrow().stack(&window).arg(1);
+    let name = args.nth(1);
     let name = name.to_string()?;
 
     let preload = vm
@@ -370,16 +343,12 @@ fn searcher_preload<'gc>(
 fn searcher_lua<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let name = stack.arg(1);
+    let name = args.nth(1);
     let name = name.to_string()?;
 
-    let closure = stack.arg(0);
+    let closure = args.nth(0);
     let closure = closure.as_native_closure()?;
     let package = closure
         .upvalues()

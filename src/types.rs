@@ -5,13 +5,13 @@ mod thread;
 mod user_data;
 
 pub use function::{
-    Action, LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeClosureFn, NativeFunction,
-    NativeFunctionPtr, RegisterIndex, Upvalue, UpvalueDescription, UpvalueIndex,
+    Action, Continuation, LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeClosureFn,
+    NativeFunction, NativeFunctionPtr, RegisterIndex, Upvalue, UpvalueDescription, UpvalueIndex,
 };
 pub use string::LuaString;
 pub use table::{Table, TableError};
 pub(crate) use thread::ThreadStatus;
-pub use thread::{LuaThread, StackWindow, TracebackFrame};
+pub use thread::{LuaThread, TracebackFrame};
 pub use user_data::UserData;
 
 use crate::gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer};

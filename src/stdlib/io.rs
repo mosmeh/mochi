@@ -1,11 +1,11 @@
 use super::{
     file::{self, FileError, FileHandle, FullyBufferedFile, LineBufferedFile, LuaFile},
-    helpers::{set_functions_to_table, StackExt},
+    helpers::{set_functions_to_table, ArgumentsExt},
 };
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Metamethod, Vm},
-    types::{Action, Integer, LuaThread, StackWindow, Table, Type, UserData, Value},
+    types::{Action, Integer, Table, Type, UserData, Value},
 };
 use bstr::{ByteSlice, B};
 use std::{
@@ -76,10 +76,9 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
 fn io_close<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let file = thread.borrow().stack(&window).arg(1);
+    let file = args.nth(1);
     file::translate_and_return_error(gc, || {
         if file.is_present() {
             file.borrow_as_userdata_mut::<FileHandle>(gc)?.close()?;
@@ -98,8 +97,7 @@ fn io_close<'gc>(
 fn io_flush<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    _: GcCell<LuaThread<'gc>>,
-    _: StackWindow,
+    _: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let output = vm
         .registry()
@@ -119,31 +117,19 @@ fn io_flush<'gc>(
 fn io_input<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    common_io_input_or_output(
-        gc,
-        vm,
-        thread,
-        window,
-        IO_INPUT,
-        OpenOptions::new().read(true),
-    )
+    common_io_input_or_output(gc, vm, args, IO_INPUT, OpenOptions::new().read(true))
 }
 
 fn io_open<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let filename = stack.arg(1);
+    let filename = args.nth(1);
     let filename = filename.to_string()?;
-    let mode = stack.arg(2);
+    let mode = args.nth(2);
     let mode = mode.to_string_or(B("r"))?;
 
     let mut options = OpenOptions::new();
@@ -171,28 +157,16 @@ fn io_open<'gc>(
 fn io_output<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    common_io_input_or_output(
-        gc,
-        vm,
-        thread,
-        window,
-        IO_OUTPUT,
-        OpenOptions::new().write(true),
-    )
+    common_io_input_or_output(gc, vm, args, IO_OUTPUT, OpenOptions::new().write(true))
 }
 
 fn io_read<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
     let input = vm
         .registry()
         .borrow()
@@ -201,7 +175,7 @@ fn io_read<'gc>(
 
     file::translate_and_return_error(gc, || {
         if let Some(input) = input.get_mut() {
-            common_read(gc, input, stack, 1)
+            common_read(gc, input, &args, 1)
         } else {
             Err(FileError::DefaultFileClosed { kind: "input" })
         }
@@ -211,10 +185,9 @@ fn io_read<'gc>(
 fn io_type<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let handle = thread.borrow().stack(&window).arg(1).as_value()?;
+    let handle = args.nth(1).as_value()?;
     let result = if let Some(handle) = handle.borrow_as_userdata::<FileHandle>() {
         let s = if handle.is_open() {
             B("file")
@@ -231,12 +204,8 @@ fn io_type<'gc>(
 fn io_write<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
     let output = vm
         .registry()
         .borrow()
@@ -245,8 +214,8 @@ fn io_write<'gc>(
 
     file::translate_and_return_error(gc, || {
         if let Some(output_ref) = output_ref.get_mut() {
-            for i in 1..stack.len() {
-                output_ref.write_all(stack.arg(i).to_string()?.as_ref())?;
+            for i in 1..args.len() {
+                output_ref.write_all(args.nth(i).to_string()?.as_ref())?;
             }
             Ok(vec![output])
         } else {
@@ -258,10 +227,9 @@ fn io_write<'gc>(
 fn file_close<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let handle = thread.borrow().stack(&window).arg(1);
+    let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
     file::translate_and_return_error(gc, || {
         handle.close()?;
@@ -272,10 +240,9 @@ fn file_close<'gc>(
 fn file_flush<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let handle = thread.borrow().stack(&window).arg(1);
+    let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
     file::translate_and_return_error(gc, || {
         if let Some(file) = handle.get_mut() {
@@ -290,13 +257,9 @@ fn file_flush<'gc>(
 fn file_read<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let handle = stack.arg(1);
+    let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
     file::translate_and_return_error(gc, || {
@@ -305,25 +268,21 @@ fn file_read<'gc>(
         } else {
             return Err(FileError::Closed);
         };
-        common_read(gc, file, stack, 2)
+        common_read(gc, file, &args, 2)
     })
 }
 
 fn file_seek<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let handle = stack.arg(1);
+    let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
-    let whence = stack.arg(2);
+    let whence = args.nth(2);
     let whence = whence.to_string_or(B("cur"))?;
-    let offset = stack.arg(3).to_integer_or(0)?;
+    let offset = args.nth(3).to_integer_or(0)?;
 
     file::translate_and_return_error(gc, || {
         let pos = match whence.as_ref() {
@@ -357,19 +316,15 @@ fn file_seek<'gc>(
 fn file_setvbuf<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let handle = stack.arg(1);
+    let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
-    let mode = stack.arg(2);
+    let mode = args.nth(2);
     let mode = mode.to_string()?;
 
-    let size = stack.arg(3);
+    let size = args.nth(3);
     let size = if size.is_present() {
         size.to_integer()?.try_into().ok()
     } else {
@@ -407,20 +362,19 @@ fn file_setvbuf<'gc>(
 
 fn file_write<'gc>(
     gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
+    let thread = vm.current_thread();
+    let _thread = thread.borrow();
 
-    let handle = stack.arg(1);
+    let handle = args.nth(1);
     let mut handle_ref = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
     file::translate_and_return_error(gc, || {
         if let Some(file) = handle_ref.get_mut() {
-            for i in 2..stack.len() {
-                let s = stack.arg(i);
+            for i in 2..args.len() {
+                let s = args.nth(i);
                 let s = s.to_string()?;
                 file.write_all(&s)?;
             }
@@ -434,12 +388,11 @@ fn file_write<'gc>(
 fn common_io_input_or_output<'gc, K: AsRef<[u8]>>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
     key: K,
     options: &OpenOptions,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let file = thread.borrow().stack(&window).arg(1);
+    let file = args.nth(1);
     let registry = vm.registry();
     let key = gc.allocate_string(key.as_ref());
     file::translate_and_raise_error(|| {
@@ -462,7 +415,7 @@ fn common_io_input_or_output<'gc, K: AsRef<[u8]>>(
 fn common_read<'gc>(
     gc: &'gc GcContext,
     file: &mut LuaFile,
-    stack: &[Value<'gc>],
+    args: &[Value<'gc>],
     first_arg_index: usize,
 ) -> Result<Vec<Value<'gc>>, FileError> {
     fn read_line<'gc>(
@@ -482,14 +435,14 @@ fn common_read<'gc>(
         }
     }
 
-    if first_arg_index >= stack.len() {
+    if first_arg_index >= args.len() {
         let value = read_line(gc, file, true)?.unwrap_or_default();
         return Ok(vec![value]);
     }
 
     let mut values = Vec::new();
-    for i in first_arg_index..stack.len() {
-        let arg = stack.arg(i);
+    for i in first_arg_index..args.len() {
+        let arg = args.nth(i);
         if arg.as_value()?.ty() == Type::Number {
             let l = arg.to_integer()?;
             let mut buf = vec![0; l as usize];

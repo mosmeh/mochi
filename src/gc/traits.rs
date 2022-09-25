@@ -26,6 +26,37 @@ pub unsafe trait GarbageCollect {
     fn finalize(&self, finalizer: &mut Finalizer) {}
 }
 
+unsafe impl<T: GarbageCollect> GarbageCollect for &T {
+    fn needs_trace() -> bool {
+        T::needs_trace()
+    }
+
+    fn trace(&self, tracer: &mut Tracer) {
+        (**self).trace(tracer);
+    }
+}
+
+unsafe impl GarbageCollect for () {
+    fn needs_trace() -> bool {
+        false
+    }
+}
+
+unsafe impl<T, U> GarbageCollect for (T, U)
+where
+    T: GarbageCollect,
+    U: GarbageCollect,
+{
+    fn needs_trace() -> bool {
+        T::needs_trace() || U::needs_trace()
+    }
+
+    fn trace(&self, tracer: &mut Tracer) {
+        self.0.trace(tracer);
+        self.1.trace(tracer);
+    }
+}
+
 unsafe impl GarbageCollect for u8 {
     fn needs_trace() -> bool {
         false
@@ -92,11 +123,7 @@ unsafe impl<T: GarbageCollect> GarbageCollect for &mut [T] {
     }
 }
 
-unsafe impl<T: GarbageCollect> GarbageCollect for Box<T> {
-    fn needs_trace() -> bool {
-        T::needs_trace()
-    }
-
+unsafe impl<T: ?Sized + GarbageCollect> GarbageCollect for Box<T> {
     fn trace(&self, tracer: &mut Tracer) {
         self.deref().trace(tracer);
     }

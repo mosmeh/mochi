@@ -1,8 +1,8 @@
-use super::helpers::{set_functions_to_table, StackExt};
+use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Action, Integer, LuaThread, NativeFunction, StackWindow, Table, Value},
+    types::{Action, Integer, NativeFunction, Table, Value},
 };
 use bstr::B;
 
@@ -31,15 +31,11 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 fn utf8_char<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
     let mut string = Vec::new();
-    for i in 1..stack.len() {
-        let mut code = stack.arg(i).to_integer()? as u32;
+    for i in 1..args.len() {
+        let mut code = args.nth(i).to_integer()? as u32;
         if code > MAXUTF {
             return Err(ErrorKind::ArgumentError {
                 nth: i,
@@ -75,20 +71,12 @@ fn utf8_char<'gc>(
 fn utf8_codes<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    fn iterate<'gc>(
-        thread: GcCell<LuaThread<'gc>>,
-        window: StackWindow,
-        lax: bool,
-    ) -> Result<Action<'gc>, ErrorKind> {
-        let thread = thread.borrow();
-        let stack = thread.stack(&window);
-
-        let s = stack.arg(1);
+    fn iterate<'gc>(args: &[Value<'gc>], lax: bool) -> Result<Action<'gc>, ErrorKind> {
+        let s = args.nth(1);
         let s = s.to_string()?;
-        let n = stack.arg(2).to_integer()?;
+        let n = args.nth(2).to_integer()?;
 
         let mut i = n as usize;
         loop {
@@ -121,25 +109,20 @@ fn utf8_codes<'gc>(
     fn iterate_lax<'gc>(
         _: &'gc GcContext,
         _: &mut Vm<'gc>,
-        thread: GcCell<LuaThread<'gc>>,
-        window: StackWindow,
+        args: Vec<Value<'gc>>,
     ) -> Result<Action<'gc>, ErrorKind> {
-        iterate(thread, window, true)
+        iterate(&args, true)
     }
 
     fn iterate_strict<'gc>(
         _: &'gc GcContext,
         _: &mut Vm<'gc>,
-        thread: GcCell<LuaThread<'gc>>,
-        window: StackWindow,
+        args: Vec<Value<'gc>>,
     ) -> Result<Action<'gc>, ErrorKind> {
-        iterate(thread, window, false)
+        iterate(&args, false)
     }
 
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let s = stack.arg(1);
+    let s = args.nth(1);
     if s.to_string()?
         .first()
         .copied()
@@ -152,8 +135,8 @@ fn utf8_codes<'gc>(
         });
     }
 
-    let lax = stack
-        .arg(2)
+    let lax = args
+        .nth(2)
         .get()
         .map(|value| value.to_boolean())
         .unwrap_or_default();
@@ -168,18 +151,14 @@ fn utf8_codes<'gc>(
 fn utf8_codepoint<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let s = stack.arg(1);
+    let s = args.nth(1);
     let s = s.to_string()?;
-    let i = stack.arg(2).to_integer_or(1)?;
-    let j = stack.arg(3).to_integer_or(i)?;
-    let lax = stack
-        .arg(4)
+    let i = args.nth(2).to_integer_or(1)?;
+    let j = args.nth(3).to_integer_or(i)?;
+    let lax = args
+        .nth(4)
         .get()
         .map(|value| value.to_boolean())
         .unwrap_or_default();
@@ -219,18 +198,14 @@ fn utf8_codepoint<'gc>(
 fn utf8_len<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let s = stack.arg(1);
+    let s = args.nth(1);
     let s = s.to_string()?;
-    let i = stack.arg(2).to_integer_or(1)?;
-    let j = stack.arg(3).to_integer_or(-1)?;
-    let lax = stack
-        .arg(4)
+    let i = args.nth(2).to_integer_or(1)?;
+    let j = args.nth(3).to_integer_or(-1)?;
+    let lax = args
+        .nth(4)
         .get()
         .map(|value| value.to_boolean())
         .unwrap_or_default();
@@ -273,17 +248,13 @@ fn utf8_len<'gc>(
 fn utf8_offset<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let s = stack.arg(1);
+    let s = args.nth(1);
     let s = s.to_string()?;
-    let mut n = stack.arg(2).to_integer()?;
-    let i = stack
-        .arg(3)
+    let mut n = args.nth(2).to_integer()?;
+    let i = args
+        .nth(3)
         .to_integer_or(if n >= 0 { 1 } else { s.len() as Integer + 1 })?;
     if i < 1 || (s.len() as Integer) + 1 < i {
         return Err(ErrorKind::ArgumentError {

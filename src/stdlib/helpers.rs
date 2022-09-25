@@ -12,13 +12,13 @@ use std::{
     cell::{Ref, RefMut},
 };
 
-pub trait StackExt<'gc> {
+pub trait ArgumentsExt<'gc> {
     fn callee(&self) -> Value<'gc>;
-    fn args(&self) -> &[Value<'gc>];
-    fn arg(&self, nth: usize) -> Argument<'gc>;
+    fn without_callee(&self) -> &[Value<'gc>];
+    fn nth(&self, nth: usize) -> Argument<'gc>;
 }
 
-impl<'gc, T> StackExt<'gc> for T
+impl<'gc, T> ArgumentsExt<'gc> for T
 where
     T: Borrow<[Value<'gc>]>,
 {
@@ -26,11 +26,11 @@ where
         self.borrow()[0]
     }
 
-    fn args(&self) -> &[Value<'gc>] {
+    fn without_callee(&self) -> &[Value<'gc>] {
         &self.borrow()[1..]
     }
 
-    fn arg(&self, nth: usize) -> Argument<'gc> {
+    fn nth(&self, nth: usize) -> Argument<'gc> {
         Argument {
             value: self.borrow().get(nth).copied(),
             nth,
@@ -116,10 +116,6 @@ impl<'gc> Argument<'gc> {
 
     pub fn borrow_as_table_mut(&self, gc: &'gc GcContext) -> Result<RefMut<Table<'gc>>, ErrorKind> {
         self.to_type("table", |value| value.borrow_as_table_mut(gc))
-    }
-
-    pub fn borrow_as_userdata<T: Any>(&self) -> Result<Ref<T>, ErrorKind> {
-        self.to_type("userdata", |value| value.borrow_as_userdata())
     }
 
     pub fn borrow_as_userdata_mut<'a, T: Any>(

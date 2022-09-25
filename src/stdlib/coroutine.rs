@@ -1,11 +1,10 @@
-use super::helpers::{set_functions_to_table, StackExt};
+use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
-    runtime::{CoroutineResult, ErrorKind, Vm},
-    types::{Action, LuaThread, NativeClosure, NativeClosureFn, StackWindow, Table, ThreadStatus},
+    runtime::{ErrorKind, Vm},
+    types::{Action, Continuation, LuaThread, NativeClosure, Table, ThreadStatus, Value},
 };
 use bstr::B;
-use std::ops::Deref;
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
@@ -28,12 +27,11 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 
 fn coroutine_close<'gc>(
     gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let co = thread.borrow().stack(&window).arg(1).as_thread()?;
-    let status = get_coroutine_status(thread, co);
+    let co = args.nth(1).as_thread()?;
+    let status = get_coroutine_status(vm.current_thread(), co);
     if !matches!(status, CoroutineStatus::Dead | CoroutineStatus::Suspended) {
         return Err(ErrorKind::Other(format!(
             "cannot close a {} coroutine",
@@ -58,10 +56,9 @@ fn coroutine_close<'gc>(
 fn coroutine_create<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let f = thread.borrow().stack(&window).arg(1).ensure_function()?;
+    let f = args.nth(1).ensure_function()?;
     let co = LuaThread::with_body(f);
 
     Ok(Action::Return(vec![gc.allocate_cell(co).into()]))
@@ -70,14 +67,13 @@ fn coroutine_create<'gc>(
 fn coroutine_isyieldable<'gc>(
     _: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let co = thread.borrow().stack(&window).arg(1);
+    let co = args.nth(1);
     let co = if co.is_present() {
         co.as_thread()?
     } else {
-        thread
+        vm.current_thread()
     };
     let is_main_thread = GcCell::ptr_eq(&co, &vm.main_thread());
 
@@ -85,29 +81,20 @@ fn coroutine_isyieldable<'gc>(
 }
 
 fn coroutine_resume<'gc>(
-    gc: &'gc GcContext,
+    _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    mut window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let mut thread = thread.borrow_mut(gc);
-    let stack = thread.stack(&window);
-    let coroutine = stack.arg(1).as_thread()?;
-    let args = stack.args()[1..].to_vec();
-    thread.resize_stack(&mut window, 0);
+    let coroutine = args.nth(1).as_thread()?;
+    let args = args.without_callee()[1..].to_vec();
 
     Ok(Action::Resume {
         coroutine,
         args,
-        continuation: Box::new(|gc, _, thread, window| {
-            let thread = thread.borrow();
-            let stack = thread.stack(&window);
-            let result = stack.arg(0);
-            let result = result.borrow_as_userdata::<CoroutineResult>()?;
-            Ok(Action::Return(match result.deref() {
-                Ok(()) => {
-                    let mut results = vec![true.into()];
-                    results.extend_from_slice(&stack[1..]);
+        continuation: Continuation::new(|gc, _, result: Result<Vec<Value>, ErrorKind>| {
+            Ok(Action::Return(match result {
+                Ok(mut results) => {
+                    results.insert(0, true.into());
                     results
                 }
                 Err(err) => vec![
@@ -122,9 +109,9 @@ fn coroutine_resume<'gc>(
 fn coroutine_running<'gc>(
     _: &'gc GcContext,
     vm: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    _: StackWindow,
+    _: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
+    let thread = vm.current_thread();
     Ok(Action::Return(vec![
         thread.into(),
         GcCell::ptr_eq(&thread, &vm.main_thread()).into(),
@@ -133,12 +120,11 @@ fn coroutine_running<'gc>(
 
 fn coroutine_status<'gc>(
     gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let co = thread.borrow().stack(&window).arg(1).as_thread()?;
-    let status = get_coroutine_status(thread, co);
+    let co = args.nth(1).as_thread()?;
+    let status = get_coroutine_status(vm.current_thread(), co);
     Ok(Action::Return(vec![gc
         .allocate_string(status.name().as_bytes())
         .into()]))
@@ -147,47 +133,38 @@ fn coroutine_status<'gc>(
 fn coroutine_wrap<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let f = thread.borrow().stack(&window).arg(1).ensure_function()?;
+    let f = args.nth(1).ensure_function()?;
     let co = LuaThread::with_body(f);
 
     let wrapper = NativeClosure::with_upvalues(
-        |_, _, thread, window| {
-            let thread = thread.borrow();
-            let stack = thread.stack(&window);
-
-            let closure = stack.arg(0);
+        |_, _, args| {
+            let closure = args.nth(0);
             let closure = closure.as_native_closure()?;
             let coroutine = closure.upvalues().first().unwrap().as_thread().unwrap();
 
-            let continuation: Box<NativeClosureFn> = Box::new(|gc, _, thread, window| {
-                let thread = thread.borrow();
-                let stack = thread.stack(&window);
-
-                let result = stack.arg(1);
-                let result = result.borrow_as_userdata::<CoroutineResult>()?;
-                match result.deref() {
-                    Ok(()) => Ok(Action::Return(stack.args()[1..].to_vec())),
-                    Err(err) => {
-                        stack
-                            .arg(0)
-                            .as_native_closure()?
-                            .upvalues()
-                            .first()
-                            .unwrap()
-                            .borrow_as_thread_mut(gc)
-                            .unwrap()
-                            .close();
-                        Err(err.clone())
-                    }
-                }
-            });
             Ok(Action::Resume {
                 coroutine,
-                args: stack.args().to_vec(),
-                continuation,
+                args: args.without_callee().to_vec(),
+                continuation: Continuation::with_context(
+                    args[0],
+                    |gc, _, original_callee, result| match result {
+                        Ok(results) => Ok(Action::Return(results)),
+                        Err(err) => {
+                            original_callee
+                                .as_native_closure()
+                                .unwrap()
+                                .upvalues()
+                                .first()
+                                .unwrap()
+                                .borrow_as_thread_mut(gc)
+                                .unwrap()
+                                .close();
+                            Err(err)
+                        }
+                    },
+                ),
             })
         },
         vec![gc.allocate_cell(co).into()],
@@ -199,12 +176,9 @@ fn coroutine_wrap<'gc>(
 fn coroutine_yield<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    Ok(Action::Yield(
-        thread.borrow().stack(&window).args().to_vec(),
-    ))
+    Ok(Action::Yield(args.without_callee().to_vec()))
 }
 
 enum CoroutineStatus {

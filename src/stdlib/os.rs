@@ -1,11 +1,11 @@
 use super::{
     file,
-    helpers::{set_functions_to_table, StackExt},
+    helpers::{set_functions_to_table, ArgumentsExt},
 };
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{ErrorKind, Vm},
-    types::{Action, Integer, LuaThread, StackWindow, Table, Value},
+    types::{Action, Integer, Table, Value},
 };
 use bstr::{ByteSlice, ByteVec, B};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
@@ -33,8 +33,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 fn os_clock<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    _: GcCell<LuaThread<'gc>>,
-    _: StackWindow,
+    _: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let clock = cpu_time::ProcessTime::now()
         .as_duration()
@@ -46,16 +45,12 @@ fn os_clock<'gc>(
 fn os_date<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let format = stack.arg(1);
+    let format = args.nth(1);
     let format = format.to_string_or(B("%c"))?;
 
-    let time = stack.arg(2).to_integer_or_else(|| Utc::now().timestamp())?;
+    let time = args.nth(2).to_integer_or_else(|| Utc::now().timestamp())?;
     if NaiveDateTime::from_timestamp_opt(time, 0).is_none() {
         return Err(ErrorKind::ArgumentError {
             nth: 2,
@@ -114,27 +109,23 @@ fn os_date<'gc>(
 fn os_difftime<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-    let t2 = stack.arg(1).to_number()?;
-    let t1 = stack.arg(2).to_number()?;
+    let t2 = args.nth(1).to_number()?;
+    let t1 = args.nth(2).to_number()?;
     Ok(Action::Return(vec![(t2 - t1).into()]))
 }
 
 fn os_exit<'gc>(
     _: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     // TODO: use std::process::ExitCode::exit_process once stabilized
     const EXIT_SUCCESS: i32 = 0;
     const EXIT_FAILURE: i32 = 1;
 
-    let code = thread.borrow().stack(&window).arg(1);
+    let code = args.nth(1);
     let code = match code.get() {
         Some(Value::Boolean(success)) => {
             if success {
@@ -153,13 +144,10 @@ fn os_exit<'gc>(
 fn os_getenv<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let env = thread
-        .borrow()
-        .stack(&window)
-        .arg(1)
+    let env = args
+        .nth(1)
         .to_string()?
         .to_os_str()
         .ok()
@@ -173,10 +161,9 @@ fn os_getenv<'gc>(
 fn os_remove<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let filename = thread.borrow().stack(&window).arg(1);
+    let filename = args.nth(1);
     let filename = filename.to_string()?;
     file::translate_and_return_error(gc, || {
         let path = filename.to_path()?;
@@ -197,15 +184,11 @@ fn os_remove<'gc>(
 fn os_rename<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let old_name = stack.arg(1);
+    let old_name = args.nth(1);
     let old_name = old_name.to_string()?;
-    let new_name = stack.arg(2);
+    let new_name = args.nth(2);
     let new_name = new_name.to_string()?;
 
     file::translate_and_return_error(gc, || {
@@ -219,15 +202,11 @@ fn os_rename<'gc>(
 fn os_setlocale<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = thread.borrow();
-    let stack = thread.stack(&window);
-
-    let locale = stack.arg(1);
+    let locale = args.nth(1);
     let locale = locale.to_string_or(B("C"))?;
-    let category = stack.arg(2);
+    let category = args.nth(2);
     let category = category.to_string_or(B("all"))?;
     if !matches!(
         category.as_ref(),
@@ -251,8 +230,7 @@ fn os_setlocale<'gc>(
 fn os_time<'gc>(
     gc: &'gc GcContext,
     _: &mut Vm<'gc>,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    window: StackWindow,
+    args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     fn get_field<'gc, T, D>(
         gc: &'gc GcContext,
@@ -281,7 +259,7 @@ fn os_time<'gc>(
         }
     }
 
-    let table = thread.borrow().stack(&window).arg(1);
+    let table = args.nth(1);
     if table.get().is_none() {
         return Ok(Action::Return(vec![Utc::now().timestamp().into()]));
     }
