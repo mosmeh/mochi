@@ -114,6 +114,12 @@ enum LazyRValue<'gc> {
         args: FunctionArguments<'gc>,
         may_return_multiple_values: bool,
     },
+    MethodCall {
+        table: Box<LazyRValue<'gc>>,
+        name: LuaString<'gc>,
+        args: FunctionArguments<'gc>,
+        may_return_multiple_values: bool,
+    },
     UnaryOp {
         op: UnaryOp,
         inner: Box<LazyRValue<'gc>>,
@@ -158,6 +164,10 @@ impl LazyRValue<'_> {
     fn may_have_multiple_values(&self) -> bool {
         match self {
             Self::FunctionCall {
+                may_return_multiple_values,
+                ..
+            } => *may_return_multiple_values,
+            Self::MethodCall {
                 may_return_multiple_values,
                 ..
             } => *may_return_multiple_values,
@@ -446,32 +456,59 @@ impl<'gc> CodeGenerator<'gc> {
         dest: RegisterIndex,
     ) -> Result<(), CodegenError> {
         self.discharge_to_register(callee, dest)?;
-
-        let num_fixed_args = match args {
-            FunctionArguments::Expressions(expressions) => {
-                let count = self.emit_open_expr_list(expressions, RegisterIndex(dest.0 + 1))?;
-                count.map(|c| c.try_into().unwrap())
-            }
-            FunctionArguments::TableConstructor(expr) => {
-                self.ensure_register_window(dest, 2)?;
-                let table = self.evaluate_table_constructor_expr(expr)?;
-                self.discharge_to_register(table, RegisterIndex(dest.0 + 1))?;
-                Some(1)
-            }
-            FunctionArguments::String(string) => {
-                self.ensure_register_window(dest, 2)?;
-                self.discharge_to_register(string, RegisterIndex(dest.0 + 1))?;
-                Some(1)
-            }
-        };
-
+        let num_fixed_args = self.emit_func_args(args, RegisterIndex(dest.0 + 1))?;
         self.emit(IrInstruction::Call {
             callee: dest,
             num_fixed_args,
         });
         self.current_frame().register_top = RegisterIndex(dest.0 + 1);
-
         Ok(())
+    }
+
+    fn emit_method_call(
+        &mut self,
+        table: impl Into<LazyRValue<'gc>>,
+        name: LuaString<'gc>,
+        args: FunctionArguments<'gc>,
+        dest: RegisterIndex,
+    ) -> Result<(), CodegenError> {
+        let table = self.discharge_to_any_register(table)?;
+        let key = self.discharge_to_rk(name)?;
+        self.ensure_register_window(dest, 2)?;
+        self.emit(IrInstruction::GetSelf { dest, table, key });
+
+        let num_fixed_args = self.emit_func_args(args, RegisterIndex(dest.0 + 2))?;
+        self.emit(IrInstruction::Call {
+            callee: dest,
+            num_fixed_args: num_fixed_args.map(|n| n + 1),
+        });
+
+        self.current_frame().register_top = RegisterIndex(dest.0 + 1);
+        Ok(())
+    }
+
+    fn emit_func_args(
+        &mut self,
+        args: FunctionArguments<'gc>,
+        dest: RegisterIndex,
+    ) -> Result<Option<u8>, CodegenError> {
+        let num_fixed_args = match args {
+            FunctionArguments::Expressions(expressions) => {
+                let count = self.emit_open_expr_list(expressions, dest)?;
+                count.map(|c| c.try_into().unwrap())
+            }
+            FunctionArguments::TableConstructor(expr) => {
+                self.ensure_register_window(dest, 1)?;
+                let table = self.evaluate_table_constructor_expr(expr)?;
+                self.discharge_to_register(table, dest)?;
+                Some(1)
+            }
+            FunctionArguments::String(string) => {
+                self.discharge_to_register(string, dest)?;
+                Some(1)
+            }
+        };
+        Ok(num_fixed_args)
     }
 
     fn emit_open_expr_list(
@@ -659,6 +696,14 @@ impl<'gc> CodeGenerator<'gc> {
                 may_return_multiple_values: _,
             } => {
                 self.emit_func_call(*callee, args, dest)?;
+            }
+            LazyRValue::MethodCall {
+                table,
+                name,
+                args,
+                may_return_multiple_values: _,
+            } => {
+                self.emit_method_call(*table, name, args, dest)?;
             }
             LazyRValue::UnaryOp { op, inner } => {
                 let operand = if let LazyRValue::LValue(LazyLValue::Register(lhs)) = *inner {

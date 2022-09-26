@@ -12,6 +12,7 @@ use crate::{
     },
     types::{Integer, LuaString, RegisterIndex, Value},
 };
+use bstr::B;
 
 impl<'gc> CodeGenerator<'gc> {
     pub fn codegen_chunk(&mut self, chunk: Chunk<'gc>) -> Result<(), CodegenError> {
@@ -351,7 +352,7 @@ impl<'gc> CodeGenerator<'gc> {
         let proto = if let Some(method) = statement.method {
             lvalue = self.resolve_table_field(lvalue, method)?;
 
-            let mut params = vec![FunctionParameter::Name(method)];
+            let mut params = vec![FunctionParameter::Name(self.gc.allocate_string(B("self")))];
             params.extend_from_slice(&statement.params);
             self.emit_function(params, statement.body)?
         } else {
@@ -462,9 +463,12 @@ impl<'gc> CodeGenerator<'gc> {
                     args,
                     may_return_multiple_values: true,
                 },
-                Suffix::MethodCall { .. } => {
-                    todo!("method call")
-                }
+                Suffix::MethodCall { name, args } => LazyRValue::MethodCall {
+                    table: rvalue.into(),
+                    name,
+                    args,
+                    may_return_multiple_values: true,
+                },
             };
         }
         Ok(rvalue)
@@ -485,6 +489,17 @@ impl<'gc> CodeGenerator<'gc> {
                         may_return_multiple_values: _,
                     } => LazyRValue::FunctionCall {
                         callee,
+                        args,
+                        may_return_multiple_values: false,
+                    },
+                    LazyRValue::MethodCall {
+                        table,
+                        name,
+                        args,
+                        may_return_multiple_values: _,
+                    } => LazyRValue::MethodCall {
+                        table,
+                        name,
                         args,
                         may_return_multiple_values: false,
                     },
@@ -605,8 +620,10 @@ impl<'gc> CodeGenerator<'gc> {
                     self.emit_func_call(lvalue, args, dest)?;
                     dest.into()
                 }
-                Suffix::MethodCall { .. } => {
-                    todo!("method call")
+                Suffix::MethodCall { name, args } => {
+                    let dest = self.allocate_register()?;
+                    self.emit_method_call(lvalue, name, args, dest)?;
+                    dest.into()
                 }
             };
         }

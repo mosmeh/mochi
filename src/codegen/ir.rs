@@ -193,6 +193,11 @@ pub enum IrInstruction {
     CreateTable {
         dest: RegisterIndex,
     },
+    GetSelf {
+        dest: RegisterIndex,
+        table: RegisterIndex,
+        key: RkIndex,
+    },
     BinaryOpImmediate {
         op: BinaryOp,
         dest: RegisterIndex,
@@ -476,6 +481,16 @@ pub(super) fn lower_ir<'gc>(
                     false,
                 ));
                 code.push(Instruction::from_ax(OpCode::ExtraArg, 0));
+            }
+            IrInstruction::GetSelf { dest, table, key } => {
+                let (c, k) = key.to_c_and_k();
+                code.push(Instruction::from_a_b_c_k(
+                    OpCode::Self_,
+                    dest.0,
+                    table.0,
+                    c,
+                    k,
+                ));
             }
             IrInstruction::BinaryOpImmediate {
                 op,

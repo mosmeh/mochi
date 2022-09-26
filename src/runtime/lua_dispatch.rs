@@ -273,10 +273,10 @@ impl<'gc> Vm<'gc> {
                             thread,
                             rb,
                             rkc,
-                            saved_current_frame.base + insn.a(),
+                            saved_current_frame.base + a,
                         );
                     }
-                    state.stack[insn.a()] = raw_value;
+                    state.stack[a] = raw_value;
                 }
                 OpCode::AddI => ops::do_arithmetic_with_immediate(
                     &mut state,
