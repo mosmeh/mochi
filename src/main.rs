@@ -14,12 +14,19 @@ use std::{fs::File, io::BufWriter, path::PathBuf};
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[derive(Debug, Parser)]
-#[clap(version, about, args_conflicts_with_subcommands = true)]
+#[clap(
+    name = "mochi",
+    version,
+    about,
+    global_setting(clap::AppSettings::DeriveDisplayOrder),
+    args_conflicts_with_subcommands = true,
+    trailing_var_arg = true
+)]
 struct Args {
     #[clap(value_parser)]
     script: Option<PathBuf>,
 
-    #[clap(value_parser)]
+    #[clap(value_parser, allow_hyphen_values = true)]
     args: Vec<String>,
 
     /// Enter interactive mode after executing <SCRIPT>
