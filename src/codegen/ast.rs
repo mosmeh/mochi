@@ -203,7 +203,10 @@ impl<'gc> CodeGenerator<'gc> {
     }
 
     fn codegen_for_statement(&mut self, statement: ForStatement<'gc>) -> Result<(), CodegenError> {
-        match statement {
+        let prev_num_local_vars = self.current_frame().local_variable_stack.len();
+        let base = self.allocate_register()?;
+
+        let (is_generic, body) = match statement {
             ForStatement::Numerical {
                 control,
                 initial_value,
@@ -211,10 +214,7 @@ impl<'gc> CodeGenerator<'gc> {
                 step,
                 body,
             } => {
-                let base = self.allocate_register()?;
                 self.ensure_register_window(base, 4)?;
-
-                let prev_num_local_vars = self.current_frame().local_variable_stack.len();
 
                 let init_register = base;
                 self.current_frame()
@@ -246,26 +246,65 @@ impl<'gc> CodeGenerator<'gc> {
                     .local_variable_stack
                     .push((Some(control), control_register));
 
-                let start_label = self.declare_label();
-                self.place_label_here(start_label);
-                let end_label = self.declare_label();
-                self.emit(IrInstruction::PrepareForLoop {
-                    base,
-                    skip_target: end_label,
-                });
-                self.codegen_block(body)?;
-                self.emit(IrInstruction::ForLoop {
-                    base,
-                    next_target: start_label,
-                });
-                self.place_label_here(end_label);
-
-                self.current_frame()
-                    .local_variable_stack
-                    .truncate(prev_num_local_vars);
+                (false, body)
             }
-            ForStatement::Generic { .. } => todo!("generic for"),
+            ForStatement::Generic {
+                variables,
+                expressions,
+                body,
+            } => {
+                self.ensure_register_window(base, 4 + variables.len())?;
+
+                let mut expr_registers = self.emit_assigned_values(expressions, 4)?.into_iter();
+                for i in 0..4 {
+                    let expr_rvalue: LazyRValue = if let Some(register) = expr_registers.next() {
+                        LazyLValue::Register(register).into()
+                    } else {
+                        Value::Nil.into()
+                    };
+                    let register = RegisterIndex(base.0 + i);
+                    self.discharge_to_register(expr_rvalue, register)?;
+                    self.current_frame()
+                        .local_variable_stack
+                        .push((None, register));
+                }
+
+                for (i, variable) in variables.into_iter().enumerate() {
+                    self.current_frame()
+                        .local_variable_stack
+                        .push((Some(variable), RegisterIndex(base.0 + 4 + i as u8)));
+                }
+
+                (true, body)
+            }
+        };
+
+        let end_label = self.declare_label();
+        self.emit(IrInstruction::PrepareForLoop {
+            base,
+            skip_target: end_label,
+            is_generic,
+        });
+
+        let start_label = self.declare_label();
+        self.place_label_here(start_label);
+        self.codegen_block(body)?;
+        self.place_label_here(end_label);
+
+        if is_generic {
+            self.emit(IrInstruction::GenericForCall { base });
         }
+
+        self.emit(IrInstruction::ForLoop {
+            base,
+            next_target: start_label,
+            is_generic,
+        });
+
+        self.current_frame()
+            .local_variable_stack
+            .truncate(prev_num_local_vars);
+
         Ok(())
     }
 

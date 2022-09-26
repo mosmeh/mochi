@@ -260,10 +260,15 @@ pub enum IrInstruction {
     ForLoop {
         base: RegisterIndex,
         next_target: Label,
+        is_generic: bool,
     },
     PrepareForLoop {
         base: RegisterIndex,
         skip_target: Label,
+        is_generic: bool,
+    },
+    GenericForCall {
+        base: RegisterIndex,
     },
     SetList {
         table: RegisterIndex,
@@ -640,6 +645,15 @@ pub(super) fn lower_ir<'gc>(
                     close_upvalues,
                 ));
             }
+            IrInstruction::GenericForCall { base } => {
+                code.push(Instruction::from_a_b_c_k(
+                    OpCode::TForCall,
+                    base.0,
+                    0,
+                    0,
+                    false,
+                ));
+            }
             IrInstruction::SetList {
                 table,
                 count,
@@ -698,15 +712,33 @@ pub(super) fn lower_ir<'gc>(
                 (-OFFSET_SJ <= sj && sj <= UINT25_MAX as i32 - OFFSET_SJ)
                     .then_some(Instruction::from_sj(OpCode::Jmp, sj))
             }
-            IrInstruction::ForLoop { base, next_target } => {
+            IrInstruction::ForLoop {
+                base,
+                next_target,
+                is_generic,
+            } => {
+                let opcode = if is_generic {
+                    OpCode::TForLoop
+                } else {
+                    OpCode::ForLoop
+                };
                 let target_addr = label_addresses[next_target.0].unwrap();
-                let bx = (addr.0 - target_addr.0) as u32;
-                (bx <= UINT17_MAX).then_some(Instruction::from_a_bx(OpCode::ForLoop, base.0, bx))
+                let bx = (addr.0 - target_addr.0) as u32 + 1;
+                (bx <= UINT17_MAX).then_some(Instruction::from_a_bx(opcode, base.0, bx))
             }
-            IrInstruction::PrepareForLoop { base, skip_target } => {
+            IrInstruction::PrepareForLoop {
+                base,
+                skip_target,
+                is_generic,
+            } => {
+                let opcode = if is_generic {
+                    OpCode::TForPrep
+                } else {
+                    OpCode::ForPrep
+                };
                 let target_addr = label_addresses[skip_target.0].unwrap();
-                let bx = (target_addr.0 - addr.0) as u32 - 2;
-                (bx <= UINT17_MAX).then_some(Instruction::from_a_bx(OpCode::ForPrep, base.0, bx))
+                let bx = (target_addr.0 - addr.0) as u32 - 1;
+                (bx <= UINT17_MAX).then_some(Instruction::from_a_bx(opcode, base.0, bx))
             }
             _ => unreachable!(),
         };
