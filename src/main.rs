@@ -29,6 +29,10 @@ struct Args {
     #[clap(value_parser, allow_hyphen_values = true)]
     args: Vec<String>,
 
+    /// Execute string <STAT>
+    #[clap(short, value_name = "STAT", action = clap::ArgAction::Append)]
+    execute: Vec<String>,
+
     /// Enter interactive mode after executing <SCRIPT>
     #[clap(value_parser, short, default_value_t = false)]
     interactive: bool,
@@ -89,20 +93,29 @@ fn main() -> Result<()> {
         Ok(())
     })?;
 
-    if let Some(script) = args.script {
+    for stat in &args.execute {
+        runtime
+            .execute(|gc, vm| {
+                let closure = vm.borrow().load(gc, stat, "=(command line)")?;
+                Ok(gc.allocate(closure).into())
+            })
+            .map_err(Error::msg)?;
+    }
+
+    if let Some(script) = &args.script {
         runtime
             .execute(|gc, vm| {
                 let closure = vm.borrow().load_file(gc, script)?;
                 Ok(gc.allocate(closure).into())
             })
             .map_err(Error::msg)?;
-
-        if !args.interactive {
-            return Ok(());
-        }
     }
 
-    do_repl(&mut runtime)
+    if args.interactive || (args.execute.is_empty() && args.script.is_none()) {
+        do_repl(&mut runtime)
+    } else {
+        Ok(())
+    }
 }
 
 fn do_repl(runtime: &mut Runtime) -> Result<()> {
