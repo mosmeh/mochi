@@ -22,7 +22,7 @@ static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
     args_conflicts_with_subcommands = true,
     trailing_var_arg = true
 )]
-struct Args {
+struct Cli {
     #[clap(value_parser)]
     script: Option<PathBuf>,
 
@@ -38,7 +38,7 @@ struct Args {
     interactive: bool,
 
     #[clap(subcommand)]
-    command: Option<Command>,
+    subcommand: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -65,8 +65,8 @@ struct CompileCommand {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-    if let Some(command) = args.command {
+    let cli = Cli::parse();
+    if let Some(command) = cli.subcommand {
         match command {
             Command::Compile(command) => command.run()?,
         }
@@ -79,11 +79,11 @@ fn main() -> Result<()> {
         vm.load_stdlib(gc);
 
         let mut arg = Table::new();
-        if let Some(script) = &args.script {
+        if let Some(script) = &cli.script {
             let script = Vec::from_path_lossy(script);
             arg.set(0, gc.allocate_string(script))?;
         }
-        for (i, x) in args.args.into_iter().enumerate() {
+        for (i, x) in cli.args.into_iter().enumerate() {
             arg.set((i + 1) as Integer, gc.allocate_string(x.into_bytes()))?;
         }
         vm.globals()
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
         Ok(())
     })?;
 
-    for stat in &args.execute {
+    for stat in &cli.execute {
         runtime
             .execute(|gc, vm| {
                 let closure = vm.borrow().load(gc, stat, "=(command line)")?;
@@ -102,7 +102,7 @@ fn main() -> Result<()> {
             .map_err(Error::msg)?;
     }
 
-    if let Some(script) = &args.script {
+    if let Some(script) = &cli.script {
         runtime
             .execute(|gc, vm| {
                 let closure = vm.borrow().load_file(gc, script)?;
@@ -111,7 +111,7 @@ fn main() -> Result<()> {
             .map_err(Error::msg)?;
     }
 
-    if args.interactive || (args.execute.is_empty() && args.script.is_none()) {
+    if cli.interactive || (cli.execute.is_empty() && cli.script.is_none()) {
         do_repl(&mut runtime)
     } else {
         Ok(())
