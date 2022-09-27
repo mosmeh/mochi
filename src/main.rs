@@ -220,6 +220,11 @@ impl CompileCommand {
         }
 
         let source = proto.source.as_bstr();
+        let source = if let Some(b'@' | b'=') = source.first() {
+            &source[1..]
+        } else {
+            source
+        };
         match &proto.lines_defined {
             LineRange::File => write!(w, "main <{}:0,0> ", source)?,
             LineRange::Lines(range) => write!(
