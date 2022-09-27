@@ -70,7 +70,7 @@ pub fn load<'gc, R: Read>(
     }
 
     let num_upvalues = reader.read_u8()?;
-    let default_source = gc.allocate_string(B("?"));
+    let default_source = gc.allocate_string(B("=?"));
     let proto = load_function(gc, reader, default_source)?;
     assert_eq!(num_upvalues as usize, proto.upvalues.len());
 
