@@ -78,13 +78,19 @@ fn main() -> Result<()> {
         let mut vm = vm.borrow_mut(gc);
         vm.load_stdlib(gc);
 
+        let args = std::env::args_os();
+        let base = if cli.script.is_some() {
+            (args.len() - cli.args.len() - 1) as Integer
+        } else {
+            0
+        };
+
         let mut arg = Table::new();
-        if let Some(script) = &cli.script {
-            let script = Vec::from_path_lossy(script);
-            arg.set(0, gc.allocate_string(script))?;
-        }
-        for (i, x) in cli.args.into_iter().enumerate() {
-            arg.set((i + 1) as Integer, gc.allocate_string(x.into_bytes()))?;
+        for (i, x) in args.enumerate() {
+            arg.set(
+                i as Integer - base,
+                gc.allocate_string(Vec::from_os_string(x).unwrap()),
+            )?;
         }
         vm.globals()
             .borrow_mut(gc)
