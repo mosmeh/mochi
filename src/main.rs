@@ -14,27 +14,19 @@ use std::{fs::File, io::BufWriter, path::PathBuf};
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[derive(Debug, Parser)]
-#[clap(
-    name = "mochi",
-    version,
-    about,
-    global_setting(clap::AppSettings::DeriveDisplayOrder),
-    args_conflicts_with_subcommands = true,
-    trailing_var_arg = true
-)]
+#[command(name = "mochi", version, about, args_conflicts_with_subcommands = true)]
 struct Cli {
-    #[clap(value_parser)]
     script: Option<PathBuf>,
 
-    #[clap(value_parser, allow_hyphen_values = true)]
+    #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 
     /// Execute string <STAT>
-    #[clap(short, value_name = "STAT", action = clap::ArgAction::Append)]
+    #[arg(short, value_name = "STAT", action = clap::ArgAction::Append)]
     execute: Vec<String>,
 
     /// Enter interactive mode after executing <SCRIPT>
-    #[clap(value_parser, short, default_value_t = false)]
+    #[arg(short, default_value_t = false)]
     interactive: bool,
 
     #[clap(subcommand)]
@@ -48,19 +40,18 @@ enum Command {
 
 #[derive(Debug, Parser)]
 struct CompileCommand {
-    #[clap(value_parser)]
     filename: PathBuf,
 
     /// List (use -l -l for full listing)
-    #[clap(parse(from_occurrences), short)]
-    list: usize,
+    #[arg(short,  action = clap::ArgAction::Count)]
+    list: u8,
 
     /// Output to file <OUTPUT>
-    #[clap(value_parser, short, default_value = "luac.out")]
+    #[arg(short, default_value = "luac.out")]
     output: PathBuf,
 
     /// Parse only
-    #[clap(value_parser, short)]
+    #[arg(short)]
     parse_only: bool,
 }
 
