@@ -42,12 +42,12 @@ fn coroutine_close<'gc>(
     let mut co = co.borrow_mut(gc);
     Ok(Action::Return(match &co.status {
         ThreadStatus::Resumable | ThreadStatus::Unresumable => {
-            co.close();
+            co.close(gc);
             vec![true.into()]
         }
         ThreadStatus::Error(err) => {
             let msg = gc.allocate_string(err.to_string().into_bytes()).into();
-            co.close();
+            co.close(gc);
             vec![false.into(), msg]
         }
     }))
@@ -147,7 +147,7 @@ fn coroutine_wrap<'gc>(
                 match result {
                     Ok(results) => Ok(Action::Return(results)),
                     Err(err) => {
-                        coroutine.borrow_mut(gc).close();
+                        coroutine.borrow_mut(gc).close(gc);
                         Err(err)
                     }
                 }

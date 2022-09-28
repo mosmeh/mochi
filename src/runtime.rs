@@ -354,15 +354,6 @@ impl<'gc> LuaThread<'gc> {
         });
         self.deferred_call(metamethod_bottom).unwrap();
     }
-
-    fn close_upvalues(&mut self, gc: &'gc GcContext, boundary: usize) {
-        for (_, upvalue) in self.open_upvalues.split_off(&boundary) {
-            let mut upvalue = upvalue.borrow_mut(gc);
-            if let Upvalue::Open(i) = *upvalue {
-                *upvalue = Upvalue::Closed(self.stack[i]);
-            }
-        }
-    }
 }
 
 struct ExecutionState<'gc, 'stack> {

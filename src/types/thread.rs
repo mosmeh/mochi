@@ -1,6 +1,6 @@
 use super::{LineRange, Upvalue, Value};
 use crate::{
-    gc::{GarbageCollect, GcCell, Tracer},
+    gc::{GarbageCollect, GcCell, GcContext, Tracer},
     runtime::{ErrorKind, Frame, LuaFrame, Operation},
 };
 use std::{collections::BTreeMap, fmt::Display};
@@ -44,7 +44,8 @@ impl<'gc> LuaThread<'gc> {
         thread
     }
 
-    pub fn close(&mut self) {
+    pub fn close(&mut self, gc: &'gc GcContext) {
+        self.close_upvalues(gc, 0);
         *self = Self {
             status: ThreadStatus::Unresumable,
             ..Default::default()
@@ -83,6 +84,15 @@ impl<'gc> LuaThread<'gc> {
                 operation: Operation::Call,
                 ty: value.ty(),
             }),
+        }
+    }
+
+    pub(crate) fn close_upvalues(&mut self, gc: &'gc GcContext, boundary: usize) {
+        for (_, upvalue) in self.open_upvalues.split_off(&boundary) {
+            let mut upvalue = upvalue.borrow_mut(gc);
+            if let Upvalue::Open(index) = *upvalue {
+                *upvalue = Upvalue::Closed(self.stack[index]);
+            }
         }
     }
 }
