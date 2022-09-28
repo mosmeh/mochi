@@ -357,6 +357,7 @@ impl<'gc> LuaThread<'gc> {
 }
 
 struct ExecutionState<'gc, 'stack> {
+    thread: GcCell<'gc, LuaThread<'gc>>,
     base: usize,
     pc: usize,
     stack: &'stack mut [Value<'gc>],
@@ -364,29 +365,42 @@ struct ExecutionState<'gc, 'stack> {
 }
 
 impl<'gc, 'stack> ExecutionState<'gc, 'stack> {
-    fn resolve_upvalue(&self, upvalue: &Upvalue<'gc>) -> Value<'gc> {
+    fn upvalue(&self, upvalue: &Upvalue<'gc>) -> Value<'gc> {
         match upvalue {
-            Upvalue::Open(i) => {
-                if *i < self.base {
-                    self.lower_stack[*i]
+            Upvalue::Open { thread, index } => {
+                if GcCell::ptr_eq(thread, &self.thread) {
+                    if *index < self.base {
+                        self.lower_stack[*index]
+                    } else {
+                        self.stack[*index - self.base]
+                    }
                 } else {
-                    self.stack[*i - self.base]
+                    thread.borrow().stack[*index]
                 }
             }
-            Upvalue::Closed(x) => *x,
+            Upvalue::Closed(value) => *value,
         }
     }
 
-    fn resolve_upvalue_mut<'a>(&'a mut self, upvalue: &'a mut Upvalue<'gc>) -> &'a mut Value<'gc> {
+    fn set_upvalue<'a>(
+        &'a mut self,
+        gc: &'gc GcContext,
+        upvalue: &'a mut Upvalue<'gc>,
+        value: Value<'gc>,
+    ) {
         match upvalue {
-            Upvalue::Open(i) => {
-                if *i < self.base {
-                    &mut self.lower_stack[*i]
+            Upvalue::Open { thread, index } => {
+                if GcCell::ptr_eq(thread, &self.thread) {
+                    if *index < self.base {
+                        self.lower_stack[*index] = value;
+                    } else {
+                        self.stack[*index - self.base] = value;
+                    }
                 } else {
-                    &mut self.stack[*i - self.base]
+                    thread.borrow_mut(gc).stack[*index] = value;
                 }
             }
-            Upvalue::Closed(x) => x,
+            Upvalue::Closed(v) => *v = value,
         }
     }
 }

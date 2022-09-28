@@ -26,6 +26,7 @@ impl<'gc> Vm<'gc> {
 
         let (lower_stack, stack) = thread_ref.stack.split_at_mut(saved_current_frame.base);
         let mut state = ExecutionState {
+            thread,
             base: saved_current_frame.base,
             pc: saved_current_frame.pc,
             stack,
@@ -58,17 +59,17 @@ impl<'gc> Vm<'gc> {
                 OpCode::LoadNil => state.stack[insn.a()..][..=insn.b()].fill(Value::Nil),
                 OpCode::GetUpval => {
                     let upvalue = closure.upvalues[insn.b()].borrow();
-                    let value = state.resolve_upvalue(&upvalue);
+                    let value = state.upvalue(&upvalue);
                     state.stack[insn.a()] = value;
                 }
                 OpCode::SetUpval => {
                     let value = state.stack[insn.a()];
                     let mut upvalue = closure.upvalues[insn.b()].borrow_mut(gc);
-                    *state.resolve_upvalue_mut(&mut upvalue) = value;
+                    state.set_upvalue(gc, &mut upvalue, value);
                 }
                 OpCode::GetTabUp => {
                     let upvalue = closure.upvalues[insn.b()].borrow();
-                    let table_value = state.resolve_upvalue(&upvalue);
+                    let table_value = state.upvalue(&upvalue);
                     let rc = if let Value::String(s) = closure.proto.constants[insn.c() as usize] {
                         s
                     } else {
@@ -162,7 +163,7 @@ impl<'gc> Vm<'gc> {
                         unreachable!();
                     };
                     let upvalue = closure.upvalues[insn.a()].borrow();
-                    let table_value = state.resolve_upvalue(&upvalue);
+                    let table_value = state.upvalue(&upvalue);
                     let mut table = table_value.borrow_as_table_mut(gc).ok_or_else(|| {
                         ErrorKind::TypeError {
                             operation: Operation::Index,
@@ -707,10 +708,9 @@ impl<'gc> Vm<'gc> {
                         .map(|desc| match desc {
                             UpvalueDescription::Register(index) => {
                                 let index = saved_current_frame.base + index.0 as usize;
-                                *thread_ref
-                                    .open_upvalues
-                                    .entry(index)
-                                    .or_insert_with(|| gc.allocate_cell(Upvalue::Open(index)))
+                                *thread_ref.open_upvalues.entry(index).or_insert_with(|| {
+                                    gc.allocate_cell(Upvalue::Open { thread, index })
+                                })
                             }
                             UpvalueDescription::Upvalue(index) => {
                                 closure.upvalues[index.0 as usize]

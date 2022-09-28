@@ -1,7 +1,7 @@
 use crate::{
     gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
     runtime::{Action, ErrorKind, Instruction, Vm},
-    types::{LuaString, Value},
+    types::{LuaString, LuaThread, Value},
 };
 use std::{fmt::Debug, hash::Hash, ops::RangeInclusive};
 
@@ -196,9 +196,12 @@ impl<'gc> NativeClosure<'gc> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Upvalue<'gc> {
-    Open(usize),
+    Open {
+        thread: GcCell<'gc, LuaThread<'gc>>,
+        index: usize,
+    },
     Closed(Value<'gc>),
 }
 
@@ -210,8 +213,9 @@ impl<'gc> From<Value<'gc>> for Upvalue<'gc> {
 
 unsafe impl GarbageCollect for Upvalue<'_> {
     fn trace(&self, tracer: &mut Tracer) {
-        if let Self::Closed(x) = self {
-            x.trace(tracer);
+        match self {
+            Self::Open { thread, .. } => thread.trace(tracer),
+            Self::Closed(value) => value.trace(tracer),
         }
     }
 }

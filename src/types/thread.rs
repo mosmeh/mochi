@@ -90,7 +90,7 @@ impl<'gc> LuaThread<'gc> {
     pub(crate) fn close_upvalues(&mut self, gc: &'gc GcContext, boundary: usize) {
         for (_, upvalue) in self.open_upvalues.split_off(&boundary) {
             let mut upvalue = upvalue.borrow_mut(gc);
-            if let Upvalue::Open(index) = *upvalue {
+            if let Upvalue::Open { index, .. } = *upvalue {
                 *upvalue = Upvalue::Closed(self.stack[index]);
             }
         }
