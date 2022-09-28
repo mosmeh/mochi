@@ -1,4 +1,3 @@
-use super::{LUAC_FORMAT, LUAC_VERSION};
 use crate::{
     gc::GcContext,
     runtime::Instruction,
@@ -36,21 +35,20 @@ pub fn load<'gc, R: Read>(
     gc: &'gc GcContext,
     reader: &mut R,
 ) -> Result<LuaClosureProto<'gc>, DeserializeError> {
-    if reader.read_u32::<NativeEndian>()? != u32::from_ne_bytes(*b"\x1bLua") {
+    if reader.read_u32::<NativeEndian>()? != u32::from_ne_bytes(super::LUA_SIGNATURE) {
         return Err(DeserializeError::BadMagic);
     }
 
-    if reader.read_u8()? != LUAC_VERSION {
+    if reader.read_u8()? != super::LUAC_VERSION {
         return Err(DeserializeError::UnsupportedVersion);
     }
-    if reader.read_u8()? != LUAC_FORMAT {
+    if reader.read_u8()? != super::LUAC_FORMAT {
         return Err(DeserializeError::UnsupportedFormat);
     }
 
-    const LUAC_DATA: &[u8; 6] = b"\x19\x93\r\n\x1a\n";
     let mut data = [0u8; 6];
     reader.read_exact(&mut data)?;
-    if &data != LUAC_DATA {
+    if data != super::LUAC_DATA {
         return Err(DeserializeError::UnsupportedFormat);
     }
 
@@ -61,10 +59,8 @@ pub fn load<'gc, R: Read>(
         return Err(DeserializeError::UnsupportedFormat);
     }
 
-    const LUAC_INT: Integer = 0x5678;
-    const LUAC_NUM: Number = 370.5;
-    if reader.read_i64::<NativeEndian>()? != LUAC_INT
-        || reader.read_f64::<NativeEndian>()? != LUAC_NUM
+    if reader.read_i64::<NativeEndian>()? != super::LUAC_INT
+        || reader.read_f64::<NativeEndian>()? != super::LUAC_NUM
     {
         return Err(DeserializeError::UnsupportedFormat);
     }

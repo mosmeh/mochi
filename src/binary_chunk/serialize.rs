@@ -1,7 +1,3 @@
-use super::{
-    LUAC_FORMAT, LUAC_VERSION, LUA_VFALSE, LUA_VLNGSHR, LUA_VNIL, LUA_VNUMFLT, LUA_VNUMINT,
-    LUA_VTRUE,
-};
 use crate::{
     gc::Gc,
     runtime::Instruction,
@@ -11,21 +7,18 @@ use byteorder::{NativeEndian, WriteBytesExt};
 use std::io::Write;
 
 pub fn dump<W: Write>(writer: &mut W, proto: &LuaClosureProto) -> std::io::Result<()> {
-    writer.write_all(b"\x1bLua")?;
-    writer.write_u8(LUAC_VERSION)?;
-    writer.write_u8(LUAC_FORMAT)?;
+    writer.write_all(&super::LUA_SIGNATURE)?;
+    writer.write_u8(super::LUAC_VERSION)?;
+    writer.write_u8(super::LUAC_FORMAT)?;
 
-    const LUAC_DATA: &[u8; 6] = b"\x19\x93\r\n\x1a\n";
-    writer.write_all(LUAC_DATA)?;
+    writer.write_all(&super::LUAC_DATA)?;
 
     writer.write_u8(std::mem::size_of::<Instruction>() as u8)?;
     writer.write_u8(std::mem::size_of::<Integer>() as u8)?;
     writer.write_u8(std::mem::size_of::<Number>() as u8)?;
 
-    const LUAC_INT: Integer = 0x5678;
-    const LUAC_NUM: Number = 370.5;
-    writer.write_i64::<NativeEndian>(LUAC_INT)?;
-    writer.write_f64::<NativeEndian>(LUAC_NUM)?;
+    writer.write_i64::<NativeEndian>(super::LUAC_INT)?;
+    writer.write_f64::<NativeEndian>(super::LUAC_NUM)?;
 
     writer.write_u8(proto.upvalues.len() as u8)?;
     dump_function(writer, proto)?;
@@ -113,24 +106,24 @@ fn dump_constants<W: Write>(writer: &mut W, constants: &[Value]) -> std::io::Res
     for constant in constants {
         match constant {
             Value::Nil => {
-                writer.write_u8(LUA_VNIL)?;
+                writer.write_u8(super::LUA_VNIL)?;
             }
             Value::Boolean(false) => {
-                writer.write_u8(LUA_VFALSE)?;
+                writer.write_u8(super::LUA_VFALSE)?;
             }
             Value::Boolean(true) => {
-                writer.write_u8(LUA_VTRUE)?;
+                writer.write_u8(super::LUA_VTRUE)?;
             }
             Value::Integer(i) => {
-                writer.write_u8(LUA_VNUMINT)?;
+                writer.write_u8(super::LUA_VNUMINT)?;
                 writer.write_i64::<NativeEndian>(*i)?;
             }
             Value::Number(x) => {
-                writer.write_u8(LUA_VNUMFLT)?;
+                writer.write_u8(super::LUA_VNUMFLT)?;
                 writer.write_f64::<NativeEndian>(*x)?;
             }
             Value::String(s) => {
-                writer.write_u8(LUA_VLNGSHR)?;
+                writer.write_u8(super::LUA_VLNGSHR)?;
                 dump_string(writer, *s)?;
             }
             _ => unreachable!(),
