@@ -33,7 +33,7 @@ impl Default for GcHeap {
             step_size: Cell::new(13),
 
             is_running: Cell::new(true),
-            phase: Cell::new(Phase::Pause),
+            phase: Phase::Pause,
             current_white: Default::default(),
             allocated_bytes: Default::default(),
             debt: Default::default(),
@@ -95,7 +95,7 @@ impl GcHeap {
                 false
             }
         };
-        did_step && self.gc.phase.get() == Phase::Pause
+        did_step && self.gc.phase == Phase::Pause
     }
 }
 
@@ -111,18 +111,18 @@ pub struct GcContext {
     step_size: Cell<usize>,
 
     is_running: Cell<bool>,
-    phase: Cell<Phase>,
-    current_white: Cell<bool>,
+    phase: Phase,
+    current_white: bool,
     allocated_bytes: Cell<usize>,
     debt: Cell<isize>,
-    estimate: Cell<usize>,
+    estimate: usize,
 
     root: Option<GcCell<'static, Vm<'static>>>,
 
     all: Cell<Option<GcPtr<dyn GarbageCollect>>>,
-    sweep: Cell<Option<GcPtr<dyn GarbageCollect>>>,
-    prev_sweep: Cell<Option<GcPtr<dyn GarbageCollect>>>,
-    gray: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
+    sweep: Option<GcPtr<dyn GarbageCollect>>,
+    prev_sweep: Option<GcPtr<dyn GarbageCollect>>,
+    gray: Vec<GcPtr<dyn GarbageCollect>>,
     gray_again: RefCell<Vec<GcPtr<dyn GarbageCollect>>>,
 
     string_pool: RefCell<StringPool>,
@@ -190,7 +190,7 @@ impl GcContext {
     }
 
     pub fn allocate<T: GarbageCollect>(&self, value: T) -> Gc<T> {
-        let color = Color::White(self.current_white.get());
+        let color = Color::White(self.current_white);
         let gc_box = Box::new(GcBox {
             color: Cell::new(color),
             next: self.all.take(),
@@ -234,24 +234,24 @@ impl GcContext {
     }
 
     fn full_gc(&mut self) {
-        if matches!(self.phase.get(), Phase::Propagate | Phase::Atomic) {
-            self.phase.set(Phase::Sweep);
-            self.sweep.set(self.all.get());
+        if matches!(self.phase, Phase::Propagate | Phase::Atomic) {
+            self.phase = Phase::Sweep;
+            self.sweep = self.all.get();
             self.prev_sweep.take();
         }
-        while self.phase.get() != Phase::Pause {
+        while self.phase != Phase::Pause {
             self.do_single_step();
         }
         loop {
             self.do_single_step();
-            if self.phase.get() == Phase::Pause {
+            if self.phase == Phase::Pause {
                 break;
             }
         }
-        debug_assert_eq!(self.estimate.get(), self.total_bytes());
+        debug_assert_eq!(self.estimate, self.total_bytes());
         loop {
             self.do_single_step();
-            if self.phase.get() == Phase::Pause {
+            if self.phase == Phase::Pause {
                 break;
             }
         }
@@ -265,7 +265,7 @@ impl GcContext {
         loop {
             let work = self.do_single_step() / step_multiplier;
             debt -= work as isize;
-            if self.phase.get() == Phase::Pause {
+            if self.phase == Phase::Pause {
                 self.set_debt_for_pause_phase();
                 return;
             }
@@ -283,14 +283,14 @@ impl GcContext {
     }
 
     fn set_debt_for_pause_phase(&self) {
-        let estimate = self.estimate.get() / PAUSEADJ;
+        let estimate = self.estimate / PAUSEADJ;
         let threshold = estimate * self.pause.get();
         let debt = self.allocated_bytes.get() as isize + self.debt.get() - threshold as isize;
         self.set_debt(if debt > 0 { 0 } else { debt });
     }
 
     fn write_barrier<T: GarbageCollect>(&self, ptr: GcPtr<T>) {
-        if self.phase.get() != Phase::Propagate {
+        if self.phase != Phase::Propagate {
             return;
         }
 
@@ -301,50 +301,52 @@ impl GcContext {
         }
     }
 
-    fn do_single_step(&self) -> usize {
-        match self.phase.get() {
+    fn do_single_step(&mut self) -> usize {
+        match self.phase {
             Phase::Pause => {
                 self.do_pause();
-                self.phase.set(Phase::Propagate);
+                self.phase = Phase::Propagate;
                 WORK2MEM
             }
             Phase::Propagate => {
                 let work = self.do_propagate();
                 if work == 0 {
-                    self.phase.set(Phase::Atomic);
+                    self.phase = Phase::Atomic;
                 }
                 work
             }
             Phase::Atomic => {
                 let work = self.do_atomic();
-                self.phase.set(Phase::Sweep);
-                self.sweep.set(self.all.get());
+                self.phase = Phase::Sweep;
+                self.sweep = self.all.get();
                 self.prev_sweep.take();
-                self.estimate.set(self.total_bytes());
+                self.estimate = self.total_bytes();
                 work
             }
             Phase::Sweep => {
                 let work = self.do_sweep();
                 if work == 0 {
-                    self.phase.set(Phase::Pause);
+                    self.phase = Phase::Pause;
                 }
                 work
             }
         }
     }
 
-    fn do_pause(&self) {
-        let mut gray = self.gray.borrow_mut();
-        gray.clear();
+    fn do_pause(&mut self) {
+        self.gray.clear();
         self.gray_again.borrow_mut().clear();
-        self.root.unwrap().trace(&mut Tracer { gray: &mut gray });
+        self.root.unwrap().trace(&mut Tracer {
+            gray: &mut self.gray,
+        });
     }
 
-    fn do_propagate(&self) -> usize {
-        let mut gray = self.gray.borrow_mut();
-        if let Some(ptr) = gray.pop() {
+    fn do_propagate(&mut self) -> usize {
+        if let Some(ptr) = self.gray.pop() {
             let gc_box = unsafe { ptr.as_ref() };
-            gc_box.value.trace(&mut Tracer { gray: &mut gray });
+            gc_box.value.trace(&mut Tracer {
+                gray: &mut self.gray,
+            });
             gc_box.color.set(Color::Black);
             std::mem::size_of_val(gc_box)
         } else {
@@ -352,14 +354,17 @@ impl GcContext {
         }
     }
 
-    fn do_atomic(&self) -> usize {
-        let mut gray = self.gray.borrow_mut();
-        self.root.unwrap().trace(&mut Tracer { gray: &mut gray });
+    fn do_atomic(&mut self) -> usize {
+        self.root.unwrap().trace(&mut Tracer {
+            gray: &mut self.gray,
+        });
 
         let mut work = 0;
-        while let Some(ptr) = gray.pop() {
+        while let Some(ptr) = self.gray.pop() {
             let gc_box = unsafe { ptr.as_ref() };
-            gc_box.value.trace(&mut Tracer { gray: &mut gray });
+            gc_box.value.trace(&mut Tracer {
+                gray: &mut self.gray,
+            });
             gc_box.color.set(Color::Black);
             work += std::mem::size_of_val(gc_box)
         }
@@ -367,47 +372,49 @@ impl GcContext {
         let mut gray_again = self.gray_again.borrow_mut();
         while let Some(ptr) = gray_again.pop() {
             let gc_box = unsafe { ptr.as_ref() };
-            gc_box.value.trace(&mut Tracer { gray: &mut gray });
+            gc_box.value.trace(&mut Tracer {
+                gray: &mut self.gray,
+            });
             gc_box.color.set(Color::Black);
             work += std::mem::size_of_val(gc_box)
         }
 
-        self.current_white.set(!self.current_white.get());
+        self.current_white = !self.current_white;
         work
     }
 
-    fn do_sweep(&self) -> usize {
+    fn do_sweep(&mut self) -> usize {
         let mut count = 0;
         let mut work = 0;
         let mut debt = self.debt.get();
 
         let old_debt = debt;
-        let current_white = Color::White(self.current_white.get());
-        let other_white = Color::White(!self.current_white.get());
+        let current_white = Color::White(self.current_white);
+        let other_white = Color::White(!self.current_white);
 
         let mut finalizer = Finalizer {
             string_pool: &mut self.string_pool.borrow_mut(),
         };
 
-        while let Some(ptr) = self.sweep.get() {
+        while let Some(ptr) = self.sweep {
             let gc_box = unsafe { ptr.as_ref() };
             work += std::mem::size_of_val(gc_box);
             if gc_box.color.get() == other_white {
-                if let Some(prev) = &mut self.prev_sweep.get() {
+                if let Some(prev) = &mut self.prev_sweep {
                     let prev = unsafe { prev.as_mut() };
                     prev.next = gc_box.next;
                 } else {
                     self.all.set(gc_box.next);
                 }
-                self.sweep.set(gc_box.next);
+                self.sweep = gc_box.next;
                 debt -= std::mem::size_of_val(gc_box) as isize;
 
                 gc_box.value.finalize(&mut finalizer);
                 unsafe { Box::from_raw(ptr.as_ptr()) };
             } else {
                 gc_box.color.set(current_white);
-                self.prev_sweep.set(Some(ptr));
-                self.sweep.set(gc_box.next);
+                self.prev_sweep = Some(ptr);
+                self.sweep = gc_box.next;
             }
             count += 1;
             if count >= GCSWEEPMAX {
@@ -416,8 +423,7 @@ impl GcContext {
         }
 
         self.debt.set(debt);
-        self.estimate
-            .set((self.estimate.get() as isize + debt - old_debt) as usize);
+        self.estimate = (self.estimate as isize + debt - old_debt) as usize;
         work
     }
 }
