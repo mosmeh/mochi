@@ -362,12 +362,9 @@ fn file_setvbuf<'gc>(
 
 fn file_write<'gc>(
     gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
+    _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let thread = vm.current_thread();
-    let _thread = thread.borrow();
-
     let handle = args.nth(1);
     let mut handle_ref = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
