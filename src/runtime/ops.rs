@@ -1,5 +1,5 @@
-use super::{ExecutionState, Instruction};
-use crate::types::{Integer, LuaClosureProto, Number, Value};
+use super::Instruction;
+use crate::types::{Integer, Number, Value};
 
 fn calc_arithmetic_result<'gc, I, F>(
     a: Value<'gc>,
@@ -23,8 +23,9 @@ where
     None
 }
 
-pub(super) fn do_arithmetic<I, F>(
-    state: &mut ExecutionState,
+pub(super) fn do_arithmetic<'gc, I, F>(
+    stack: &mut [Value<'gc>],
+    pc: &mut usize,
     insn: Instruction,
     int_op: I,
     float_op: F,
@@ -32,17 +33,18 @@ pub(super) fn do_arithmetic<I, F>(
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
 {
-    let rb = state.stack[insn.b()];
-    let rc = state.stack[insn.c() as usize];
+    let rb = stack[insn.b()];
+    let rc = stack[insn.c() as usize];
     if let Some(result) = calc_arithmetic_result(rb, rc, int_op, float_op) {
-        state.stack[insn.a()] = result;
-        state.pc += 1;
+        stack[insn.a()] = result;
+        *pc += 1;
     }
 }
 
 pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
-    state: &mut ExecutionState<'gc, '_>,
-    proto: &LuaClosureProto<'gc>,
+    stack: &mut [Value<'gc>],
+    pc: &mut usize,
+    constants: &[Value<'gc>],
     insn: Instruction,
     int_op: I,
     float_op: F,
@@ -50,16 +52,17 @@ pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
 {
-    let rb = state.stack[insn.b()];
-    let kc = proto.constants[insn.c() as usize];
+    let rb = stack[insn.b()];
+    let kc = constants[insn.c() as usize];
     if let Some(result) = calc_arithmetic_result(rb, kc, int_op, float_op) {
-        state.stack[insn.a()] = result;
-        state.pc += 1;
+        stack[insn.a()] = result;
+        *pc += 1;
     }
 }
 
-pub(super) fn do_arithmetic_with_immediate<I, F>(
-    state: &mut ExecutionState,
+pub(super) fn do_arithmetic_with_immediate<'gc, I, F>(
+    stack: &mut [Value<'gc>],
+    pc: &mut usize,
     insn: Instruction,
     int_op: I,
     float_op: F,
@@ -67,20 +70,20 @@ pub(super) fn do_arithmetic_with_immediate<I, F>(
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
 {
-    let rb = state.stack[insn.b()];
+    let rb = stack[insn.b()];
     let imm = insn.sc();
     let result = match rb {
         Value::Integer(b) => {
-            state.pc += 1;
+            *pc += 1;
             Value::Integer(int_op(b, imm as Integer))
         }
         Value::Number(b) => {
-            state.pc += 1;
+            *pc += 1;
             Value::Number(float_op(b, imm as Number))
         }
         _ => return,
     };
-    state.stack[insn.a()] = result;
+    stack[insn.a()] = result;
 }
 
 fn calc_float_arithmetic_result<'gc, F>(
@@ -101,34 +104,39 @@ where
     }
 }
 
-pub(super) fn do_float_arithmetic<F>(state: &mut ExecutionState, insn: Instruction, float_op: F)
-where
-    F: Fn(Number, Number) -> Number,
-{
-    let rb = state.stack[insn.b()];
-    let rc = state.stack[insn.c() as usize];
-    if let Some(result) = calc_float_arithmetic_result(rb, rc, float_op) {
-        state.stack[insn.a()] = result;
-        state.pc += 1;
-    }
-}
-
-pub(super) fn do_float_arithmetic_with_constant<F>(
-    state: &mut ExecutionState,
-    proto: &LuaClosureProto,
+pub(super) fn do_float_arithmetic<'gc, F>(
+    stack: &mut [Value<'gc>],
+    pc: &mut usize,
     insn: Instruction,
     float_op: F,
 ) where
     F: Fn(Number, Number) -> Number,
 {
-    let rb = state.stack[insn.b()];
-    let kc = proto.constants[insn.c() as usize];
+    let rb = stack[insn.b()];
+    let rc = stack[insn.c() as usize];
+    if let Some(result) = calc_float_arithmetic_result(rb, rc, float_op) {
+        stack[insn.a()] = result;
+        *pc += 1;
+    }
+}
+
+pub(super) fn do_float_arithmetic_with_constant<'gc, F>(
+    stack: &mut [Value<'gc>],
+    pc: &mut usize,
+    constants: &[Value<'gc>],
+    insn: Instruction,
+    float_op: F,
+) where
+    F: Fn(Number, Number) -> Number,
+{
+    let rb = stack[insn.b()];
+    let kc = constants[insn.c() as usize];
     if let (Some(b), Some(c)) = (
         rb.to_number_without_string_coercion(),
         kc.to_number_without_string_coercion(),
     ) {
-        state.stack[insn.a()] = Value::Number(float_op(b, c));
-        state.pc += 1;
+        stack[insn.a()] = Value::Number(float_op(b, c));
+        *pc += 1;
     }
 }
 
@@ -146,52 +154,58 @@ where
     }
 }
 
-pub(super) fn do_bitwise_op<I>(state: &mut ExecutionState, insn: Instruction, int_op: I)
-where
-    I: Fn(Integer, Integer) -> Integer,
-{
-    let rb = state.stack[insn.b()];
-    let rc = state.stack[insn.c() as usize];
-    if let Some(result) = calc_bitwise_op_result(rb, rc, int_op) {
-        state.stack[insn.a()] = result;
-        state.pc += 1;
-    }
-}
-
-pub(super) fn do_bitwise_op_with_constant<'gc, I>(
-    state: &mut ExecutionState<'gc, '_>,
-    proto: &LuaClosureProto<'gc>,
+pub(super) fn do_bitwise_op<'gc, I>(
+    stack: &mut [Value<'gc>],
+    pc: &mut usize,
     insn: Instruction,
     int_op: I,
 ) where
     I: Fn(Integer, Integer) -> Integer,
 {
-    let rb = state.stack[insn.b()];
-    let kc = proto.constants[insn.c() as usize];
+    let rb = stack[insn.b()];
+    let rc = stack[insn.c() as usize];
+    if let Some(result) = calc_bitwise_op_result(rb, rc, int_op) {
+        stack[insn.a()] = result;
+        *pc += 1;
+    }
+}
+
+pub(super) fn do_bitwise_op_with_constant<'gc, I>(
+    stack: &mut [Value<'gc>],
+    pc: &mut usize,
+    constants: &[Value<'gc>],
+    insn: Instruction,
+    int_op: I,
+) where
+    I: Fn(Integer, Integer) -> Integer,
+{
+    let rb = stack[insn.b()];
+    let kc = constants[insn.c() as usize];
     debug_assert!(matches!(kc, Value::Integer(_)));
     if let Some(result) = calc_bitwise_op_result(rb, kc, int_op) {
-        state.stack[insn.a()] = result;
-        state.pc += 1;
+        stack[insn.a()] = result;
+        *pc += 1;
     }
 }
 
 pub(super) fn do_conditional_jump(
-    state: &mut ExecutionState,
-    proto: &LuaClosureProto,
+    pc: &mut usize,
+    code: &[Instruction],
     insn: Instruction,
     cond: bool,
 ) {
     if cond == insn.k() {
-        let next_insn = proto.code[state.pc];
-        state.pc = (state.pc as isize + next_insn.sj() as isize + 1) as usize;
+        let next_insn = code[*pc];
+        *pc = (*pc as isize + next_insn.sj() as isize + 1) as usize;
     } else {
-        state.pc += 1;
+        *pc += 1;
     }
 }
 
-pub(super) fn do_comparison<I, F, S>(
-    state: &mut ExecutionState,
-    proto: &LuaClosureProto,
+pub(super) fn do_comparison<'gc, I, F, S>(
+    stack: &mut [Value<'gc>],
+    pc: &mut usize,
+    code: &[Instruction],
     insn: Instruction,
     int_op: I,
     float_op: F,
@@ -201,8 +215,8 @@ pub(super) fn do_comparison<I, F, S>(
     F: Fn(&Number, &Number) -> bool,
     S: Fn(&[u8], &[u8]) -> bool,
 {
-    let ra = state.stack[insn.a()];
-    let rb = state.stack[insn.b()];
+    let ra = stack[insn.a()];
+    let rb = stack[insn.b()];
     let cond = match (ra, rb) {
         (Value::Integer(a), Value::Integer(b)) => int_op(&a, &b),
         (Value::String(ref a), Value::String(ref b)) => str_op(a, b),
@@ -217,12 +231,13 @@ pub(super) fn do_comparison<I, F, S>(
             }
         }
     };
-    do_conditional_jump(state, proto, insn, cond);
+    do_conditional_jump(pc, code, insn, cond);
 }
 
-pub(super) fn do_comparison_with_immediate<I, F>(
-    state: &mut ExecutionState,
-    proto: &LuaClosureProto,
+pub(super) fn do_comparison_with_immediate<'gc, I, F>(
+    stack: &mut [Value<'gc>],
+    pc: &mut usize,
+    code: &[Instruction],
     insn: Instruction,
     int_op: I,
     float_op: F,
@@ -230,14 +245,14 @@ pub(super) fn do_comparison_with_immediate<I, F>(
     I: Fn(&Integer, &Integer) -> bool,
     F: Fn(&Number, &Number) -> bool,
 {
-    let ra = state.stack[insn.a()];
+    let ra = stack[insn.a()];
     let imm = insn.sb();
     let cond = match ra {
         Value::Integer(x) => int_op(&x, &(imm as Integer)),
         Value::Number(x) => float_op(&x, &(imm as Number)),
         _ => todo!("comparison metamethod"),
     };
-    do_conditional_jump(state, proto, insn, cond);
+    do_conditional_jump(pc, code, insn, cond);
 }
 
 pub(super) fn idivi(m: Integer, n: Integer) -> Integer {

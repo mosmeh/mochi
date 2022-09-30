@@ -356,51 +356,50 @@ impl<'gc> LuaThread<'gc> {
     }
 }
 
-struct ExecutionState<'gc, 'stack> {
-    thread: GcCell<'gc, LuaThread<'gc>>,
+fn get_upvalue<'gc>(
+    current_thread: GcCell<'gc, LuaThread<'gc>>,
     base: usize,
-    pc: usize,
-    stack: &'stack mut [Value<'gc>],
-    lower_stack: &'stack mut [Value<'gc>],
+    lower_stack: &[Value<'gc>],
+    stack: &[Value<'gc>],
+    upvalue: &Upvalue<'gc>,
+) -> Value<'gc> {
+    match upvalue {
+        Upvalue::Open { thread, index } => {
+            if GcCell::ptr_eq(thread, &current_thread) {
+                if *index < base {
+                    lower_stack[*index]
+                } else {
+                    stack[*index - base]
+                }
+            } else {
+                thread.borrow().stack[*index]
+            }
+        }
+        Upvalue::Closed(value) => *value,
+    }
 }
 
-impl<'gc, 'stack> ExecutionState<'gc, 'stack> {
-    fn upvalue(&self, upvalue: &Upvalue<'gc>) -> Value<'gc> {
-        match upvalue {
-            Upvalue::Open { thread, index } => {
-                if GcCell::ptr_eq(thread, &self.thread) {
-                    if *index < self.base {
-                        self.lower_stack[*index]
-                    } else {
-                        self.stack[*index - self.base]
-                    }
+fn set_upvalue<'gc>(
+    gc: &'gc GcContext,
+    current_thread: GcCell<'gc, LuaThread<'gc>>,
+    base: usize,
+    lower_stack: &mut [Value<'gc>],
+    stack: &mut [Value<'gc>],
+    upvalue: &mut Upvalue<'gc>,
+    value: Value<'gc>,
+) {
+    match upvalue {
+        Upvalue::Open { thread, index } => {
+            if GcCell::ptr_eq(thread, &current_thread) {
+                if *index < base {
+                    lower_stack[*index] = value;
                 } else {
-                    thread.borrow().stack[*index]
+                    stack[*index - base] = value;
                 }
+            } else {
+                thread.borrow_mut(gc).stack[*index] = value;
             }
-            Upvalue::Closed(value) => *value,
         }
-    }
-
-    fn set_upvalue<'a>(
-        &'a mut self,
-        gc: &'gc GcContext,
-        upvalue: &'a mut Upvalue<'gc>,
-        value: Value<'gc>,
-    ) {
-        match upvalue {
-            Upvalue::Open { thread, index } => {
-                if GcCell::ptr_eq(thread, &self.thread) {
-                    if *index < self.base {
-                        self.lower_stack[*index] = value;
-                    } else {
-                        self.stack[*index - self.base] = value;
-                    }
-                } else {
-                    thread.borrow_mut(gc).stack[*index] = value;
-                }
-            }
-            Upvalue::Closed(v) => *v = value,
-        }
+        Upvalue::Closed(v) => *v = value,
     }
 }
