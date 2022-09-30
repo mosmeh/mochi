@@ -37,37 +37,49 @@ impl<'gc> Vm<'gc> {
             let insn = closure.proto.code[state.pc];
             state.pc += 1;
 
-            match insn.opcode() {
-                OpCode::Move => state.stack[insn.a()] = state.stack[insn.b()],
-                OpCode::LoadI => state.stack[insn.a()] = Value::Integer(insn.sbx() as Integer),
-                OpCode::LoadF => state.stack[insn.a()] = Value::Number(insn.sbx() as Number),
-                OpCode::LoadK => {
+            match insn.raw_opcode() {
+                opcode if opcode == OpCode::Move as u8 => {
+                    state.stack[insn.a()] = state.stack[insn.b()]
+                }
+                opcode if opcode == OpCode::LoadI as u8 => {
+                    state.stack[insn.a()] = Value::Integer(insn.sbx() as Integer)
+                }
+                opcode if opcode == OpCode::LoadF as u8 => {
+                    state.stack[insn.a()] = Value::Number(insn.sbx() as Number)
+                }
+                opcode if opcode == OpCode::LoadK as u8 => {
                     state.stack[insn.a()] = closure.proto.constants[insn.bx()];
                 }
-                OpCode::LoadKX => {
+                opcode if opcode == OpCode::LoadKX as u8 => {
                     let next_insn = closure.proto.code[state.pc];
                     let rb = closure.proto.constants[next_insn.ax()];
                     state.stack[insn.a()] = rb;
                     state.pc += 1;
                 }
-                OpCode::LoadFalse => state.stack[insn.a()] = Value::Boolean(false),
-                OpCode::LFalseSkip => {
+                opcode if opcode == OpCode::LoadFalse as u8 => {
+                    state.stack[insn.a()] = Value::Boolean(false)
+                }
+                opcode if opcode == OpCode::LFalseSkip as u8 => {
                     state.stack[insn.a()] = Value::Boolean(false);
                     state.pc += 1;
                 }
-                OpCode::LoadTrue => state.stack[insn.a()] = Value::Boolean(true),
-                OpCode::LoadNil => state.stack[insn.a()..][..=insn.b()].fill(Value::Nil),
-                OpCode::GetUpval => {
+                opcode if opcode == OpCode::LoadTrue as u8 => {
+                    state.stack[insn.a()] = Value::Boolean(true)
+                }
+                opcode if opcode == OpCode::LoadNil as u8 => {
+                    state.stack[insn.a()..][..=insn.b()].fill(Value::Nil)
+                }
+                opcode if opcode == OpCode::GetUpval as u8 => {
                     let upvalue = closure.upvalues[insn.b()].borrow();
                     let value = state.upvalue(&upvalue);
                     state.stack[insn.a()] = value;
                 }
-                OpCode::SetUpval => {
+                opcode if opcode == OpCode::SetUpval as u8 => {
                     let value = state.stack[insn.a()];
                     let mut upvalue = closure.upvalues[insn.b()].borrow_mut(gc);
                     state.set_upvalue(gc, &mut upvalue, value);
                 }
-                OpCode::GetTabUp => {
+                opcode if opcode == OpCode::GetTabUp as u8 => {
                     let upvalue = closure.upvalues[insn.b()].borrow();
                     let table_value = state.upvalue(&upvalue);
                     let rc = if let Value::String(s) = closure.proto.constants[insn.c() as usize] {
@@ -92,7 +104,7 @@ impl<'gc> Vm<'gc> {
                     }
                     state.stack[insn.a()] = raw_value;
                 }
-                OpCode::GetTable => {
+                opcode if opcode == OpCode::GetTable as u8 => {
                     let rb = state.stack[insn.b()];
                     let rc = state.stack[insn.c() as usize];
                     let raw_value = rb
@@ -112,7 +124,7 @@ impl<'gc> Vm<'gc> {
                     }
                     state.stack[insn.a()] = raw_value;
                 }
-                OpCode::GetI => {
+                opcode if opcode == OpCode::GetI as u8 => {
                     let rb = state.stack[insn.b()];
                     let c = insn.c() as Integer;
                     let raw_value = rb
@@ -132,7 +144,7 @@ impl<'gc> Vm<'gc> {
                     }
                     state.stack[insn.a()] = raw_value;
                 }
-                OpCode::GetField => {
+                opcode if opcode == OpCode::GetField as u8 => {
                     let rb = state.stack[insn.b()];
                     let rc = if let Value::String(s) = closure.proto.constants[insn.c() as usize] {
                         s
@@ -156,7 +168,7 @@ impl<'gc> Vm<'gc> {
                     }
                     state.stack[insn.a()] = raw_value;
                 }
-                OpCode::SetTabUp => {
+                opcode if opcode == OpCode::SetTabUp as u8 => {
                     let kb = if let Value::String(s) = closure.proto.constants[insn.b()] {
                         s
                     } else {
@@ -178,7 +190,7 @@ impl<'gc> Vm<'gc> {
                     };
                     table.set_field(kb, rkc);
                 }
-                OpCode::SetTable => {
+                opcode if opcode == OpCode::SetTable as u8 => {
                     let ra = state.stack[insn.a()];
                     let mut table =
                         ra.borrow_as_table_mut(gc)
@@ -195,7 +207,7 @@ impl<'gc> Vm<'gc> {
                     };
                     table.set(rb, rkc)?;
                 }
-                OpCode::SetI => {
+                opcode if opcode == OpCode::SetI as u8 => {
                     let ra = state.stack[insn.a()];
                     let mut table =
                         ra.borrow_as_table_mut(gc)
@@ -212,7 +224,7 @@ impl<'gc> Vm<'gc> {
                     };
                     table.set(b, rkc)?;
                 }
-                OpCode::SetField => {
+                opcode if opcode == OpCode::SetField as u8 => {
                     let ra = state.stack[insn.a()];
                     let mut table =
                         ra.borrow_as_table_mut(gc)
@@ -233,7 +245,7 @@ impl<'gc> Vm<'gc> {
                     };
                     table.set_field(kb, rkc);
                 }
-                OpCode::NewTable => {
+                opcode if opcode == OpCode::NewTable as u8 => {
                     let mut b = insn.b();
                     if b > 0 {
                         b = 1 << (b - 1);
@@ -247,7 +259,7 @@ impl<'gc> Vm<'gc> {
                     state.stack[insn.a()] = gc.allocate_cell(table).into();
                     state.pc += 1;
                 }
-                OpCode::Self_ => {
+                opcode if opcode == OpCode::Self_ as u8 => {
                     let a = insn.a();
                     let rb = state.stack[insn.b()];
                     state.stack[a + 1] = rb;
@@ -279,98 +291,116 @@ impl<'gc> Vm<'gc> {
                     }
                     state.stack[a] = raw_value;
                 }
-                OpCode::AddI => ops::do_arithmetic_with_immediate(
+                opcode if opcode == OpCode::AddI as u8 => ops::do_arithmetic_with_immediate(
                     &mut state,
                     insn,
                     Integer::wrapping_add,
                     Number::add,
                 ),
-                OpCode::AddK => ops::do_arithmetic_with_constant(
+                opcode if opcode == OpCode::AddK as u8 => ops::do_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::wrapping_add,
                     Number::add,
                 ),
-                OpCode::SubK => ops::do_arithmetic_with_constant(
+                opcode if opcode == OpCode::SubK as u8 => ops::do_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::wrapping_sub,
                     Number::sub,
                 ),
-                OpCode::MulK => ops::do_arithmetic_with_constant(
+                opcode if opcode == OpCode::MulK as u8 => ops::do_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::wrapping_mul,
                     Number::mul,
                 ),
-                OpCode::ModK => ops::do_arithmetic_with_constant(
+                opcode if opcode == OpCode::ModK as u8 => ops::do_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     ops::modi,
                     ops::modf,
                 ),
-                OpCode::PowK => ops::do_float_arithmetic_with_constant(
+                opcode if opcode == OpCode::PowK as u8 => ops::do_float_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     Number::powf,
                 ),
-                OpCode::DivK => ops::do_float_arithmetic_with_constant(
+                opcode if opcode == OpCode::DivK as u8 => ops::do_float_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     Number::div,
                 ),
-                OpCode::IDivK => ops::do_arithmetic_with_constant(
+                opcode if opcode == OpCode::IDivK as u8 => ops::do_arithmetic_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     ops::idivi,
                     ops::idivf,
                 ),
-                OpCode::BAndK => ops::do_bitwise_op_with_constant(
+                opcode if opcode == OpCode::BAndK as u8 => ops::do_bitwise_op_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::bitand,
                 ),
-                OpCode::BOrK => ops::do_bitwise_op_with_constant(
+                opcode if opcode == OpCode::BOrK as u8 => ops::do_bitwise_op_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::bitor,
                 ),
-                OpCode::BXorK => ops::do_bitwise_op_with_constant(
+                opcode if opcode == OpCode::BXorK as u8 => ops::do_bitwise_op_with_constant(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::bitxor,
                 ),
-                OpCode::ShrI => todo!("SHRI"),
-                OpCode::ShlI => todo!("SHLI"),
-                OpCode::Add => {
+                opcode if opcode == OpCode::ShrI as u8 => todo!("SHRI"),
+                opcode if opcode == OpCode::ShlI as u8 => todo!("SHLI"),
+                opcode if opcode == OpCode::Add as u8 => {
                     ops::do_arithmetic(&mut state, insn, Integer::wrapping_add, Number::add)
                 }
-                OpCode::Sub => {
+                opcode if opcode == OpCode::Sub as u8 => {
                     ops::do_arithmetic(&mut state, insn, Integer::wrapping_sub, Number::sub)
                 }
-                OpCode::Mul => {
+                opcode if opcode == OpCode::Mul as u8 => {
                     ops::do_arithmetic(&mut state, insn, Integer::wrapping_mul, Number::mul)
                 }
-                OpCode::Mod => ops::do_arithmetic(&mut state, insn, ops::modi, ops::modf),
-                OpCode::Pow => ops::do_float_arithmetic(&mut state, insn, Number::powf),
-                OpCode::Div => ops::do_float_arithmetic(&mut state, insn, Number::div),
-                OpCode::IDiv => ops::do_arithmetic(&mut state, insn, ops::idivi, ops::idivf),
-                OpCode::BAnd => ops::do_bitwise_op(&mut state, insn, Integer::bitand),
-                OpCode::BOr => ops::do_bitwise_op(&mut state, insn, Integer::bitor),
-                OpCode::BXor => ops::do_bitwise_op(&mut state, insn, Integer::bitxor),
-                OpCode::Shr => ops::do_bitwise_op(&mut state, insn, Integer::shr),
-                OpCode::Shl => ops::do_bitwise_op(&mut state, insn, Integer::shl),
-                OpCode::MmBin => {
+                opcode if opcode == OpCode::Mod as u8 => {
+                    ops::do_arithmetic(&mut state, insn, ops::modi, ops::modf)
+                }
+                opcode if opcode == OpCode::Pow as u8 => {
+                    ops::do_float_arithmetic(&mut state, insn, Number::powf)
+                }
+                opcode if opcode == OpCode::Div as u8 => {
+                    ops::do_float_arithmetic(&mut state, insn, Number::div)
+                }
+                opcode if opcode == OpCode::IDiv as u8 => {
+                    ops::do_arithmetic(&mut state, insn, ops::idivi, ops::idivf)
+                }
+                opcode if opcode == OpCode::BAnd as u8 => {
+                    ops::do_bitwise_op(&mut state, insn, Integer::bitand)
+                }
+                opcode if opcode == OpCode::BOr as u8 => {
+                    ops::do_bitwise_op(&mut state, insn, Integer::bitor)
+                }
+                opcode if opcode == OpCode::BXor as u8 => {
+                    ops::do_bitwise_op(&mut state, insn, Integer::bitxor)
+                }
+                opcode if opcode == OpCode::Shr as u8 => {
+                    ops::do_bitwise_op(&mut state, insn, Integer::shr)
+                }
+                opcode if opcode == OpCode::Shl as u8 => {
+                    ops::do_bitwise_op(&mut state, insn, Integer::shl)
+                }
+                opcode if opcode == OpCode::MmBin as u8 => {
                     let ra = state.stack[insn.a()];
                     let rb = state.stack[insn.b()];
                     let prev_insn = closure.proto.code[state.pc - 2];
@@ -395,9 +425,9 @@ impl<'gc> Vm<'gc> {
 
                     return Ok(());
                 }
-                OpCode::MmBinI => todo!("MMBINI"),
-                OpCode::MmBinK => todo!("MMBINK"),
-                OpCode::Unm => {
+                opcode if opcode == OpCode::MmBinI as u8 => todo!("MMBINI"),
+                opcode if opcode == OpCode::MmBinK as u8 => todo!("MMBINK"),
+                opcode if opcode == OpCode::Unm as u8 => {
                     let rb = state.stack[insn.b()];
                     state.stack[insn.a()] = if let Value::Integer(x) = rb {
                         Value::Integer(-x)
@@ -407,7 +437,7 @@ impl<'gc> Vm<'gc> {
                         todo!("__unm")
                     };
                 }
-                OpCode::BNot => {
+                opcode if opcode == OpCode::BNot as u8 => {
                     let rb = state.stack[insn.b()];
                     state.stack[insn.a()] = if let Some(x) = rb.to_integer_without_string_coercion()
                     {
@@ -416,11 +446,11 @@ impl<'gc> Vm<'gc> {
                         todo!("__bnot")
                     }
                 }
-                OpCode::Not => {
+                opcode if opcode == OpCode::Not as u8 => {
                     let rb = state.stack[insn.b()];
                     state.stack[insn.a()] = Value::Boolean(!rb.to_boolean())
                 }
-                OpCode::Len => {
+                opcode if opcode == OpCode::Len as u8 => {
                     let rb = state.stack[insn.b()];
                     let len = match rb {
                         Value::String(s) => s.len() as Integer,
@@ -429,7 +459,7 @@ impl<'gc> Vm<'gc> {
                     };
                     state.stack[insn.a()] = len.into();
                 }
-                OpCode::Concat => {
+                opcode if opcode == OpCode::Concat as u8 => {
                     let a = insn.a();
                     let b = insn.b();
                     let mut strings = Vec::with_capacity(b);
@@ -445,14 +475,16 @@ impl<'gc> Vm<'gc> {
                     }
                     state.stack[a] = gc.allocate_string(strings.concat()).into();
                 }
-                OpCode::Close => {
+                opcode if opcode == OpCode::Close as u8 => {
                     thread_ref.current_lua_frame().pc = state.pc;
                     thread_ref.close_upvalues(gc, saved_current_frame.base + insn.a());
                     return Ok(());
                 }
-                OpCode::Tbc => todo!("TBC"),
-                OpCode::Jmp => state.pc = (state.pc as isize + insn.sj() as isize) as usize,
-                OpCode::Eq => ops::do_comparison(
+                opcode if opcode == OpCode::Tbc as u8 => todo!("TBC"),
+                opcode if opcode == OpCode::Jmp as u8 => {
+                    state.pc = (state.pc as isize + insn.sj() as isize) as usize
+                }
+                opcode if opcode == OpCode::Eq as u8 => ops::do_comparison(
                     &mut state,
                     &closure.proto,
                     insn,
@@ -460,7 +492,7 @@ impl<'gc> Vm<'gc> {
                     Number::eq,
                     PartialEq::eq,
                 ),
-                OpCode::Lt => ops::do_comparison(
+                opcode if opcode == OpCode::Lt as u8 => ops::do_comparison(
                     &mut state,
                     &closure.proto,
                     insn,
@@ -468,7 +500,7 @@ impl<'gc> Vm<'gc> {
                     Number::lt,
                     PartialOrd::lt,
                 ),
-                OpCode::Le => ops::do_comparison(
+                opcode if opcode == OpCode::Le as u8 => ops::do_comparison(
                     &mut state,
                     &closure.proto,
                     insn,
@@ -476,52 +508,52 @@ impl<'gc> Vm<'gc> {
                     Number::le,
                     PartialOrd::le,
                 ),
-                OpCode::EqK => {
+                opcode if opcode == OpCode::EqK as u8 => {
                     let ra = state.stack[insn.a()];
                     let rb = closure.proto.constants[insn.b()];
                     let cond = ra == rb;
                     ops::do_conditional_jump(&mut state, &closure.proto, insn, cond)
                 }
-                OpCode::EqI => ops::do_comparison_with_immediate(
+                opcode if opcode == OpCode::EqI as u8 => ops::do_comparison_with_immediate(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::eq,
                     Number::eq,
                 ),
-                OpCode::LtI => ops::do_comparison_with_immediate(
+                opcode if opcode == OpCode::LtI as u8 => ops::do_comparison_with_immediate(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::lt,
                     Number::lt,
                 ),
-                OpCode::LeI => ops::do_comparison_with_immediate(
+                opcode if opcode == OpCode::LeI as u8 => ops::do_comparison_with_immediate(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::le,
                     Number::le,
                 ),
-                OpCode::GtI => ops::do_comparison_with_immediate(
+                opcode if opcode == OpCode::GtI as u8 => ops::do_comparison_with_immediate(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::gt,
                     Number::gt,
                 ),
-                OpCode::GeI => ops::do_comparison_with_immediate(
+                opcode if opcode == OpCode::GeI as u8 => ops::do_comparison_with_immediate(
                     &mut state,
                     &closure.proto,
                     insn,
                     Integer::ge,
                     Number::ge,
                 ),
-                OpCode::Test => {
+                opcode if opcode == OpCode::Test as u8 => {
                     let cond = state.stack[insn.a()].to_boolean();
                     ops::do_conditional_jump(&mut state, &closure.proto, insn, cond);
                 }
-                OpCode::TestSet => {
+                opcode if opcode == OpCode::TestSet as u8 => {
                     let rb = state.stack[insn.b()];
                     let cond = rb.to_boolean();
                     if cond == insn.k() {
@@ -532,7 +564,7 @@ impl<'gc> Vm<'gc> {
                         state.pc += 1;
                     }
                 }
-                OpCode::Call => {
+                opcode if opcode == OpCode::Call as u8 => {
                     let a = insn.a();
                     let b = insn.b();
 
@@ -546,7 +578,7 @@ impl<'gc> Vm<'gc> {
 
                     return Ok(());
                 }
-                OpCode::TailCall => {
+                opcode if opcode == OpCode::TailCall as u8 => {
                     let a = insn.a();
                     let b = insn.b();
                     if insn.k() {
@@ -573,7 +605,7 @@ impl<'gc> Vm<'gc> {
 
                     return Ok(());
                 }
-                OpCode::Return => {
+                opcode if opcode == OpCode::Return as u8 => {
                     if insn.k() {
                         thread_ref.close_upvalues(gc, saved_current_frame.bottom);
                     }
@@ -594,18 +626,18 @@ impl<'gc> Vm<'gc> {
                     thread_ref.frames.pop().unwrap();
                     return Ok(());
                 }
-                OpCode::Return0 => {
+                opcode if opcode == OpCode::Return0 as u8 => {
                     thread_ref.stack.truncate(saved_current_frame.bottom);
                     thread_ref.frames.pop().unwrap();
                     return Ok(());
                 }
-                OpCode::Return1 => {
+                opcode if opcode == OpCode::Return1 as u8 => {
                     thread_ref.stack[saved_current_frame.bottom] = state.stack[insn.a()];
                     thread_ref.stack.truncate(saved_current_frame.bottom + 1);
                     thread_ref.frames.pop().unwrap();
                     return Ok(());
                 }
-                OpCode::ForLoop => {
+                opcode if opcode == OpCode::ForLoop as u8 => {
                     let a = insn.a();
                     if let Some(step) = state.stack[a + 2].to_integer() {
                         let count = state.stack[a + 1].to_integer().unwrap();
@@ -621,7 +653,7 @@ impl<'gc> Vm<'gc> {
                         todo!("float FORLOOP")
                     }
                 }
-                OpCode::ForPrep => {
+                opcode if opcode == OpCode::ForPrep as u8 => {
                     let a = insn.a();
                     if let (Some(init), Some(limit), Some(step)) = (
                         state.stack[a].to_integer(),
@@ -645,8 +677,8 @@ impl<'gc> Vm<'gc> {
                         todo!("float FORPREP")
                     }
                 }
-                OpCode::TForPrep => state.pc += insn.bx(),
-                OpCode::TForCall => {
+                opcode if opcode == OpCode::TForPrep as u8 => state.pc += insn.bx(),
+                opcode if opcode == OpCode::TForCall as u8 => {
                     let a = insn.a();
                     thread_ref.current_lua_frame().pc = state.pc;
 
@@ -660,7 +692,7 @@ impl<'gc> Vm<'gc> {
 
                     return Ok(());
                 }
-                OpCode::TForLoop => {
+                opcode if opcode == OpCode::TForLoop as u8 => {
                     let a = insn.a();
                     let control = state.stack[a + 4];
                     if !control.is_nil() {
@@ -668,7 +700,7 @@ impl<'gc> Vm<'gc> {
                         state.pc -= insn.bx();
                     }
                 }
-                OpCode::SetList => {
+                opcode if opcode == OpCode::SetList as u8 => {
                     let a = insn.a();
                     let n = if insn.b() > 0 {
                         Some(insn.b())
@@ -699,7 +731,7 @@ impl<'gc> Vm<'gc> {
                         }
                     }
                 }
-                OpCode::Closure => {
+                opcode if opcode == OpCode::Closure as u8 => {
                     thread_ref.current_lua_frame().pc = state.pc;
                     let proto = closure.proto.protos[insn.bx()];
                     let upvalues = proto
@@ -721,7 +753,7 @@ impl<'gc> Vm<'gc> {
                         gc.allocate(LuaClosure { proto, upvalues }).into();
                     return Ok(());
                 }
-                OpCode::VarArg => {
+                opcode if opcode == OpCode::VarArg as u8 => {
                     let a = insn.a();
                     let n = insn.c();
                     let num_wanted = if n > 0 {
@@ -755,7 +787,7 @@ impl<'gc> Vm<'gc> {
 
                     return Ok(());
                 }
-                OpCode::VarArgPrep => {
+                opcode if opcode == OpCode::VarArgPrep as u8 => {
                     let num_fixed_args = insn.a();
                     let num_extra_args =
                         saved_stack_top - saved_current_frame.bottom - 1 - num_fixed_args;
@@ -786,7 +818,8 @@ impl<'gc> Vm<'gc> {
                         return Ok(());
                     }
                 }
-                OpCode::ExtraArg => unreachable!(),
+                opcode if opcode == OpCode::ExtraArg as u8 => unreachable!(),
+                _ => panic!("unknown opcode"),
             }
 
             if gc.should_perform_gc() {

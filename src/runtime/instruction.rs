@@ -19,8 +19,11 @@ impl std::fmt::Debug for Instruction {
 
 impl Instruction {
     pub fn opcode(&self) -> OpCode {
-        let value = (self.0 & 0x7f) as u8;
-        OpCode::from(value)
+        OpCode::from(self.raw_opcode())
+    }
+
+    pub fn raw_opcode(&self) -> u8 {
+        (self.0 as u8) & 0x7f
     }
 
     pub fn a(&self) -> usize {
