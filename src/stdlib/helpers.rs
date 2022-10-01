@@ -97,6 +97,10 @@ impl<'gc> Argument<'gc> {
         }
     }
 
+    pub fn as_table(&self) -> Result<GcCell<'gc, Table<'gc>>, ErrorKind> {
+        self.to_type("table", Value::as_table)
+    }
+
     pub fn as_thread(&self) -> Result<GcCell<'gc, LuaThread<'gc>>, ErrorKind> {
         self.to_type("thread", Value::as_thread)
     }

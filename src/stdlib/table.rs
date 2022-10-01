@@ -14,6 +14,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
         &[
             (B("concat"), table_concat),
             (B("insert"), table_insert),
+            (B("move"), table_move),
             (B("pack"), table_pack),
             (B("remove"), table_remove),
             (B("unpack"), table_unpack),
@@ -82,6 +83,59 @@ fn table_insert<'gc>(
         _ => return Err(ErrorKind::other("wrong number of arguments to 'insert'")),
     };
     Ok(Action::Return(Vec::new()))
+}
+
+fn table_move<'gc>(
+    gc: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
+) -> Result<Action<'gc>, ErrorKind> {
+    let f = args.nth(2).to_integer()?;
+    let e = args.nth(3).to_integer()?;
+    let t = args.nth(4).to_integer()?;
+    let a1 = args.nth(1).as_table()?;
+    let a2 = args.nth(5);
+    let a2 = if a2.is_present() { a2.as_table()? } else { a1 };
+
+    if f > e {
+        return Ok(Action::Return(vec![a2.into()]));
+    }
+
+    let n = e
+        .checked_sub(f)
+        .and_then(|x| x.checked_add(1))
+        .ok_or(ErrorKind::ArgumentError {
+            nth: 3,
+            message: "too many elements to move",
+        })?;
+    if t.checked_add(n - 1).is_none() {
+        return Err(ErrorKind::ArgumentError {
+            nth: 4,
+            message: "destination wrap around",
+        });
+    }
+
+    if GcCell::ptr_eq(&a1, &a2) {
+        let mut table = a1.borrow_mut(gc);
+        if t <= f || e < t {
+            for i in 0..n {
+                let value = table.get(f + i);
+                table.set(t + i, value)?;
+            }
+        } else {
+            for i in (0..n).rev() {
+                let value = table.get(f + i);
+                table.set(t + i, value)?;
+            }
+        }
+    } else {
+        let a1 = a1.borrow();
+        let mut a2 = a2.borrow_mut(gc);
+        for i in 0..n {
+            a2.set(t + i, a1.get(f + i))?;
+        }
+    }
+    Ok(Action::Return(vec![a2.into()]))
 }
 
 fn table_pack<'gc>(
