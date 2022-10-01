@@ -2,11 +2,15 @@ use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{Action, Continuation, ErrorKind, Vm},
-    types::{Integer, LuaClosure, NativeFunction, Number, Table, Value},
+    types::{Integer, LuaClosure, NativeClosure, NativeFunction, Number, Table, Value},
     LUA_VERSION,
 };
 use bstr::{ByteSlice, B};
-use std::io::{Read, Write};
+use std::{
+    cell::Cell,
+    io::{Read, Write},
+    rc::Rc,
+};
 
 pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let globals = vm.globals();
@@ -41,6 +45,36 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
         gc.allocate_string(B("_VERSION")),
         gc.allocate_string(format!("Lua {}.{}", LUA_VERSION.0, LUA_VERSION.1).into_bytes()),
     );
+
+    let warning_is_on = Rc::new(Cell::new(false));
+    globals.set_field(
+        gc.allocate_string(B("warn")),
+        gc.allocate(NativeClosure::new(move |_, _, args| {
+            let first_message = args.nth(1);
+            let first_message = first_message.to_string()?;
+            if args.without_callee().len() == 1 {
+                if let Some(control) = first_message.strip_prefix(b"@") {
+                    match control {
+                        b"on" => warning_is_on.set(true),
+                        b"off" => warning_is_on.set(false),
+                        _ => (),
+                    }
+                    return Ok(Action::Return(Vec::new()));
+                }
+            }
+
+            let mut concatenated = first_message.to_vec();
+            for i in 2..args.len() {
+                concatenated.extend_from_slice(&args.nth(i).to_string()?);
+            }
+
+            if warning_is_on.get() {
+                eprintln!("Lua warning: {}", concatenated.as_bstr());
+            }
+            Ok(Action::Return(Vec::new()))
+        })),
+    );
+
     vm.globals()
 }
 
