@@ -83,7 +83,7 @@ impl<'gc> Vm<'gc> {
 
         if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
             drop(thread_ref);
-            self.execute_lua_frame(gc)?;
+            while self.execute_lua_frame(gc)?.is_continue() {}
             return Ok(None);
         }
 

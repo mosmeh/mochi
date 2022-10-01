@@ -20,7 +20,7 @@ use crate::{
     types::{LuaString, LuaThread, Table, ThreadStatus, Type, Upvalue, Value},
     Error, LuaClosure,
 };
-use std::path::Path;
+use std::{ops::ControlFlow, path::Path};
 
 #[derive(Default)]
 pub struct Runtime {
@@ -266,7 +266,7 @@ impl<'gc> Vm<'gc> {
         mut table_like: Value<'gc>,
         key: K,
         dest: usize,
-    ) -> Result<(), ErrorKind>
+    ) -> Result<ControlFlow<()>, ErrorKind>
     where
         K: Into<Value<'gc>>,
     {
@@ -281,7 +281,7 @@ impl<'gc> Vm<'gc> {
                     .unwrap_or_default();
                 if metamethod.is_nil() {
                     thread.borrow_mut(gc).stack[dest] = Value::Nil;
-                    return Ok(());
+                    return Ok(ControlFlow::Continue(()));
                 }
                 metamethod
             } else {
@@ -299,18 +299,17 @@ impl<'gc> Vm<'gc> {
             };
             match metamethod {
                 Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
-                    thread.borrow_mut(gc).deferred_call_metamethod(
+                    return Ok(thread.borrow_mut(gc).deferred_call_metamethod(
                         metamethod,
                         &[table_like, key],
                         dest,
-                    );
-                    return Ok(());
+                    ));
                 }
                 Value::Table(table) => {
                     let value = table.borrow().get(key);
                     if !value.is_nil() {
                         thread.borrow_mut(gc).stack[dest] = value;
-                        return Ok(());
+                        return Ok(ControlFlow::Continue(()));
                     }
                 }
                 Value::Nil => unreachable!(),
@@ -330,12 +329,30 @@ impl<'gc> LuaThread<'gc> {
         }
     }
 
+    pub(crate) fn deferred_call(&mut self, bottom: usize) -> Result<ControlFlow<()>, ErrorKind> {
+        match self.stack[bottom] {
+            Value::LuaClosure(_) => {
+                self.frames.push(Frame::Lua(LuaFrame::new(bottom)));
+                Ok(ControlFlow::Continue(()))
+            }
+            Value::NativeFunction(_) | Value::NativeClosure(_) => {
+                self.frames.push(Frame::Native { bottom });
+                Ok(ControlFlow::Break(()))
+            }
+            value => Err(ErrorKind::TypeError {
+                operation: Operation::Call,
+                ty: value.ty(),
+            }),
+        }
+    }
+
+    #[must_use]
     fn deferred_call_metamethod(
         &mut self,
         metamethod: Value<'gc>,
         args: &[Value<'gc>],
         dest: usize,
-    ) {
+    ) -> ControlFlow<()> {
         let current_bottom = self.current_lua_frame().bottom;
         let metamethod_bottom = self.stack.len();
         self.stack.push(metamethod);
@@ -352,7 +369,7 @@ impl<'gc> LuaThread<'gc> {
             },
             callee_bottom: metamethod_bottom,
         });
-        self.deferred_call(metamethod_bottom).unwrap();
+        self.deferred_call(metamethod_bottom).unwrap()
     }
 }
 

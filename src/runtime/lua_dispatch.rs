@@ -1,4 +1,4 @@
-use super::{ops, ErrorKind, LuaFrame, OpCode, Operation, Vm};
+use super::{ops, ErrorKind, Frame, LuaFrame, OpCode, Operation, Vm};
 use crate::{
     gc::GcContext,
     types::{Integer, Number, Table, Upvalue, UpvalueDescription, Value},
@@ -6,11 +6,14 @@ use crate::{
 };
 use std::{
     cmp::PartialOrd,
-    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub},
+    ops::{Add, BitAnd, BitOr, BitXor, ControlFlow, Div, Mul, Shl, Shr, Sub},
 };
 
 impl<'gc> Vm<'gc> {
-    pub(super) fn execute_lua_frame(&self, gc: &'gc GcContext) -> Result<(), ErrorKind> {
+    pub(super) fn execute_lua_frame(
+        &self,
+        gc: &'gc GcContext,
+    ) -> Result<ControlFlow<()>, ErrorKind> {
         let thread = self.current_thread();
         let mut thread_ref = thread.borrow_mut(gc);
         let LuaFrame {
@@ -404,13 +407,11 @@ impl<'gc> Vm<'gc> {
                     let metamethod = metatable.borrow().get_field(metamethod_name);
 
                     thread_ref.current_lua_frame().pc = pc;
-                    thread_ref.deferred_call_metamethod(
+                    return Ok(thread_ref.deferred_call_metamethod(
                         metamethod,
                         &[ra, rb],
                         base + prev_insn.a(),
-                    );
-
-                    return Ok(());
+                    ));
                 }
                 opcode if opcode == OpCode::MmBinI as u8 => todo!("MMBINI"),
                 opcode if opcode == OpCode::MmBinK as u8 => todo!("MMBINK"),
@@ -464,7 +465,7 @@ impl<'gc> Vm<'gc> {
                 opcode if opcode == OpCode::Close as u8 => {
                     thread_ref.current_lua_frame().pc = pc;
                     thread_ref.close_upvalues(gc, base + insn.a());
-                    return Ok(());
+                    return Ok(ControlFlow::Continue(()));
                 }
                 opcode if opcode == OpCode::Tbc as u8 => todo!("TBC"),
                 opcode if opcode == OpCode::Jmp as u8 => {
@@ -566,9 +567,7 @@ impl<'gc> Vm<'gc> {
                     thread_ref
                         .stack
                         .truncate(if b > 0 { base + a + b } else { saved_stack_top });
-                    thread_ref.deferred_call(base + a)?;
-
-                    return Ok(());
+                    return thread_ref.deferred_call(base + a);
                 }
                 opcode if opcode == OpCode::TailCall as u8 => {
                     let a = insn.a();
@@ -589,9 +588,7 @@ impl<'gc> Vm<'gc> {
                         thread_ref.stack.truncate(bottom + b);
                     }
                     thread_ref.frames.pop().unwrap();
-                    thread_ref.deferred_call(bottom)?;
-
-                    return Ok(());
+                    return thread_ref.deferred_call(bottom);
                 }
                 opcode if opcode == OpCode::Return as u8 => {
                     if insn.k() {
@@ -609,18 +606,30 @@ impl<'gc> Vm<'gc> {
                         .copy_within(base + a..base + a + num_results, bottom);
                     thread_ref.stack.truncate(bottom + num_results);
                     thread_ref.frames.pop().unwrap();
-                    return Ok(());
+                    return Ok(if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
+                        ControlFlow::Continue(())
+                    } else {
+                        ControlFlow::Break(())
+                    });
                 }
                 opcode if opcode == OpCode::Return0 as u8 => {
                     thread_ref.stack.truncate(bottom);
                     thread_ref.frames.pop().unwrap();
-                    return Ok(());
+                    return Ok(if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
+                        ControlFlow::Continue(())
+                    } else {
+                        ControlFlow::Break(())
+                    });
                 }
                 opcode if opcode == OpCode::Return1 as u8 => {
                     thread_ref.stack[bottom] = stack[insn.a()];
                     thread_ref.stack.truncate(bottom + 1);
                     thread_ref.frames.pop().unwrap();
-                    return Ok(());
+                    return Ok(if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
+                        ControlFlow::Continue(())
+                    } else {
+                        ControlFlow::Break(())
+                    });
                 }
                 opcode if opcode == OpCode::ForLoop as u8 => {
                     let a = insn.a();
@@ -673,9 +682,7 @@ impl<'gc> Vm<'gc> {
                     thread_ref
                         .stack
                         .copy_within(arg_base..arg_base + 3, new_bottom);
-                    thread_ref.deferred_call(new_bottom)?;
-
-                    return Ok(());
+                    return thread_ref.deferred_call(new_bottom);
                 }
                 opcode if opcode == OpCode::TForLoop as u8 => {
                     let a = insn.a();
@@ -734,7 +741,7 @@ impl<'gc> Vm<'gc> {
                         .collect();
                     thread_ref.stack[base + insn.a()] =
                         gc.allocate(LuaClosure { proto, upvalues }).into();
-                    return Ok(());
+                    return Ok(ControlFlow::Continue(()));
                 }
                 opcode if opcode == OpCode::VarArg as u8 => {
                     let a = insn.a();
@@ -762,7 +769,7 @@ impl<'gc> Vm<'gc> {
                         }
                     }
 
-                    return Ok(());
+                    return Ok(ControlFlow::Continue(()));
                 }
                 opcode if opcode == OpCode::VarArgPrep as u8 => {
                     let num_fixed_args = insn.a();
@@ -786,7 +793,7 @@ impl<'gc> Vm<'gc> {
                             .copy_within(bottom..bottom + num_fixed_args + 1, saved_stack_top);
                         thread_ref.stack[bottom + 1..bottom + num_fixed_args + 1].fill(Value::Nil);
 
-                        return Ok(());
+                        return Ok(ControlFlow::Continue(()));
                     }
                 }
                 opcode if opcode == OpCode::ExtraArg as u8 => unreachable!(),
@@ -795,7 +802,7 @@ impl<'gc> Vm<'gc> {
 
             if gc.should_perform_gc() {
                 thread_ref.current_lua_frame().pc = pc;
-                return Ok(());
+                return Ok(ControlFlow::Break(()));
             }
         }
     }

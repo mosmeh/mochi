@@ -1,7 +1,7 @@
 use super::{LineRange, Upvalue, Value};
 use crate::{
     gc::{GarbageCollect, GcCell, GcContext, Tracer},
-    runtime::{ErrorKind, Frame, LuaFrame, Operation},
+    runtime::{ErrorKind, Frame},
 };
 use std::{collections::BTreeMap, fmt::Display};
 
@@ -68,23 +68,6 @@ impl<'gc> LuaThread<'gc> {
                 _ => TracebackFrame::Native,
             })
             .collect()
-    }
-
-    pub(crate) fn deferred_call(&mut self, bottom: usize) -> Result<(), ErrorKind> {
-        match self.stack[bottom] {
-            Value::LuaClosure(_) => {
-                self.frames.push(Frame::Lua(LuaFrame::new(bottom)));
-                Ok(())
-            }
-            Value::NativeFunction(_) | Value::NativeClosure(_) => {
-                self.frames.push(Frame::Native { bottom });
-                Ok(())
-            }
-            value => Err(ErrorKind::TypeError {
-                operation: Operation::Call,
-                ty: value.ty(),
-            }),
-        }
     }
 
     pub(crate) fn close_upvalues(&mut self, gc: &'gc GcContext, boundary: usize) {
