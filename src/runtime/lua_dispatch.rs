@@ -466,15 +466,12 @@ impl<'gc> Vm<'gc> {
                 opcode if opcode == OpCode::Jmp as u8 => {
                     pc = (pc as isize + insn.sj() as isize) as usize
                 }
-                opcode if opcode == OpCode::Eq as u8 => ops::do_comparison(
-                    stack,
-                    &mut pc,
-                    code,
-                    insn,
-                    Integer::eq,
-                    Number::eq,
-                    PartialEq::eq,
-                ),
+                opcode if opcode == OpCode::Eq as u8 => {
+                    let ra = stack[insn.a()];
+                    let rb = stack[insn.b()];
+                    let cond = ra == rb;
+                    ops::do_conditional_jump(&mut pc, code, insn, cond)
+                }
                 opcode if opcode == OpCode::Lt as u8 => ops::do_comparison(
                     stack,
                     &mut pc,
@@ -499,14 +496,16 @@ impl<'gc> Vm<'gc> {
                     let cond = ra == rb;
                     ops::do_conditional_jump(&mut pc, code, insn, cond)
                 }
-                opcode if opcode == OpCode::EqI as u8 => ops::do_comparison_with_immediate(
-                    stack,
-                    &mut pc,
-                    code,
-                    insn,
-                    Integer::eq,
-                    Number::eq,
-                ),
+                opcode if opcode == OpCode::EqI as u8 => {
+                    let ra = stack[insn.a()];
+                    let imm = insn.sb();
+                    let cond = match ra {
+                        Value::Integer(x) => x == imm as Integer,
+                        Value::Number(x) => x == imm as Number,
+                        _ => false,
+                    };
+                    ops::do_conditional_jump(&mut pc, code, insn, cond)
+                }
                 opcode if opcode == OpCode::LtI as u8 => ops::do_comparison_with_immediate(
                     stack,
                     &mut pc,
