@@ -82,20 +82,13 @@ impl Runtime {
         }
 
         loop {
-            let result: Result<_, RuntimeError> = self.heap.with(|gc, vm| {
-                let mut vm = vm.borrow_mut(gc);
-                while !vm.thread_stack.is_empty() {
-                    if let Some(action) = vm.execute_single_step(gc)? {
-                        return Ok(action);
-                    }
-                }
-                Ok(RuntimeAction::Exit)
-            });
-            match result {
-                Ok(RuntimeAction::StepGc) => self.heap.step(),
-                Ok(RuntimeAction::MutateGc(mutator)) => mutator(&mut self.heap),
-                Ok(RuntimeAction::Exit) => return Ok(()),
-                Err(err) => return Err(err),
+            let action = self
+                .heap
+                .with(|gc, vm| vm.borrow_mut(gc).execute_single_step(gc))?;
+            match action {
+                RuntimeAction::StepGc => self.heap.step(),
+                RuntimeAction::MutateGc(mutator) => mutator(&mut self.heap),
+                RuntimeAction::Exit => return Ok(()),
             }
         }
     }
@@ -213,50 +206,60 @@ impl<'gc> Vm<'gc> {
         self.metatables[ty as usize] = metatable.into();
     }
 
-    fn execute_single_step(
-        &mut self,
-        gc: &'gc GcContext,
-    ) -> Result<Option<RuntimeAction>, RuntimeError> {
-        match self.execute_next_frame(gc) {
-            Ok(Some(action)) => return Ok(Some(action)),
-            Ok(None) => (),
-            Err(kind) => {
-                let thread = self.current_thread();
-                let mut thread_ref = thread.borrow_mut(gc);
-                if let Some((i, frame)) = thread_ref
-                    .frames
-                    .iter_mut()
-                    .enumerate()
-                    .rfind(|(_, frame)| matches!(frame, Frame::ProtectedCallContinuation { .. }))
-                {
-                    if let Frame::ProtectedCallContinuation { inner, .. } = frame {
-                        inner.continuation.as_mut().unwrap().set_args(Err(kind));
-                    } else {
-                        unreachable!()
-                    }
-                    thread_ref.frames.truncate(i + 1);
-                } else {
-                    self.thread_stack.pop().unwrap();
-                    thread_ref.status = ThreadStatus::Error(kind.clone());
-
-                    if self.thread_stack.is_empty() {
-                        let traceback = thread_ref.traceback();
-                        *thread_ref = LuaThread::new();
-                        return Err(RuntimeError { kind, traceback });
-                    }
-                    drop(thread_ref);
-
-                    let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
-                    if let Frame::ResumeContinuation(frame) = resumer_ref.frames.last_mut().unwrap()
+    fn execute_single_step(&mut self, gc: &'gc GcContext) -> Result<RuntimeAction, RuntimeError> {
+        while !self.thread_stack.is_empty() {
+            match self.execute_next_frame(gc) {
+                Ok(Some(action)) => return Ok(action),
+                Ok(None) => (),
+                Err(kind) => {
+                    let thread = self.current_thread();
+                    let mut thread_ref = thread.borrow_mut(gc);
+                    if let Some((i, frame)) =
+                        thread_ref
+                            .frames
+                            .iter_mut()
+                            .enumerate()
+                            .rfind(|(_, frame)| {
+                                matches!(frame, Frame::ProtectedCallContinuation { .. })
+                            })
                     {
-                        frame.continuation.as_mut().unwrap().set_args(Err(kind));
+                        if let Frame::ProtectedCallContinuation { inner, .. } = frame {
+                            inner.continuation.as_mut().unwrap().set_args(Err(kind));
+                        } else {
+                            unreachable!()
+                        }
+                        thread_ref.frames.truncate(i + 1);
                     } else {
-                        unreachable!()
+                        self.thread_stack.pop().unwrap();
+                        thread_ref.status = ThreadStatus::Error(kind.clone());
+
+                        if self.thread_stack.is_empty() {
+                            let traceback = thread_ref.traceback();
+                            *thread_ref = LuaThread::new();
+                            return Err(RuntimeError { kind, traceback });
+                        }
+                        drop(thread_ref);
+
+                        let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
+                        if let Frame::ResumeContinuation(frame) =
+                            resumer_ref.frames.last_mut().unwrap()
+                        {
+                            frame.continuation.as_mut().unwrap().set_args(Err(kind));
+                        } else {
+                            unreachable!()
+                        }
                     }
                 }
             }
+            if gc.should_perform_gc() {
+                return Ok(RuntimeAction::StepGc);
+            }
         }
-        Ok(gc.should_perform_gc().then_some(RuntimeAction::StepGc))
+        Ok(if gc.should_perform_gc() {
+            RuntimeAction::StepGc
+        } else {
+            RuntimeAction::Exit
+        })
     }
 
     fn deferred_call_index_metamethod<K>(
