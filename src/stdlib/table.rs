@@ -133,6 +133,15 @@ fn table_unpack<'gc>(
     let start = args.nth(2).to_integer_or(1)?;
     let end = args.nth(3).to_integer_or_else(|| table.lua_len())?;
 
+    if start > end {
+        return Ok(Action::Return(Vec::new()));
+    }
+
+    match end.checked_sub(start) {
+        Some(n) if n < i32::MAX as Integer => (),
+        _ => return Err(ErrorKind::other("too many results to unpack")),
+    }
+
     Ok(Action::Return(
         (start..=end).map(|key| table.get(key)).collect(),
     ))
