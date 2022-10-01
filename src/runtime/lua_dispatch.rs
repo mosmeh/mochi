@@ -86,10 +86,9 @@ impl<'gc> Vm<'gc> {
                     let upvalue = upvalues[insn.b()].borrow();
                     let table_value =
                         super::get_upvalue(thread, base, lower_stack, stack, &upvalue);
-                    let rc = if let Value::String(s) = constants[insn.c() as usize] {
-                        s
-                    } else {
-                        unreachable!();
+                    let rc = match constants[insn.c() as usize] {
+                        Value::String(s) => s,
+                        _ => unreachable!(),
                     };
                     let raw_value = table_value
                         .borrow_as_table()
@@ -150,10 +149,9 @@ impl<'gc> Vm<'gc> {
                 }
                 opcode if opcode == OpCode::GetField as u8 => {
                     let rb = stack[insn.b()];
-                    let rc = if let Value::String(s) = constants[insn.c() as usize] {
-                        s
-                    } else {
-                        unreachable!();
+                    let rc = match constants[insn.c() as usize] {
+                        Value::String(s) => s,
+                        _ => unreachable!(),
                     };
                     let raw_value = rb
                         .borrow_as_table()
@@ -173,10 +171,9 @@ impl<'gc> Vm<'gc> {
                     stack[insn.a()] = raw_value;
                 }
                 opcode if opcode == OpCode::SetTabUp as u8 => {
-                    let kb = if let Value::String(s) = constants[insn.b()] {
-                        s
-                    } else {
-                        unreachable!();
+                    let kb = match constants[insn.b()] {
+                        Value::String(s) => s,
+                        _ => unreachable!(),
                     };
                     let upvalue = upvalues[insn.a()].borrow();
                     let table_value =
@@ -225,10 +222,9 @@ impl<'gc> Vm<'gc> {
                                 operation: Operation::Index,
                                 ty: ra.ty(),
                             })?;
-                    let kb = if let Value::String(s) = constants[insn.b()] {
-                        s
-                    } else {
-                        unreachable!();
+                    let kb = match constants[insn.b()] {
+                        Value::String(s) => s,
+                        _ => unreachable!(),
                     };
                     let c = insn.c() as usize;
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
@@ -254,10 +250,9 @@ impl<'gc> Vm<'gc> {
                     stack[a + 1] = rb;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
-                    let rkc = if let Value::String(s) = rkc {
-                        s
-                    } else {
-                        unreachable!();
+                    let rkc = match rkc {
+                        Value::String(s) => s,
+                        _ => unreachable!(),
                     };
                     let raw_value = rb
                         .borrow_as_table()

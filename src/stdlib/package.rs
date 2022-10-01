@@ -278,10 +278,11 @@ where
     let name = name.as_ref().replace(sep, dirsep);
     let pathname = path.as_ref().replace(LUA_PATH_MARK, name);
     for filename in pathname.split_str(LUA_PATH_SEP) {
-        if let Ok(p) = filename.to_path() {
-            if std::fs::File::open(p).is_ok() {
+        match filename.to_path() {
+            Ok(p) if std::fs::File::open(p).is_ok() => {
                 return Ok(filename.to_vec());
             }
+            _ => (),
         }
     }
 

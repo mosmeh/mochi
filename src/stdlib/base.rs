@@ -427,10 +427,11 @@ fn base_select<'gc>(
     let num_args = args.without_callee().len() as Integer;
     let index = args.nth(1);
 
-    if let Some(Value::String(s)) = index.get() {
-        if s.as_ref() == b"#" {
-            return Ok(Action::Return(vec![(num_args - 1).into()]));
+    match index.get() {
+        Some(Value::String(s)) if s.as_ref() == b"#" => {
+            return Ok(Action::Return(vec![(num_args - 1).into()]))
         }
+        _ => (),
     }
 
     let index = match index.to_integer()? {

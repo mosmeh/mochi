@@ -431,10 +431,9 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
     }
 
     fn consume_long_string(&mut self, opening_level: usize) -> Result<Token<'gc>, LexerError> {
-        if let Some(ch) = self.peek()? {
-            if is_newline(ch) {
-                self.consume_newline()?;
-            }
+        match self.peek()? {
+            Some(ch) if is_newline(ch) => self.consume_newline()?,
+            _ => (),
         }
         let mut buf = Vec::new();
         while let Some(ch) = self.consume()? {

@@ -80,30 +80,28 @@ fn utf8_codes<'gc>(
 
         let mut i = n as usize;
         loop {
-            if let Some(ch) = s.get(i) {
-                if !is_continuation_byte(*ch) {
-                    break;
-                }
-                i += 1;
-            } else {
-                return Ok(Action::Return(Vec::new()));
+            match s.get(i) {
+                Some(ch) if !is_continuation_byte(*ch) => break,
+                Some(_) => i += 1,
+                None => return Ok(Action::Return(Vec::new())),
             }
         }
-        if let Some((ch, len)) = decode_utf8(&s[i..]) {
-            if (lax || is_valid_unicode_char(ch))
-                && !s
-                    .get(i + len)
-                    .copied()
-                    .map(is_continuation_byte)
-                    .unwrap_or_default()
+        match decode_utf8(&s[i..]) {
+            Some((ch, len))
+                if (lax || is_valid_unicode_char(ch))
+                    && !s
+                        .get(i + len)
+                        .copied()
+                        .map(is_continuation_byte)
+                        .unwrap_or_default() =>
             {
-                return Ok(Action::Return(vec![
+                Ok(Action::Return(vec![
                     ((i + 1) as Integer).into(),
                     (ch as Integer).into(),
-                ]));
+                ]))
             }
+            _ => Err(ErrorKind::other("invalid UTF-8 code")),
         }
-        Err(ErrorKind::other("invalid UTF-8 code"))
     }
 
     fn iterate_lax<'gc>(
@@ -181,15 +179,14 @@ fn utf8_codepoint<'gc>(
     let mut values = Vec::new();
     let mut pos = start;
     while pos < end {
-        if let Some((ch, len)) = decode_utf8(slice) {
-            if lax || is_valid_unicode_char(ch) {
+        match decode_utf8(slice) {
+            Some((ch, len)) if lax || is_valid_unicode_char(ch) => {
                 slice = &slice[len..];
                 pos += len;
                 values.push((ch as Integer).into());
-                continue;
             }
+            _ => return Err(ErrorKind::other("invalid UTF-8 code")),
         }
-        return Err(ErrorKind::other("invalid UTF-8 code"));
     }
 
     Ok(Action::Return(values))
@@ -228,18 +225,19 @@ fn utf8_len<'gc>(
     let mut n = 0 as Integer;
     let mut pos = start;
     while pos < end {
-        if let Some((ch, len)) = decode_utf8(slice) {
-            if lax || is_valid_unicode_char(ch) {
+        match decode_utf8(slice) {
+            Some((ch, len)) if lax || is_valid_unicode_char(ch) => {
                 slice = &slice[len..];
                 pos += len;
                 n += 1;
-                continue;
+            }
+            _ => {
+                return Ok(Action::Return(vec![
+                    Value::Nil,
+                    ((pos + 1) as Integer).into(),
+                ]))
             }
         }
-        return Ok(Action::Return(vec![
-            Value::Nil,
-            ((pos + 1) as Integer).into(),
-        ]));
     }
 
     Ok(Action::Return(vec![n.into()]))
@@ -274,10 +272,11 @@ fn utf8_offset<'gc>(
         return Ok(Action::Return(vec![((pos + 1) as Integer).into()]));
     }
 
-    if let Some(b) = s.get(pos) {
-        if is_continuation_byte(*b) {
-            return Err(ErrorKind::other("initial position is a continuation byte"));
+    match s.get(pos) {
+        Some(b) if is_continuation_byte(*b) => {
+            return Err(ErrorKind::other("initial position is a continuation byte"))
         }
+        _ => (),
     }
     if n < 0 {
         while n < 0 && pos > 0 {
@@ -286,12 +285,10 @@ fn utf8_offset<'gc>(
                 if pos == 0 {
                     break;
                 }
-                if let Some(b) = s.get(pos) {
-                    if !is_continuation_byte(*b) {
-                        break;
-                    }
-                } else {
-                    break;
+                match s.get(pos) {
+                    Some(b) if !is_continuation_byte(*b) => break,
+                    Some(_) => (),
+                    None => break,
                 }
             }
             n += 1;
@@ -301,12 +298,10 @@ fn utf8_offset<'gc>(
         while n > 0 && pos < s.len() {
             loop {
                 pos += 1;
-                if let Some(b) = s.get(pos) {
-                    if !is_continuation_byte(*b) {
-                        break;
-                    }
-                } else {
-                    break;
+                match s.get(pos) {
+                    Some(b) if !is_continuation_byte(*b) => break,
+                    Some(_) => (),
+                    None => break,
                 }
             }
             n -= 1;

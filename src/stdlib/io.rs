@@ -335,17 +335,15 @@ fn file_setvbuf<'gc>(
         match mode.as_ref() {
             b"no" => handle.replace_with(LuaFile::NonBuffered)?,
             b"full" => handle.replace_with(|file| {
-                LuaFile::FullyBuffered(Box::new(if let Some(size) = size {
-                    FullyBufferedFile::with_capacity(size, file)
-                } else {
-                    FullyBufferedFile::new(file)
+                LuaFile::FullyBuffered(Box::new(match size {
+                    Some(size) => FullyBufferedFile::with_capacity(size, file),
+                    None => FullyBufferedFile::new(file),
                 }))
             })?,
             b"line" => handle.replace_with(|file| {
-                LuaFile::LineBuffered(Box::new(if let Some(size) = size {
-                    LineBufferedFile::with_capacity(size, file)
-                } else {
-                    LineBufferedFile::new(file)
+                LuaFile::LineBuffered(Box::new(match size {
+                    Some(size) => LineBufferedFile::with_capacity(size, file),
+                    None => LineBufferedFile::new(file),
                 }))
             })?,
             _ => {
@@ -465,22 +463,20 @@ fn common_read<'gc>(
                 file.read_to_end(&mut buf)?;
                 values.push(gc.allocate_string(buf).into());
             }
-            Some(b'l') => {
-                if let Some(line) = read_line(gc, file, true)? {
-                    values.push(line);
-                } else {
+            Some(b'l') => match read_line(gc, file, true)? {
+                Some(line) => values.push(line),
+                None => {
                     values.push(Value::Nil);
                     break;
                 }
-            }
-            Some(b'L') => {
-                if let Some(line) = read_line(gc, file, false)? {
-                    values.push(line);
-                } else {
+            },
+            Some(b'L') => match read_line(gc, file, false)? {
+                Some(line) => values.push(line),
+                None => {
                     values.push(Value::Nil);
                     break;
                 }
-            }
+            },
             _ => {
                 return Err(ErrorKind::ArgumentError {
                     nth: i,

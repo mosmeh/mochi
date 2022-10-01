@@ -63,10 +63,9 @@ fn os_date<'gc>(
         });
     }
 
-    let (format, is_utc) = if let Some(format) = format.strip_prefix(b"!".as_ref()) {
-        (format, true)
-    } else {
-        (format.as_ref(), false)
+    let (format, is_utc) = match format.strip_prefix(b"!".as_ref()) {
+        Some(format) => (format, true),
+        None => (format.as_ref(), false),
     };
 
     if format == b"*t" {

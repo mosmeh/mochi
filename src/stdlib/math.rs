@@ -211,16 +211,15 @@ fn math_fmod<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let x = args.nth(1);
     let y = args.nth(2);
-    let result = if let (Value::Integer(x), Value::Integer(y)) = (x.as_value()?, y.as_value()?) {
-        if y == 0 {
+    let result = match (x.as_value()?, y.as_value()?) {
+        (Value::Integer(_), Value::Integer(0)) => {
             return Err(ErrorKind::ArgumentError {
                 nth: 2,
                 message: "zero",
-            });
+            })
         }
-        (x % y).into()
-    } else {
-        (x.to_number()? % y.to_number()?).into()
+        (Value::Integer(x), Value::Integer(y)) => (x % y).into(),
+        _ => (x.to_number()? % y.to_number()?).into(),
     };
     Ok(Action::Return(vec![result]))
 }

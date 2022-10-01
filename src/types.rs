@@ -377,12 +377,10 @@ impl<'gc> Value<'gc> {
     }
 
     pub fn as_userdata<T: Any>(&self) -> Option<GcCell<'gc, UserData<'gc>>> {
-        if let Self::UserData(x) = self {
-            if x.borrow().is::<T>() {
-                return Some(*x);
-            }
+        match self {
+            Self::UserData(ud) if ud.borrow().is::<T>() => Some(*ud),
+            _ => None,
         }
-        None
     }
 
     pub fn borrow_as_userdata<T: Any>(&self) -> Option<Ref<T>> {

@@ -344,30 +344,28 @@ pub(super) fn lower_ir<'gc>(
                     false,
                 ));
             }
-            IrInstruction::LoadNil { dest } => {
-                if let Some(prev_insn) = code.last_mut() {
+            IrInstruction::LoadNil { dest } => match code.last_mut() {
+                Some(prev_insn)
                     if prev_insn.opcode() == OpCode::LoadNil
                         && prev_insn.a() + prev_insn.b() + 1 == dest.0 as usize
-                        && prev_insn.b() < u8::MAX as usize
-                    {
-                        *prev_insn = Instruction::from_a_b_c_k(
-                            OpCode::LoadNil,
-                            prev_insn.a() as u8,
-                            prev_insn.b() as u8 + 1,
-                            0,
-                            false,
-                        );
-                        continue;
-                    }
+                        && prev_insn.b() < u8::MAX as usize =>
+                {
+                    *prev_insn = Instruction::from_a_b_c_k(
+                        OpCode::LoadNil,
+                        prev_insn.a() as u8,
+                        prev_insn.b() as u8 + 1,
+                        0,
+                        false,
+                    )
                 }
-                code.push(Instruction::from_a_b_c_k(
+                _ => code.push(Instruction::from_a_b_c_k(
                     OpCode::LoadNil,
                     dest.0,
                     0,
                     0,
                     false,
-                ));
-            }
+                )),
+            },
             IrInstruction::LoadConstant { dest, constant } => {
                 if constant.0 <= UINT17_MAX {
                     code.push(Instruction::from_a_bx(OpCode::LoadK, dest.0, constant.0));

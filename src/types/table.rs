@@ -86,15 +86,15 @@ impl<'gc> Table<'gc> {
         K: Into<Value<'gc>>,
     {
         let key = key.into();
-        let key = if let Some(i) = key.to_integer_without_string_coercion() {
-            if i >= 1 {
+        let key = match key.to_integer_without_string_coercion() {
+            Some(i @ 1..) => {
                 if let Some(value) = self.array.get((i - 1) as usize) {
                     return *value;
                 }
+                Value::Integer(i)
             }
-            Value::Integer(i)
-        } else {
-            key
+            Some(i) => Value::Integer(i),
+            None => key,
         };
         self.get_hashtable_key(key)
     }
@@ -112,19 +112,17 @@ impl<'gc> Table<'gc> {
         let key = match key.into() {
             Value::Nil => return Err(TableError::IndexIsNil),
             Value::Number(x) if x.is_nan() => return Err(TableError::IndexIsNaN),
-            key => {
-                if let Some(i) = key.to_integer_without_string_coercion() {
-                    if i >= 1 {
-                        if let Some(slot) = self.array.get_mut((i - 1) as usize) {
-                            *slot = value;
-                            return Ok(());
-                        }
+            key => match key.to_integer_without_string_coercion() {
+                Some(i @ 1..) => {
+                    if let Some(slot) = self.array.get_mut((i - 1) as usize) {
+                        *slot = value;
+                        return Ok(());
                     }
                     Value::Integer(i)
-                } else {
-                    key
                 }
-            }
+                Some(i) => Value::Integer(i),
+                None => key,
+            },
         };
         self.set_hashtable_key(key, value);
         Ok(())
@@ -225,10 +223,9 @@ impl<'gc> Table<'gc> {
             unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
             return;
         }
-        if value.is_nil() {
-            return;
+        if !value.is_nil() {
+            unsafe { self.set_new_hashtable_key(key, value) }
         }
-        unsafe { self.set_new_hashtable_key(key, value) };
     }
 
     unsafe fn set_new_hashtable_key(&mut self, key: Value<'gc>, value: Value<'gc>) {
@@ -348,11 +345,13 @@ impl<'gc> Table<'gc> {
         let mut num_positive = 0;
 
         // array part
-        if let Some(x) = self.array.get(0) {
-            if !x.is_nil() {
+        match self.array.get(0) {
+            Some(Value::Nil) => (),
+            Some(_) => {
                 bins[0] = 1;
                 num_positive += 1;
             }
+            _ => (),
         }
         let mut threshold = 1;
         for bin in bins[1..].iter_mut() {
@@ -444,12 +443,10 @@ impl<'gc> Table<'gc> {
             debug_assert!(bucket.has_key());
             let key = bucket.key();
             let value = bucket.value();
-            if let Value::Integer(i) = key {
-                if i >= 1 {
-                    if let Some(slot) = self.array.get_mut((i - 1) as usize) {
-                        *slot = value;
-                        continue;
-                    }
+            if let Value::Integer(i @ 1..) = key {
+                if let Some(slot) = self.array.get_mut((i - 1) as usize) {
+                    *slot = value;
+                    continue;
                 }
             }
             self.set(key, value).unwrap();
