@@ -98,6 +98,7 @@ pub enum Operation {
     Call,
     Concatenate,
     Arithmetic,
+    Compare,
 }
 
 impl Display for Operation {
@@ -107,6 +108,7 @@ impl Display for Operation {
             Self::Call => f.write_str("call"),
             Self::Concatenate => f.write_str("concatenate"),
             Self::Arithmetic => f.write_str("perform arithmetic"),
+            Self::Compare => f.write_str("compare"),
         }
     }
 }

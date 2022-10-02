@@ -1,4 +1,4 @@
-use super::{ops, ErrorKind, Frame, LuaFrame, OpCode, Operation, Vm};
+use super::{ops, Action, ErrorKind, Frame, LuaFrame, Metamethod, OpCode, Operation, Vm};
 use crate::{
     gc::GcContext,
     types::{Integer, Number, Table, Upvalue, UpvalueDescription, Value},
@@ -96,10 +96,8 @@ impl<'gc> Vm<'gc> {
                         .unwrap_or_default();
                     if raw_value.is_nil() {
                         thread_ref.current_lua_frame().pc = pc;
-                        drop(thread_ref);
-                        return self.deferred_call_index_metamethod(
-                            gc,
-                            thread,
+                        return self.index_slow_path(
+                            &mut thread_ref,
                             table_value,
                             rc,
                             base + insn.a(),
@@ -116,14 +114,7 @@ impl<'gc> Vm<'gc> {
                         .unwrap_or_default();
                     if raw_value.is_nil() {
                         thread_ref.current_lua_frame().pc = pc;
-                        drop(thread_ref);
-                        return self.deferred_call_index_metamethod(
-                            gc,
-                            thread,
-                            rb,
-                            rc,
-                            base + insn.a(),
-                        );
+                        return self.index_slow_path(&mut thread_ref, rb, rc, base + insn.a());
                     }
                     stack[insn.a()] = raw_value;
                 }
@@ -136,14 +127,7 @@ impl<'gc> Vm<'gc> {
                         .unwrap_or_default();
                     if raw_value.is_nil() {
                         thread_ref.current_lua_frame().pc = pc;
-                        drop(thread_ref);
-                        return self.deferred_call_index_metamethod(
-                            gc,
-                            thread,
-                            rb,
-                            c,
-                            base + insn.a(),
-                        );
+                        return self.index_slow_path(&mut thread_ref, rb, c, base + insn.a());
                     }
                     stack[insn.a()] = raw_value;
                 }
@@ -159,14 +143,7 @@ impl<'gc> Vm<'gc> {
                         .unwrap_or_default();
                     if raw_value.is_nil() {
                         thread_ref.current_lua_frame().pc = pc;
-                        drop(thread_ref);
-                        return self.deferred_call_index_metamethod(
-                            gc,
-                            thread,
-                            rb,
-                            rc,
-                            base + insn.a(),
-                        );
+                        return self.index_slow_path(&mut thread_ref, rb, rc, base + insn.a());
                     }
                     stack[insn.a()] = raw_value;
                 }
@@ -260,8 +237,7 @@ impl<'gc> Vm<'gc> {
                         .unwrap_or_default();
                     if raw_value.is_nil() {
                         thread_ref.current_lua_frame().pc = pc;
-                        drop(thread_ref);
-                        return self.deferred_call_index_metamethod(gc, thread, rb, rkc, base + a);
+                        return self.index_slow_path(&mut thread_ref, rb, rkc, base + a);
                     }
                     stack[a] = raw_value;
                 }
@@ -389,6 +365,7 @@ impl<'gc> Vm<'gc> {
                     let ra = stack[insn.a()];
                     let rb = stack[insn.b()];
                     let prev_insn = code[pc - 2];
+                    let dest = base + prev_insn.a();
 
                     let metatable = self
                         .metatable_of_object(ra)
@@ -402,10 +379,14 @@ impl<'gc> Vm<'gc> {
                     let metamethod = metatable.borrow().get_field(metamethod_name);
 
                     thread_ref.current_lua_frame().pc = pc;
-                    return Ok(thread_ref.deferred_call_metamethod(
+                    return Ok(thread_ref.push_metamethod_frame(
                         metamethod,
                         &[ra, rb],
-                        base + prev_insn.a(),
+                        move |gc, vm, results| {
+                            vm.current_thread().borrow_mut(gc).stack[dest] =
+                                results.first().copied().unwrap_or_default();
+                            Ok(Action::ReturnArguments)
+                        },
                     ));
                 }
                 opcode if opcode == OpCode::MmBinI as u8 => todo!("MMBINI"),
@@ -469,27 +450,62 @@ impl<'gc> Vm<'gc> {
                 opcode if opcode == OpCode::Eq as u8 => {
                     let ra = stack[insn.a()];
                     let rb = stack[insn.b()];
-                    let cond = ra == rb;
-                    ops::do_conditional_jump(&mut pc, code, insn, cond)
+                    if ra == rb {
+                        ops::do_conditional_jump(&mut pc, code, insn, true);
+                    } else {
+                        match (ra, rb) {
+                            (Value::Table(_), Value::Table(_))
+                            | (Value::UserData(_), Value::UserData(_)) => {
+                                thread_ref.current_lua_frame().pc = pc;
+                                return self.compare_slow_path(
+                                    &mut thread_ref,
+                                    Metamethod::Eq,
+                                    ra,
+                                    rb,
+                                    pc,
+                                    code,
+                                );
+                            }
+                            _ => ops::do_conditional_jump(&mut pc, code, insn, false),
+                        }
+                    }
                 }
-                opcode if opcode == OpCode::Lt as u8 => ops::do_comparison(
-                    stack,
-                    &mut pc,
-                    code,
-                    insn,
-                    Integer::lt,
-                    Number::lt,
-                    PartialOrd::lt,
-                ),
-                opcode if opcode == OpCode::Le as u8 => ops::do_comparison(
-                    stack,
-                    &mut pc,
-                    code,
-                    insn,
-                    Integer::le,
-                    Number::le,
-                    PartialOrd::le,
-                ),
+                opcode if opcode == OpCode::Lt as u8 => {
+                    let ra = stack[insn.a()];
+                    let rb = stack[insn.b()];
+                    match ops::compare(ra, rb, PartialOrd::lt, PartialOrd::lt, PartialOrd::lt) {
+                        Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
+                        None => {
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.compare_slow_path(
+                                &mut thread_ref,
+                                Metamethod::Lt,
+                                ra,
+                                rb,
+                                pc,
+                                code,
+                            );
+                        }
+                    }
+                }
+                opcode if opcode == OpCode::Le as u8 => {
+                    let ra = stack[insn.a()];
+                    let rb = stack[insn.b()];
+                    match ops::compare(ra, rb, PartialOrd::le, PartialOrd::le, PartialOrd::le) {
+                        Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
+                        None => {
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.compare_slow_path(
+                                &mut thread_ref,
+                                Metamethod::Le,
+                                ra,
+                                rb,
+                                pc,
+                                code,
+                            );
+                        }
+                    }
+                }
                 opcode if opcode == OpCode::EqK as u8 => {
                     let ra = stack[insn.a()];
                     let rb = constants[insn.b()];
@@ -506,38 +522,38 @@ impl<'gc> Vm<'gc> {
                     };
                     ops::do_conditional_jump(&mut pc, code, insn, cond)
                 }
-                opcode if opcode == OpCode::LtI as u8 => ops::do_comparison_with_immediate(
-                    stack,
-                    &mut pc,
-                    code,
-                    insn,
-                    Integer::lt,
-                    Number::lt,
-                ),
-                opcode if opcode == OpCode::LeI as u8 => ops::do_comparison_with_immediate(
-                    stack,
-                    &mut pc,
-                    code,
-                    insn,
-                    Integer::le,
-                    Number::le,
-                ),
-                opcode if opcode == OpCode::GtI as u8 => ops::do_comparison_with_immediate(
-                    stack,
-                    &mut pc,
-                    code,
-                    insn,
-                    Integer::gt,
-                    Number::gt,
-                ),
-                opcode if opcode == OpCode::GeI as u8 => ops::do_comparison_with_immediate(
-                    stack,
-                    &mut pc,
-                    code,
-                    insn,
-                    Integer::ge,
-                    Number::ge,
-                ),
+                opcode if opcode == OpCode::LtI as u8 => {
+                    let ra = stack[insn.a()];
+                    let imm = insn.sb();
+                    match ops::compare_with_immediate(ra, imm, PartialOrd::lt, PartialOrd::lt) {
+                        Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
+                        None => todo!("__lt for LTI"),
+                    }
+                }
+                opcode if opcode == OpCode::LeI as u8 => {
+                    let ra = stack[insn.a()];
+                    let imm = insn.sb();
+                    match ops::compare_with_immediate(ra, imm, PartialOrd::le, PartialOrd::le) {
+                        Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
+                        None => todo!("__le for LEI"),
+                    }
+                }
+                opcode if opcode == OpCode::GtI as u8 => {
+                    let ra = stack[insn.a()];
+                    let imm = insn.sb();
+                    match ops::compare_with_immediate(ra, imm, PartialOrd::gt, PartialOrd::gt) {
+                        Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
+                        None => todo!("__lt for GTI"),
+                    }
+                }
+                opcode if opcode == OpCode::GeI as u8 => {
+                    let ra = stack[insn.a()];
+                    let imm = insn.sb();
+                    match ops::compare_with_immediate(ra, imm, PartialOrd::ge, PartialOrd::ge) {
+                        Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
+                        None => todo!("__le for GEI"),
+                    }
+                }
                 opcode if opcode == OpCode::Test as u8 => {
                     let cond = stack[insn.a()].to_boolean();
                     ops::do_conditional_jump(&mut pc, code, insn, cond);
@@ -561,7 +577,7 @@ impl<'gc> Vm<'gc> {
                     thread_ref
                         .stack
                         .truncate(if b > 0 { base + a + b } else { saved_stack_top });
-                    return thread_ref.deferred_call(base + a);
+                    return thread_ref.push_frame(base + a);
                 }
                 opcode if opcode == OpCode::TailCall as u8 => {
                     let a = insn.a();
@@ -582,7 +598,7 @@ impl<'gc> Vm<'gc> {
                         thread_ref.stack.truncate(bottom + b);
                     }
                     thread_ref.frames.pop().unwrap();
-                    return thread_ref.deferred_call(bottom);
+                    return thread_ref.push_frame(bottom);
                 }
                 opcode if opcode == OpCode::Return as u8 => {
                     if insn.k() {
@@ -676,7 +692,7 @@ impl<'gc> Vm<'gc> {
                     thread_ref
                         .stack
                         .copy_within(arg_base..arg_base + 3, new_bottom);
-                    return thread_ref.deferred_call(new_bottom);
+                    return thread_ref.push_frame(new_bottom);
                 }
                 opcode if opcode == OpCode::TForLoop as u8 => {
                     let a = insn.a();

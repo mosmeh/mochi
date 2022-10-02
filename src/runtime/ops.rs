@@ -1,12 +1,7 @@
 use super::Instruction;
 use crate::types::{Integer, Number, Value};
 
-fn calc_arithmetic_result<'gc, I, F>(
-    a: Value<'gc>,
-    b: Value<'gc>,
-    int_op: I,
-    float_op: F,
-) -> Option<Value<'gc>>
+fn arithmetic<'gc, I, F>(a: Value<'gc>, b: Value<'gc>, int_op: I, float_op: F) -> Option<Value<'gc>>
 where
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
@@ -23,6 +18,78 @@ where
     None
 }
 
+fn float_arithmetic<'gc, F>(a: Value<'gc>, b: Value<'gc>, float_op: F) -> Option<Value<'gc>>
+where
+    F: Fn(Number, Number) -> Number,
+{
+    if let (Some(a), Some(b)) = (
+        a.to_number_without_string_coercion(),
+        b.to_number_without_string_coercion(),
+    ) {
+        Some(Value::Number(float_op(a, b)))
+    } else {
+        None
+    }
+}
+
+fn bitwise_op<'gc, I>(a: Value<'gc>, b: Value<'gc>, int_op: I) -> Option<Value<'gc>>
+where
+    I: Fn(Integer, Integer) -> Integer,
+{
+    if let (Some(a), Some(b)) = (
+        a.to_integer_without_string_coercion(),
+        b.to_integer_without_string_coercion(),
+    ) {
+        Some(Value::Integer(int_op(a, b)))
+    } else {
+        None
+    }
+}
+
+pub(super) fn compare<'gc, I, F, S>(
+    a: Value<'gc>,
+    b: Value<'gc>,
+    int_op: I,
+    float_op: F,
+    str_op: S,
+) -> Option<bool>
+where
+    I: Fn(&Integer, &Integer) -> bool,
+    F: Fn(&Number, &Number) -> bool,
+    S: Fn(&[u8], &[u8]) -> bool,
+{
+    match (a, b) {
+        (Value::Integer(a), Value::Integer(b)) => Some(int_op(&a, &b)),
+        (Value::String(ref a), Value::String(ref b)) => Some(str_op(a, b)),
+        _ => {
+            match (
+                a.to_number_without_string_coercion(),
+                b.to_number_without_string_coercion(),
+            ) {
+                (Some(a), Some(b)) => Some(float_op(&a, &b)),
+                _ => None,
+            }
+        }
+    }
+}
+
+pub(super) fn compare_with_immediate<I, F>(
+    a: Value,
+    imm: i16,
+    int_op: I,
+    float_op: F,
+) -> Option<bool>
+where
+    I: Fn(&Integer, &Integer) -> bool,
+    F: Fn(&Number, &Number) -> bool,
+{
+    match a {
+        Value::Integer(x) => Some(int_op(&x, &(imm as Integer))),
+        Value::Number(x) => Some(float_op(&x, &(imm as Number))),
+        _ => None,
+    }
+}
+
 pub(super) fn do_arithmetic<'gc, I, F>(
     stack: &mut [Value<'gc>],
     pc: &mut usize,
@@ -35,7 +102,7 @@ pub(super) fn do_arithmetic<'gc, I, F>(
 {
     let rb = stack[insn.b()];
     let rc = stack[insn.c() as usize];
-    if let Some(result) = calc_arithmetic_result(rb, rc, int_op, float_op) {
+    if let Some(result) = arithmetic(rb, rc, int_op, float_op) {
         stack[insn.a()] = result;
         *pc += 1;
     }
@@ -54,7 +121,7 @@ pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
 {
     let rb = stack[insn.b()];
     let kc = constants[insn.c() as usize];
-    if let Some(result) = calc_arithmetic_result(rb, kc, int_op, float_op) {
+    if let Some(result) = arithmetic(rb, kc, int_op, float_op) {
         stack[insn.a()] = result;
         *pc += 1;
     }
@@ -86,24 +153,6 @@ pub(super) fn do_arithmetic_with_immediate<'gc, I, F>(
     stack[insn.a()] = result;
 }
 
-fn calc_float_arithmetic_result<'gc, F>(
-    a: Value<'gc>,
-    b: Value<'gc>,
-    float_op: F,
-) -> Option<Value<'gc>>
-where
-    F: Fn(Number, Number) -> Number,
-{
-    if let (Some(a), Some(b)) = (
-        a.to_number_without_string_coercion(),
-        b.to_number_without_string_coercion(),
-    ) {
-        Some(Value::Number(float_op(a, b)))
-    } else {
-        None
-    }
-}
-
 pub(super) fn do_float_arithmetic<'gc, F>(
     stack: &mut [Value<'gc>],
     pc: &mut usize,
@@ -114,7 +163,7 @@ pub(super) fn do_float_arithmetic<'gc, F>(
 {
     let rb = stack[insn.b()];
     let rc = stack[insn.c() as usize];
-    if let Some(result) = calc_float_arithmetic_result(rb, rc, float_op) {
+    if let Some(result) = float_arithmetic(rb, rc, float_op) {
         stack[insn.a()] = result;
         *pc += 1;
     }
@@ -140,20 +189,6 @@ pub(super) fn do_float_arithmetic_with_constant<'gc, F>(
     }
 }
 
-fn calc_bitwise_op_result<'gc, I>(a: Value<'gc>, b: Value<'gc>, int_op: I) -> Option<Value<'gc>>
-where
-    I: Fn(Integer, Integer) -> Integer,
-{
-    if let (Some(a), Some(b)) = (
-        a.to_integer_without_string_coercion(),
-        b.to_integer_without_string_coercion(),
-    ) {
-        Some(Value::Integer(int_op(a, b)))
-    } else {
-        None
-    }
-}
-
 pub(super) fn do_bitwise_op<'gc, I>(
     stack: &mut [Value<'gc>],
     pc: &mut usize,
@@ -164,7 +199,7 @@ pub(super) fn do_bitwise_op<'gc, I>(
 {
     let rb = stack[insn.b()];
     let rc = stack[insn.c() as usize];
-    if let Some(result) = calc_bitwise_op_result(rb, rc, int_op) {
+    if let Some(result) = bitwise_op(rb, rc, int_op) {
         stack[insn.a()] = result;
         *pc += 1;
     }
@@ -182,7 +217,7 @@ pub(super) fn do_bitwise_op_with_constant<'gc, I>(
     let rb = stack[insn.b()];
     let kc = constants[insn.c() as usize];
     debug_assert!(matches!(kc, Value::Integer(_)));
-    if let Some(result) = calc_bitwise_op_result(rb, kc, int_op) {
+    if let Some(result) = bitwise_op(rb, kc, int_op) {
         stack[insn.a()] = result;
         *pc += 1;
     }
@@ -200,59 +235,6 @@ pub(super) fn do_conditional_jump(
     } else {
         *pc += 1;
     }
-}
-
-pub(super) fn do_comparison<'gc, I, F, S>(
-    stack: &mut [Value<'gc>],
-    pc: &mut usize,
-    code: &[Instruction],
-    insn: Instruction,
-    int_op: I,
-    float_op: F,
-    str_op: S,
-) where
-    I: Fn(&Integer, &Integer) -> bool,
-    F: Fn(&Number, &Number) -> bool,
-    S: Fn(&[u8], &[u8]) -> bool,
-{
-    let ra = stack[insn.a()];
-    let rb = stack[insn.b()];
-    let cond = match (ra, rb) {
-        (Value::Integer(a), Value::Integer(b)) => int_op(&a, &b),
-        (Value::String(ref a), Value::String(ref b)) => str_op(a, b),
-        _ => {
-            if let (Some(a), Some(b)) = (
-                ra.to_number_without_string_coercion(),
-                rb.to_number_without_string_coercion(),
-            ) {
-                float_op(&a, &b)
-            } else {
-                todo!("comparison metamethod")
-            }
-        }
-    };
-    do_conditional_jump(pc, code, insn, cond);
-}
-
-pub(super) fn do_comparison_with_immediate<'gc, I, F>(
-    stack: &mut [Value<'gc>],
-    pc: &mut usize,
-    code: &[Instruction],
-    insn: Instruction,
-    int_op: I,
-    float_op: F,
-) where
-    I: Fn(&Integer, &Integer) -> bool,
-    F: Fn(&Number, &Number) -> bool,
-{
-    let ra = stack[insn.a()];
-    let imm = insn.sb();
-    let cond = match ra {
-        Value::Integer(x) => int_op(&x, &(imm as Integer)),
-        Value::Number(x) => float_op(&x, &(imm as Number)),
-        _ => todo!("comparison metamethod"),
-    };
-    do_conditional_jump(pc, code, insn, cond);
 }
 
 pub(super) fn idivi(m: Integer, n: Integer) -> Integer {

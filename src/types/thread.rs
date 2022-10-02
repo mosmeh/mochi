@@ -35,12 +35,12 @@ impl<'gc> LuaThread<'gc> {
         Default::default()
     }
 
-    pub fn with_body(body: Value<'gc>) -> Self {
+    pub(crate) fn with_body(body: Value<'gc>) -> Self {
         let mut thread = Self {
             stack: vec![body],
             ..Default::default()
         };
-        thread.deferred_call(0).unwrap();
+        thread.push_frame(0).unwrap();
         thread
     }
 

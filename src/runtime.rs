@@ -67,7 +67,7 @@ impl Runtime {
             assert!(thread_ref.frames.is_empty());
             assert!(thread_ref.open_upvalues.is_empty());
             thread_ref.stack.push(value);
-            thread_ref.deferred_call(0)?;
+            thread_ref.push_frame(0)?;
 
             Ok(())
         });
@@ -262,10 +262,9 @@ impl<'gc> Vm<'gc> {
         })
     }
 
-    fn deferred_call_index_metamethod<K>(
+    fn index_slow_path<K>(
         &self,
-        gc: &'gc GcContext,
-        thread: GcCell<'gc, LuaThread<'gc>>,
+        thread: &mut LuaThread<'gc>,
         mut table_like: Value<'gc>,
         key: K,
         dest: usize,
@@ -283,7 +282,7 @@ impl<'gc> Vm<'gc> {
                     .map(|metatable| metatable.borrow().get_field(index_key))
                     .unwrap_or_default();
                 if metamethod.is_nil() {
-                    thread.borrow_mut(gc).stack[dest] = Value::Nil;
+                    thread.stack[dest] = Value::Nil;
                     return Ok(ControlFlow::Continue(()));
                 }
                 metamethod
@@ -302,16 +301,20 @@ impl<'gc> Vm<'gc> {
             };
             match metamethod {
                 Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
-                    return Ok(thread.borrow_mut(gc).deferred_call_metamethod(
+                    return Ok(thread.push_metamethod_frame(
                         metamethod,
                         &[table_like, key],
-                        dest,
+                        move |gc, vm, results| {
+                            vm.current_thread().borrow_mut(gc).stack[dest] =
+                                results.first().copied().unwrap_or_default();
+                            Ok(Action::ReturnArguments)
+                        },
                     ));
                 }
                 Value::Table(table) => {
                     let value = table.borrow().get(key);
                     if !value.is_nil() {
-                        thread.borrow_mut(gc).stack[dest] = value;
+                        thread.stack[dest] = value;
                         return Ok(ControlFlow::Continue(()));
                     }
                 }
@@ -320,6 +323,44 @@ impl<'gc> Vm<'gc> {
             }
             table_like = metamethod;
         }
+    }
+
+    fn compare_slow_path(
+        &self,
+        thread: &mut LuaThread<'gc>,
+        metamethod: Metamethod,
+        a: Value<'gc>,
+        b: Value<'gc>,
+        pc: usize,
+        code: &[Instruction],
+    ) -> Result<ControlFlow<()>, ErrorKind> {
+        let metatable = self
+            .metatable_of_object(a)
+            .or_else(|| self.metatable_of_object(b))
+            .ok_or_else(|| ErrorKind::TypeError {
+                operation: Operation::Compare,
+                ty: b.ty(),
+            })?;
+
+        let metamethod = metatable
+            .borrow()
+            .get_field(self.metamethod_name(metamethod));
+
+        let insn = code[pc - 1];
+        let next_insn = code[pc];
+
+        Ok(
+            thread.push_metamethod_frame(metamethod, &[a, b], move |gc, vm, results| {
+                let cond = results.first().map(Value::to_boolean).unwrap_or_default();
+                let new_pc = if cond == insn.k() {
+                    (pc as isize + next_insn.sj() as isize + 1) as usize
+                } else {
+                    pc + 1
+                };
+                vm.current_thread().borrow_mut(gc).current_lua_frame().pc = new_pc;
+                Ok(Action::ReturnArguments)
+            }),
+        )
     }
 }
 
@@ -332,7 +373,7 @@ impl<'gc> LuaThread<'gc> {
         }
     }
 
-    pub(crate) fn deferred_call(&mut self, bottom: usize) -> Result<ControlFlow<()>, ErrorKind> {
+    pub(crate) fn push_frame(&mut self, bottom: usize) -> Result<ControlFlow<()>, ErrorKind> {
         match self.stack[bottom] {
             Value::LuaClosure(_) => {
                 self.frames.push(Frame::Lua(LuaFrame::new(bottom)));
@@ -350,29 +391,28 @@ impl<'gc> LuaThread<'gc> {
     }
 
     #[must_use]
-    fn deferred_call_metamethod(
+    fn push_metamethod_frame<F>(
         &mut self,
         metamethod: Value<'gc>,
         args: &[Value<'gc>],
-        dest: usize,
-    ) -> ControlFlow<()> {
+        continuation: F,
+    ) -> ControlFlow<()>
+    where
+        F: 'static
+            + Fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
+    {
         let current_bottom = self.current_lua_frame().bottom;
         let metamethod_bottom = self.stack.len();
         self.stack.push(metamethod);
         self.stack.extend_from_slice(args);
-        let continuation = Continuation::new(move |gc, vm, results: Vec<Value>| {
-            vm.current_thread().borrow_mut(gc).stack[dest] =
-                results.first().copied().unwrap_or_default();
-            Ok(Action::ReturnArguments)
-        });
         self.frames.push(Frame::CallContinuation {
             inner: ContinuationFrame {
                 bottom: current_bottom,
-                continuation: Some(continuation),
+                continuation: Some(Continuation::new(continuation)),
             },
             callee_bottom: metamethod_bottom,
         });
-        self.deferred_call(metamethod_bottom).unwrap()
+        self.push_frame(metamethod_bottom).unwrap()
     }
 }
 
