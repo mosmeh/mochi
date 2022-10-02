@@ -51,14 +51,8 @@ impl<'gc> From<Vec<Value<'gc>>> for Table<'gc> {
 unsafe impl GarbageCollect for Table<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.array.trace(tracer);
-
-        for bucket in &self.buckets {
-            if bucket.has_value() {
-                debug_assert!(bucket.has_key());
-                bucket.key().trace(tracer);
-                bucket.value().trace(tracer);
-            }
-        }
+        self.buckets.trace(tracer);
+        self.metatable.trace(tracer);
     }
 }
 

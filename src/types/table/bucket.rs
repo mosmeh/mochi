@@ -1,6 +1,6 @@
 use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Table, Value};
 use crate::{
-    gc::{Gc, GcCell},
+    gc::{GarbageCollect, Gc, GcCell},
     types::{LuaClosure, LuaThread, UserData},
 };
 
@@ -16,6 +16,16 @@ pub struct Bucket<'gc> {
     value_payload: Payload<'gc>,
     has_next: bool,
     next_index: u32,
+}
+
+unsafe impl GarbageCollect for Bucket<'_> {
+    fn trace(&self, tracer: &mut crate::gc::Tracer) {
+        if self.has_value() {
+            debug_assert!(self.has_key());
+            self.key().trace(tracer);
+            self.value().trace(tracer);
+        }
+    }
 }
 
 impl<'gc> Bucket<'gc> {
