@@ -199,6 +199,19 @@ impl<'gc> Vm<'gc> {
             .or_else(|| self.metatables[object.ty() as usize])
     }
 
+    pub fn metamethod_of_object(
+        &self,
+        metamethod: Metamethod,
+        object: Value<'gc>,
+    ) -> Option<Value<'gc>> {
+        self.metatable_of_object(object).and_then(|metatable| {
+            let metamethod = metatable
+                .borrow()
+                .get_field(self.metamethod_name(metamethod));
+            (!metamethod.is_nil()).then_some(metamethod)
+        })
+    }
+
     pub fn set_metatable_of_type<T>(&mut self, ty: Type, metatable: T)
     where
         T: Into<Option<GcCell<'gc, Table<'gc>>>>,
@@ -334,17 +347,13 @@ impl<'gc> Vm<'gc> {
         pc: usize,
         code: &[Instruction],
     ) -> Result<ControlFlow<()>, ErrorKind> {
-        let metatable = self
-            .metatable_of_object(a)
-            .or_else(|| self.metatable_of_object(b))
+        let metamethod = self
+            .metamethod_of_object(metamethod, a)
+            .or_else(|| self.metamethod_of_object(metamethod, b))
             .ok_or_else(|| ErrorKind::TypeError {
                 operation: Operation::Compare,
                 ty: b.ty(),
             })?;
-
-        let metamethod = metatable
-            .borrow()
-            .get_field(self.metamethod_name(metamethod));
 
         let insn = code[pc - 1];
         let next_insn = code[pc];

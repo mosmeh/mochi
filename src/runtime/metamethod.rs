@@ -18,6 +18,13 @@ macro_rules! metamethods {
                 ]
             }
         }
+
+        impl From<u8> for Metamethod {
+            fn from(i: u8) -> Self {
+                const METAMETHODS: [Metamethod; crate::count!($($variant)*)] = [$(Metamethod::$variant,)*];
+                METAMETHODS[i as usize]
+            }
+        }
     }
 }
 

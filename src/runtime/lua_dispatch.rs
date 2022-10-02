@@ -367,16 +367,14 @@ impl<'gc> Vm<'gc> {
                     let prev_insn = code[pc - 2];
                     let dest = base + prev_insn.a();
 
-                    let metatable = self
-                        .metatable_of_object(ra)
-                        .or_else(|| self.metatable_of_object(rb))
+                    let metamethod = Metamethod::from(insn.c());
+                    let metamethod = self
+                        .metamethod_of_object(metamethod, ra)
+                        .or_else(|| self.metamethod_of_object(metamethod, rb))
                         .ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Arithmetic,
                             ty: rb.ty(),
                         })?;
-
-                    let metamethod_name = self.metamethod_names[insn.c() as usize];
-                    let metamethod = metatable.borrow().get_field(metamethod_name);
 
                     thread_ref.current_lua_frame().pc = pc;
                     return Ok(thread_ref.push_metamethod_frame(
