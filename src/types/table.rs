@@ -129,6 +129,48 @@ impl<'gc> Table<'gc> {
         self.set_hashtable_key(Value::String(field), value.into());
     }
 
+    pub(crate) fn replace<K, V>(&mut self, key: K, value: V) -> Result<bool, TableError>
+    where
+        K: Into<Value<'gc>>,
+        V: Into<Value<'gc>>,
+    {
+        let value = value.into();
+        let key = match key.into() {
+            Value::Nil => return Err(TableError::IndexIsNil),
+            Value::Number(x) if x.is_nan() => return Err(TableError::IndexIsNaN),
+            key => match key.to_integer_without_string_coercion() {
+                Some(i @ 1..) => match self.array.get_mut((i - 1) as usize) {
+                    Some(Value::Nil) => return Ok(false),
+                    Some(slot) => {
+                        *slot = value;
+                        return Ok(true);
+                    }
+                    None => Value::Integer(i),
+                },
+                Some(i) => Value::Integer(i),
+                None => key,
+            },
+        };
+        Ok(if let Some(index) = self.find_bucket(key) {
+            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
+            true
+        } else {
+            false
+        })
+    }
+
+    pub(crate) fn replace_field<V>(&mut self, field: LuaString<'gc>, value: V) -> bool
+    where
+        V: Into<Value<'gc>>,
+    {
+        if let Some(index) = self.find_bucket(Value::String(field)) {
+            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value.into());
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
         self.metatable
     }
