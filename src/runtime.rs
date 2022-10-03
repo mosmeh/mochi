@@ -287,7 +287,7 @@ impl<'gc> Vm<'gc> {
     {
         let key = key.into();
         let index_key = self.metamethod_name(Metamethod::Index);
-        loop {
+        for _ in 0..2000 {
             let metamethod = if let Value::Table(table) = table_like {
                 let metamethod = table
                     .borrow()
@@ -336,6 +336,7 @@ impl<'gc> Vm<'gc> {
             }
             table_like = metamethod;
         }
+        Err(ErrorKind::other("'__index' chain too long; possible loop"))
     }
 
     fn compare_slow_path(
