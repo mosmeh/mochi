@@ -155,57 +155,73 @@ impl<'gc> Vm<'gc> {
                     let upvalue = upvalues[insn.a()].borrow();
                     let table_value =
                         super::get_upvalue(thread, base, lower_stack, stack, &upvalue);
-                    let mut table = table_value.borrow_as_table_mut(gc).ok_or_else(|| {
-                        ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: table_value.ty(),
-                        }
-                    })?;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
-                    table.set_field(kb, rkc);
+                    let replaced = table_value
+                        .borrow_as_table_mut(gc)
+                        .ok_or_else(|| ErrorKind::TypeError {
+                            operation: Operation::Index,
+                            ty: table_value.ty(),
+                        })?
+                        .replace_field(kb, rkc);
+                    if !replaced {
+                        thread_ref.current_lua_frame().pc = pc;
+                        return self.new_index_slow_path(gc, &mut thread_ref, table_value, kb, rkc);
+                    }
                 }
                 opcode if opcode == OpCode::SetTable as u8 => {
                     let ra = stack[insn.a()];
-                    let mut table =
-                        ra.borrow_as_table_mut(gc)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: ra.ty(),
-                            })?;
                     let rb = stack[insn.b()];
                     let c = insn.c() as usize;
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
-                    table.set(rb, rkc)?;
+                    let replaced = ra
+                        .borrow_as_table_mut(gc)
+                        .ok_or_else(|| ErrorKind::TypeError {
+                            operation: Operation::Index,
+                            ty: ra.ty(),
+                        })?
+                        .replace(rb, rkc)?;
+                    if !replaced {
+                        thread_ref.current_lua_frame().pc = pc;
+                        return self.new_index_slow_path(gc, &mut thread_ref, ra, rb, rkc);
+                    }
                 }
                 opcode if opcode == OpCode::SetI as u8 => {
                     let ra = stack[insn.a()];
-                    let mut table =
-                        ra.borrow_as_table_mut(gc)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: ra.ty(),
-                            })?;
                     let b = insn.b() as Integer;
                     let c = insn.c() as usize;
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
-                    table.set(b, rkc)?;
+                    let replaced = ra
+                        .borrow_as_table_mut(gc)
+                        .ok_or_else(|| ErrorKind::TypeError {
+                            operation: Operation::Index,
+                            ty: ra.ty(),
+                        })?
+                        .replace(b, rkc)?;
+                    if !replaced {
+                        thread_ref.current_lua_frame().pc = pc;
+                        return self.new_index_slow_path(gc, &mut thread_ref, ra, b, rkc);
+                    }
                 }
                 opcode if opcode == OpCode::SetField as u8 => {
                     let ra = stack[insn.a()];
-                    let mut table =
-                        ra.borrow_as_table_mut(gc)
-                            .ok_or_else(|| ErrorKind::TypeError {
-                                operation: Operation::Index,
-                                ty: ra.ty(),
-                            })?;
                     let kb = match constants[insn.b()] {
                         Value::String(s) => s,
                         _ => unreachable!(),
                     };
                     let c = insn.c() as usize;
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
-                    table.set_field(kb, rkc);
+                    let replaced = ra
+                        .borrow_as_table_mut(gc)
+                        .ok_or_else(|| ErrorKind::TypeError {
+                            operation: Operation::Index,
+                            ty: ra.ty(),
+                        })?
+                        .replace_field(kb, rkc);
+                    if !replaced {
+                        thread_ref.current_lua_frame().pc = pc;
+                        return self.new_index_slow_path(gc, &mut thread_ref, ra, kb, rkc);
+                    }
                 }
                 opcode if opcode == OpCode::NewTable as u8 => {
                     let mut b = insn.b();
@@ -377,7 +393,7 @@ impl<'gc> Vm<'gc> {
                         })?;
 
                     thread_ref.current_lua_frame().pc = pc;
-                    return Ok(thread_ref.push_metamethod_frame(
+                    return Ok(thread_ref.push_metamethod_frame_with_continuation(
                         metamethod,
                         &[ra, rb],
                         move |gc, vm, results| {
