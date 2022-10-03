@@ -147,9 +147,20 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
                         let closure = vm.borrow().load(gc, format!("print({})", line), SOURCE)?;
                         Ok(gc.allocate(closure).into())
                     });
-                    if result.is_ok() {
-                        rl.add_history_entry(line);
-                        continue;
+                    match result {
+                        Ok(()) => {
+                            rl.add_history_entry(line);
+                            continue;
+                        }
+                        Err(RuntimeError {
+                            kind: mochi_lua::runtime::ErrorKind::External(_), // load error
+                            ..
+                        }) => (),
+                        Err(err) => {
+                            eprintln!("{}", err);
+                            rl.add_history_entry(line);
+                            continue;
+                        }
                     }
                 } else {
                     buf.push('\n');
@@ -160,27 +171,10 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
                     Ok(closure) => Ok(gc.allocate(closure).into()),
                     Err(err) => Err(err.into()),
                 });
-                if let Err(RuntimeError {
-                    kind: mochi_lua::runtime::ErrorKind::External(err),
-                    ..
-                }) = &result
-                {
-                    match err.downcast_ref::<mochi_lua::Error>() {
-                        #[cfg(feature = "luac")]
-                        Some(mochi_lua::Error::RLua(rlua::Error::SyntaxError {
-                            incomplete_input: true,
-                            ..
-                        })) => continue,
-                        #[cfg(not(feature = "luac"))]
-                        Some(mochi_lua::Error::Parse(mochi_lua::parser::ParseError {
-                            incomplete_input: true,
-                            ..
-                        })) => continue,
-                        _ => (),
-                    }
-                }
-                if let Err(err) = result {
-                    eprintln!("{}", err);
+                match result {
+                    Ok(()) => (),
+                    Err(err) if is_incomplete_input_error(&err) => continue,
+                    Err(err) => eprintln!("{}", err),
                 }
                 rl.add_history_entry(&buf);
                 buf.clear();
@@ -188,6 +182,28 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => return Ok(()),
             Err(err) => return Err(err.into()),
         }
+    }
+}
+
+fn is_incomplete_input_error(err: &RuntimeError) -> bool {
+    match err {
+        RuntimeError {
+            kind: mochi_lua::runtime::ErrorKind::External(err),
+            ..
+        } => match err.downcast_ref::<mochi_lua::Error>() {
+            #[cfg(feature = "luac")]
+            Some(mochi_lua::Error::RLua(rlua::Error::SyntaxError {
+                incomplete_input: true,
+                ..
+            })) => true,
+            #[cfg(not(feature = "luac"))]
+            Some(mochi_lua::Error::Parse(mochi_lua::parser::ParseError {
+                incomplete_input: true,
+                ..
+            })) => true,
+            _ => false,
+        },
+        _ => false,
     }
 }
 
