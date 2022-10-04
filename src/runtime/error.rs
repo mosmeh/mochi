@@ -100,6 +100,7 @@ pub enum Operation {
     Arithmetic,
     BitwiseOp,
     Compare,
+    Length,
 }
 
 impl Display for Operation {
@@ -111,6 +112,7 @@ impl Display for Operation {
             Self::Arithmetic => f.write_str("perform arithmetic on"),
             Self::BitwiseOp => f.write_str("perform bitwise operation on"),
             Self::Compare => f.write_str("compare"),
+            Self::Length => f.write_str("get length of"),
         }
     }
 }

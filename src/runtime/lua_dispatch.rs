@@ -423,13 +423,25 @@ impl<'gc> Vm<'gc> {
                     stack[insn.a()] = Value::Boolean(!rb.to_boolean())
                 }
                 opcode if opcode == OpCode::Len as u8 => {
+                    let a = insn.a();
                     let rb = stack[insn.b()];
                     let len = match rb {
                         Value::String(s) => s.len() as Integer,
-                        Value::Table(t) => t.borrow().lua_len(),
-                        _ => todo!("__len"),
+                        Value::Table(table) => {
+                            let table = table.borrow();
+                            if table.metatable().is_some() {
+                                thread_ref.current_lua_frame().pc = pc;
+                                return self.len_slow_path(&mut thread_ref, rb, base + a);
+                            } else {
+                                table.lua_len()
+                            }
+                        }
+                        _ => {
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.len_slow_path(&mut thread_ref, rb, base + a);
+                        }
                     };
-                    stack[insn.a()] = len.into();
+                    stack[a] = len.into();
                 }
                 opcode if opcode == OpCode::Concat as u8 => {
                     let a = insn.a();

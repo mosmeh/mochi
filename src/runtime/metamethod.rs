@@ -266,6 +266,30 @@ impl<'gc> Vm<'gc> {
             },
         ))
     }
+
+    pub(super) fn len_slow_path(
+        &self,
+        thread: &mut LuaThread<'gc>,
+        value: Value<'gc>,
+        dest: usize,
+    ) -> Result<ControlFlow<()>, ErrorKind> {
+        let metamethod = self
+            .metamethod_of_object(Metamethod::Len, value)
+            .ok_or_else(|| ErrorKind::TypeError {
+                operation: Operation::Length,
+                ty: value.ty(),
+            })?;
+
+        Ok(thread.push_metamethod_frame_with_continuation(
+            metamethod,
+            &[value, value],
+            move |gc, vm, results| {
+                vm.current_thread().borrow_mut(gc).stack[dest] =
+                    results.first().copied().unwrap_or_default();
+                Ok(Action::ReturnArguments)
+            },
+        ))
+    }
 }
 
 impl<'gc> LuaThread<'gc> {
