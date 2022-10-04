@@ -161,11 +161,8 @@ impl<'gc> Vm<'gc> {
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
                     let replaced = table
                         .borrow_as_table_mut(gc)
-                        .ok_or_else(|| ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: table.ty(),
-                        })?
-                        .replace_field(kb, rkc);
+                        .map(|mut table| table.replace_field(kb, rkc))
+                        .unwrap_or_default();
                     if !replaced {
                         thread_ref.current_lua_frame().pc = pc;
                         return self.new_index_slow_path(gc, &mut thread_ref, table, kb, rkc);
@@ -178,11 +175,9 @@ impl<'gc> Vm<'gc> {
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
                     let replaced = ra
                         .borrow_as_table_mut(gc)
-                        .ok_or_else(|| ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: ra.ty(),
-                        })?
-                        .replace(rb, rkc)?;
+                        .map(|mut table| table.replace(rb, rkc))
+                        .transpose()?
+                        .unwrap_or_default();
                     if !replaced {
                         thread_ref.current_lua_frame().pc = pc;
                         return self.new_index_slow_path(gc, &mut thread_ref, ra, rb, rkc);
@@ -195,11 +190,9 @@ impl<'gc> Vm<'gc> {
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
                     let replaced = ra
                         .borrow_as_table_mut(gc)
-                        .ok_or_else(|| ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: ra.ty(),
-                        })?
-                        .replace(b, rkc)?;
+                        .map(|mut table| table.replace(b, rkc))
+                        .transpose()?
+                        .unwrap_or_default();
                     if !replaced {
                         thread_ref.current_lua_frame().pc = pc;
                         return self.new_index_slow_path(gc, &mut thread_ref, ra, b, rkc);
@@ -215,11 +208,8 @@ impl<'gc> Vm<'gc> {
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
                     let replaced = ra
                         .borrow_as_table_mut(gc)
-                        .ok_or_else(|| ErrorKind::TypeError {
-                            operation: Operation::Index,
-                            ty: ra.ty(),
-                        })?
-                        .replace_field(kb, rkc);
+                        .map(|mut table| table.replace_field(kb, rkc))
+                        .unwrap_or_default();
                     if !replaced {
                         thread_ref.current_lua_frame().pc = pc;
                         return self.new_index_slow_path(gc, &mut thread_ref, ra, kb, rkc);
