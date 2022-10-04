@@ -98,6 +98,7 @@ pub enum Operation {
     Call,
     Concatenate,
     Arithmetic,
+    BitwiseOp,
     Compare,
 }
 
@@ -107,7 +108,8 @@ impl Display for Operation {
             Self::Index => f.write_str("index"),
             Self::Call => f.write_str("call"),
             Self::Concatenate => f.write_str("concatenate"),
-            Self::Arithmetic => f.write_str("perform arithmetic"),
+            Self::Arithmetic => f.write_str("perform arithmetic on"),
+            Self::BitwiseOp => f.write_str("perform bitwise operation on"),
             Self::Compare => f.write_str("compare"),
         }
     }

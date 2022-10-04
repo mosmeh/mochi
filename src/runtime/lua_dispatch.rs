@@ -1,4 +1,4 @@
-use super::{ops, Action, ErrorKind, Frame, LuaFrame, Metamethod, OpCode, Operation, Vm};
+use super::{ops, ErrorKind, Frame, LuaFrame, Metamethod, OpCode, Operation, Vm};
 use crate::{
     gc::GcContext,
     types::{Integer, Number, Table, Upvalue, UpvalueDescription, Value},
@@ -383,47 +383,50 @@ impl<'gc> Vm<'gc> {
                     let ra = stack[insn.a()];
                     let rb = stack[insn.b()];
                     let prev_insn = code[pc - 2];
-                    let dest = base + prev_insn.a();
 
+                    let dest = base + prev_insn.a();
                     let metamethod = Metamethod::from(insn.c());
-                    let metamethod = self
-                        .metamethod_of_object(metamethod, ra)
-                        .or_else(|| self.metamethod_of_object(metamethod, rb))
-                        .ok_or_else(|| ErrorKind::TypeError {
-                            operation: Operation::Arithmetic,
-                            ty: rb.ty(),
-                        })?;
 
                     thread_ref.current_lua_frame().pc = pc;
-                    return Ok(thread_ref.push_metamethod_frame_with_continuation(
-                        metamethod,
-                        &[ra, rb],
-                        move |gc, vm, results| {
-                            vm.current_thread().borrow_mut(gc).stack[dest] =
-                                results.first().copied().unwrap_or_default();
-                            Ok(Action::ReturnArguments)
-                        },
-                    ));
+                    return self.arithmetic_slow_path(&mut thread_ref, metamethod, ra, rb, dest);
                 }
                 opcode if opcode == OpCode::MmBinI as u8 => todo!("MMBINI"),
                 opcode if opcode == OpCode::MmBinK as u8 => todo!("MMBINK"),
                 opcode if opcode == OpCode::Unm as u8 => {
+                    let a = insn.a();
                     let rb = stack[insn.b()];
-                    stack[insn.a()] = if let Value::Integer(x) = rb {
+                    let result = if let Value::Integer(x) = rb {
                         Value::Integer(-x)
                     } else if let Some(x) = rb.to_number_without_string_coercion() {
                         Value::Number(-x)
                     } else {
-                        todo!("__unm")
+                        thread_ref.current_lua_frame().pc = pc;
+                        return self.arithmetic_slow_path(
+                            &mut thread_ref,
+                            Metamethod::Unm,
+                            rb,
+                            rb,
+                            base + a,
+                        );
                     };
+                    stack[a] = result;
                 }
                 opcode if opcode == OpCode::BNot as u8 => {
+                    let a = insn.a();
                     let rb = stack[insn.b()];
-                    stack[insn.a()] = if let Some(x) = rb.to_integer_without_string_coercion() {
+                    let result = if let Some(x) = rb.to_integer_without_string_coercion() {
                         Value::Integer(!x)
                     } else {
-                        todo!("__bnot")
-                    }
+                        thread_ref.current_lua_frame().pc = pc;
+                        return self.arithmetic_slow_path(
+                            &mut thread_ref,
+                            Metamethod::BNot,
+                            rb,
+                            rb,
+                            base + a,
+                        );
+                    };
+                    stack[a] = result;
                 }
                 opcode if opcode == OpCode::Not as u8 => {
                     let rb = stack[insn.b()];

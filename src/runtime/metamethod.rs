@@ -190,6 +190,47 @@ impl<'gc> Vm<'gc> {
         ))
     }
 
+    pub(super) fn arithmetic_slow_path(
+        &self,
+        thread: &mut LuaThread<'gc>,
+        metamethod: Metamethod,
+        a: Value<'gc>,
+        b: Value<'gc>,
+        dest: usize,
+    ) -> Result<ControlFlow<()>, ErrorKind> {
+        let metamethod_value = self
+            .metamethod_of_object(metamethod, a)
+            .or_else(|| self.metamethod_of_object(metamethod, b));
+        let metamethod_value = match metamethod_value {
+            Some(value) => value,
+            None => {
+                let operation = match metamethod {
+                    Metamethod::BAnd
+                    | Metamethod::BOr
+                    | Metamethod::BXor
+                    | Metamethod::Shl
+                    | Metamethod::Shr
+                    | Metamethod::BNot => Operation::BitwiseOp,
+                    _ => Operation::Arithmetic,
+                };
+                return Err(ErrorKind::TypeError {
+                    operation,
+                    ty: b.ty(),
+                });
+            }
+        };
+
+        Ok(thread.push_metamethod_frame_with_continuation(
+            metamethod_value,
+            &[a, b],
+            move |gc, vm, results| {
+                vm.current_thread().borrow_mut(gc).stack[dest] =
+                    results.first().copied().unwrap_or_default();
+                Ok(Action::ReturnArguments)
+            },
+        ))
+    }
+
     pub(super) fn compare_slow_path(
         &self,
         thread: &mut LuaThread<'gc>,
