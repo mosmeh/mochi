@@ -73,35 +73,37 @@ impl<'gc> Vm<'gc> {
                     stack[insn.a()..][..=insn.b()].fill(Value::Nil)
                 }
                 opcode if opcode == OpCode::GetUpval as u8 => {
-                    let upvalue = upvalues[insn.b()].borrow();
-                    let value = super::get_upvalue(thread, base, lower_stack, stack, &upvalue);
+                    let value = upvalues[insn.b()]
+                        .borrow()
+                        .get(thread, base, lower_stack, stack);
                     stack[insn.a()] = value;
                 }
                 opcode if opcode == OpCode::SetUpval as u8 => {
                     let value = stack[insn.a()];
-                    let mut upvalue = upvalues[insn.b()].borrow_mut(gc);
-                    super::set_upvalue(gc, thread, base, lower_stack, stack, &mut upvalue, value);
+                    upvalues[insn.b()].borrow_mut(gc).set(
+                        gc,
+                        thread,
+                        base,
+                        lower_stack,
+                        stack,
+                        value,
+                    );
                 }
                 opcode if opcode == OpCode::GetTabUp as u8 => {
-                    let upvalue = upvalues[insn.b()].borrow();
-                    let table_value =
-                        super::get_upvalue(thread, base, lower_stack, stack, &upvalue);
+                    let table = upvalues[insn.b()]
+                        .borrow()
+                        .get(thread, base, lower_stack, stack);
                     let rc = match constants[insn.c() as usize] {
                         Value::String(s) => s,
                         _ => unreachable!(),
                     };
-                    let raw_value = table_value
+                    let raw_value = table
                         .borrow_as_table()
                         .map(|table| table.get_field(rc))
                         .unwrap_or_default();
                     if raw_value.is_nil() {
                         thread_ref.current_lua_frame().pc = pc;
-                        return self.index_slow_path(
-                            &mut thread_ref,
-                            table_value,
-                            rc,
-                            base + insn.a(),
-                        );
+                        return self.index_slow_path(&mut thread_ref, table, rc, base + insn.a());
                     }
                     stack[insn.a()] = raw_value;
                 }
@@ -152,21 +154,21 @@ impl<'gc> Vm<'gc> {
                         Value::String(s) => s,
                         _ => unreachable!(),
                     };
-                    let upvalue = upvalues[insn.a()].borrow();
-                    let table_value =
-                        super::get_upvalue(thread, base, lower_stack, stack, &upvalue);
+                    let table = upvalues[insn.a()]
+                        .borrow()
+                        .get(thread, base, lower_stack, stack);
                     let c = insn.c() as usize;
                     let rkc = if insn.k() { constants[c] } else { stack[c] };
-                    let replaced = table_value
+                    let replaced = table
                         .borrow_as_table_mut(gc)
                         .ok_or_else(|| ErrorKind::TypeError {
                             operation: Operation::Index,
-                            ty: table_value.ty(),
+                            ty: table.ty(),
                         })?
                         .replace_field(kb, rkc);
                     if !replaced {
                         thread_ref.current_lua_frame().pc = pc;
-                        return self.new_index_slow_path(gc, &mut thread_ref, table_value, kb, rkc);
+                        return self.new_index_slow_path(gc, &mut thread_ref, table, kb, rkc);
                     }
                 }
                 opcode if opcode == OpCode::SetTable as u8 => {
