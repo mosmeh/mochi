@@ -554,17 +554,22 @@ impl<'gc> CodeGenerator<'gc> {
 
         let mut flipped = false;
         if op_is_commutative || op_is_anticommutative {
-            let should_flip = match (&lhs, &rhs) {
-                (
-                    LazyRValue::Constant(Value::Integer(_)),
-                    LazyRValue::Constant(Value::Integer(_)),
-                ) => false,
-                (LazyRValue::Constant(Value::Integer(_)), LazyRValue::Constant(_)) => true,
-                (LazyRValue::Constant(_), LazyRValue::Constant(_)) => false,
-                (LazyRValue::Constant(_), _) => true,
+            flipped = match (&lhs, &rhs) {
+                (LazyRValue::Constant(lhs), LazyRValue::Constant(rhs))
+                    if std::mem::discriminant(lhs) == std::mem::discriminant(rhs) =>
+                {
+                    false
+                }
+                (LazyRValue::Constant(Value::Integer(_)), LazyRValue::Constant(rhs))
+                | (LazyRValue::Constant(Value::Number(_)), LazyRValue::Constant(rhs))
+                    if !matches!(rhs, Value::Integer(_)) =>
+                {
+                    true
+                }
+                (LazyRValue::Constant(_), rhs) if !matches!(rhs, LazyRValue::Constant(_)) => true,
                 _ => false,
             };
-            if should_flip {
+            if flipped {
                 match op {
                     BinaryOp::Lt => op = BinaryOp::Ge,
                     BinaryOp::Le => op = BinaryOp::Gt,
@@ -573,7 +578,6 @@ impl<'gc> CodeGenerator<'gc> {
                     _ => (),
                 };
                 std::mem::swap(&mut lhs, &mut rhs);
-                flipped = true;
             }
         }
 

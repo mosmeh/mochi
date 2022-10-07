@@ -239,6 +239,7 @@ pub enum IrInstruction {
         op: BinaryOp,
         lhs: RegisterIndex,
         rhs: ImmediateI8,
+        rhs_is_float: bool,
         jump_on: bool,
     },
     Test {
@@ -587,6 +588,7 @@ pub(super) fn lower_ir<'gc>(
                 op,
                 lhs,
                 rhs,
+                rhs_is_float,
                 jump_on,
             } => {
                 let (opcode, k) = match op {
@@ -598,7 +600,13 @@ pub(super) fn lower_ir<'gc>(
                     BinaryOp::Ne => (OpCode::EqI, !jump_on),
                     _ => unreachable!(),
                 };
-                code.push(Instruction::from_a_sb_c_k(opcode, lhs.0, rhs.0, 0, k));
+                code.push(Instruction::from_a_sb_c_k(
+                    opcode,
+                    lhs.0,
+                    rhs.0,
+                    rhs_is_float as u8,
+                    k,
+                ));
             }
             IrInstruction::Test { condition, jump_on } => {
                 code.push(Instruction::from_a_b_c_k(

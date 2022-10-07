@@ -8,7 +8,8 @@ use crate::{
         BinaryOp, Block, Chunk, Expression, FunctionArguments, FunctionParameter, UnaryOp,
     },
     types::{
-        Integer, LuaClosureProto, LuaString, RegisterIndex, UpvalueDescription, UpvalueIndex, Value,
+        Integer, LuaClosureProto, LuaString, Number, RegisterIndex, UpvalueDescription,
+        UpvalueIndex, Value,
     },
 };
 use ir::{ConstantIndex25, ConstantIndex8, IrAddress, IrInstruction, Label, ProtoIndex, RkIndex};
@@ -379,16 +380,35 @@ impl<'gc> CodeGenerator<'gc> {
         let rhs = rhs.into();
 
         if let LazyRValue::Constant(constant) = rhs {
-            if let Value::Integer(i) = constant {
-                if let Ok(rhs) = i.try_into() {
-                    self.emit(IrInstruction::CompareImmediate {
-                        op,
-                        lhs,
-                        rhs,
-                        jump_on,
-                    });
-                    return Ok(());
+            match constant {
+                Value::Integer(i) => {
+                    if let Ok(rhs) = i.try_into() {
+                        self.emit(IrInstruction::CompareImmediate {
+                            op,
+                            lhs,
+                            rhs,
+                            rhs_is_float: false,
+                            jump_on,
+                        });
+                        return Ok(());
+                    }
                 }
+                Value::Number(x) => {
+                    let int = x as Integer;
+                    if int as Number == x {
+                        if let Ok(rhs) = int.try_into() {
+                            self.emit(IrInstruction::CompareImmediate {
+                                op,
+                                lhs,
+                                rhs,
+                                rhs_is_float: true,
+                                jump_on,
+                            });
+                            return Ok(());
+                        }
+                    }
+                }
+                _ => (),
             }
 
             let op_has_constant_variant = matches!(op, BinaryOp::Eq | BinaryOp::Ne);
