@@ -6,7 +6,7 @@ use crate::{
 };
 use std::{
     cmp::PartialOrd,
-    ops::{Add, BitAnd, BitOr, BitXor, ControlFlow, Div, Mul, Shl, Shr, Sub},
+    ops::{Add, BitAnd, BitOr, BitXor, ControlFlow, Div, Mul, Sub},
 };
 
 impl<'gc> Vm<'gc> {
@@ -331,8 +331,22 @@ impl<'gc> Vm<'gc> {
                     insn,
                     Integer::bitxor,
                 ),
-                opcode if opcode == OpCode::ShrI as u8 => todo!("SHRI"),
-                opcode if opcode == OpCode::ShlI as u8 => todo!("SHLI"),
+                opcode if opcode == OpCode::ShrI as u8 => {
+                    let rb = stack[insn.b()];
+                    if let Some(lhs) = rb.to_integer_without_string_coercion() {
+                        let ic = insn.sc() as Integer;
+                        stack[insn.a()] = ops::shl(lhs, -ic).into();
+                        pc += 1;
+                    }
+                }
+                opcode if opcode == OpCode::ShlI as u8 => {
+                    let rb = stack[insn.b()];
+                    if let Some(rhs) = rb.to_integer_without_string_coercion() {
+                        let ic = insn.sc() as Integer;
+                        stack[insn.a()] = ops::shl(ic, rhs).into();
+                        pc += 1;
+                    }
+                }
                 opcode if opcode == OpCode::Add as u8 => {
                     ops::do_arithmetic(stack, &mut pc, insn, Integer::wrapping_add, Number::add)
                 }
@@ -364,10 +378,10 @@ impl<'gc> Vm<'gc> {
                     ops::do_bitwise_op(stack, &mut pc, insn, Integer::bitxor)
                 }
                 opcode if opcode == OpCode::Shr as u8 => {
-                    ops::do_bitwise_op(stack, &mut pc, insn, Integer::shr)
+                    ops::do_bitwise_op(stack, &mut pc, insn, ops::shr)
                 }
                 opcode if opcode == OpCode::Shl as u8 => {
-                    ops::do_bitwise_op(stack, &mut pc, insn, Integer::shl)
+                    ops::do_bitwise_op(stack, &mut pc, insn, ops::shl)
                 }
                 opcode if opcode == OpCode::MmBin as u8 => {
                     let ra = stack[insn.a()];

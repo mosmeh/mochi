@@ -268,3 +268,18 @@ pub(super) fn modf(m: Number, n: Number) -> Number {
         r
     }
 }
+
+pub(super) fn shl(x: Integer, y: Integer) -> Integer {
+    const BITS: Integer = Integer::BITS as Integer;
+    if y <= -BITS || BITS <= y {
+        0
+    } else if y >= 0 {
+        ((x as u64) << y as u64) as Integer
+    } else {
+        (x as u64 >> -y as u64) as Integer
+    }
+}
+
+pub(super) fn shr(x: Integer, y: Integer) -> Integer {
+    shl(x, y.wrapping_neg())
+}
