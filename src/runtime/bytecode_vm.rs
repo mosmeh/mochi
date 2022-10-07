@@ -507,22 +507,20 @@ impl<'gc> Vm<'gc> {
                     let rb = stack[insn.b()];
                     if ra == rb {
                         ops::do_conditional_jump(&mut pc, code, insn, true);
+                    } else if self.metamethod_of_object(Metamethod::Eq, ra).is_some()
+                        || self.metamethod_of_object(Metamethod::Eq, rb).is_some()
+                    {
+                        thread_ref.current_lua_frame().pc = pc;
+                        return self.compare_slow_path(
+                            &mut thread_ref,
+                            Metamethod::Eq,
+                            ra,
+                            rb,
+                            pc,
+                            code,
+                        );
                     } else {
-                        match (ra, rb) {
-                            (Value::Table(_), Value::Table(_))
-                            | (Value::UserData(_), Value::UserData(_)) => {
-                                thread_ref.current_lua_frame().pc = pc;
-                                return self.compare_slow_path(
-                                    &mut thread_ref,
-                                    Metamethod::Eq,
-                                    ra,
-                                    rb,
-                                    pc,
-                                    code,
-                                );
-                            }
-                            _ => ops::do_conditional_jump(&mut pc, code, insn, false),
-                        }
+                        ops::do_conditional_jump(&mut pc, code, insn, false);
                     }
                 }
                 opcode if opcode == OpCode::Lt as u8 => {
