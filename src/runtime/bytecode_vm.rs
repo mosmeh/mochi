@@ -32,7 +32,7 @@ impl<'gc> Vm<'gc> {
 
         let saved_stack_top = thread_ref.stack.len();
         let new_stack_len = base + proto.max_stack_size as usize;
-        if thread_ref.stack.len() < new_stack_len {
+        if saved_stack_top < new_stack_len {
             thread_ref.stack.resize(new_stack_len, Value::Nil);
         }
 
@@ -701,7 +701,7 @@ impl<'gc> Vm<'gc> {
                     let num_results = if b > 0 {
                         b - 1
                     } else {
-                        saved_stack_top - a - base
+                        saved_stack_top - a - base - 1
                     };
                     thread_ref
                         .stack
