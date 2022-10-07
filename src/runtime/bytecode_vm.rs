@@ -380,8 +380,28 @@ impl<'gc> Vm<'gc> {
                     thread_ref.current_lua_frame().pc = pc;
                     return self.arithmetic_slow_path(&mut thread_ref, metamethod, ra, rb, dest);
                 }
-                opcode if opcode == OpCode::MmBinI as u8 => todo!("MMBINI"),
-                opcode if opcode == OpCode::MmBinK as u8 => todo!("MMBINK"),
+                opcode if opcode == OpCode::MmBinI as u8 => {
+                    let ra = stack[insn.a()];
+                    let imm = (insn.sb() as Integer).into();
+                    let metamethod = Metamethod::from(insn.c());
+                    let prev_insn = code[pc - 2];
+                    let dest = base + prev_insn.a();
+                    let (a, b) = if insn.k() { (imm, ra) } else { (ra, imm) };
+
+                    thread_ref.current_lua_frame().pc = pc;
+                    return self.arithmetic_slow_path(&mut thread_ref, metamethod, a, b, dest);
+                }
+                opcode if opcode == OpCode::MmBinK as u8 => {
+                    let ra = stack[insn.a()];
+                    let imm = constants[insn.b()];
+                    let metamethod = Metamethod::from(insn.c());
+                    let prev_insn = code[pc - 2];
+                    let dest = base + prev_insn.a();
+                    let (a, b) = if insn.k() { (imm, ra) } else { (ra, imm) };
+
+                    thread_ref.current_lua_frame().pc = pc;
+                    return self.arithmetic_slow_path(&mut thread_ref, metamethod, a, b, dest);
+                }
                 opcode if opcode == OpCode::Unm as u8 => {
                     let a = insn.a();
                     let rb = stack[insn.b()];
