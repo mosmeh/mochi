@@ -55,11 +55,11 @@ fn coroutine_close<'gc>(
 
 fn coroutine_create<'gc>(
     gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
+    vm: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let f = args.nth(1).ensure_function()?;
-    let co = LuaThread::with_body(f);
+    let co = create_coroutine(vm, f)?;
 
     Ok(Action::Return(vec![gc.allocate_cell(co).into()]))
 }
@@ -132,11 +132,11 @@ fn coroutine_status<'gc>(
 
 fn coroutine_wrap<'gc>(
     gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
+    vm: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let f = args.nth(1).ensure_function()?;
-    let co = LuaThread::with_body(f);
+    let co = create_coroutine(vm, f)?;
     let coroutine = gc.allocate_cell(co);
 
     let wrapper = NativeClosure::with_upvalue(coroutine, |_, _, &coroutine, args| {
@@ -164,6 +164,13 @@ fn coroutine_yield<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     Ok(Action::Yield(args.without_callee().to_vec()))
+}
+
+fn create_coroutine<'gc>(vm: &mut Vm<'gc>, body: Value<'gc>) -> Result<LuaThread<'gc>, ErrorKind> {
+    let mut co = LuaThread::new();
+    co.stack.push(body);
+    vm.push_frame(&mut co, 0)?;
+    Ok(co)
 }
 
 enum CoroutineStatus {

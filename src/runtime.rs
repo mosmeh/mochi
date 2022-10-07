@@ -67,7 +67,7 @@ impl Runtime {
             assert!(thread_ref.frames.is_empty());
             assert!(thread_ref.open_upvalues.is_empty());
             thread_ref.stack.push(value);
-            thread_ref.push_frame(0)?;
+            vm.push_frame(&mut thread_ref, 0)?;
 
             Ok(())
         });
@@ -274,6 +274,33 @@ impl<'gc> Vm<'gc> {
             RuntimeAction::Exit
         })
     }
+
+    pub(crate) fn push_frame(
+        &self,
+        thread: &mut LuaThread<'gc>,
+        bottom: usize,
+    ) -> Result<ControlFlow<()>, ErrorKind> {
+        match thread.stack[bottom] {
+            Value::LuaClosure(_) => {
+                thread.frames.push(Frame::Lua(LuaFrame::new(bottom)));
+                Ok(ControlFlow::Continue(()))
+            }
+            Value::NativeFunction(_) | Value::NativeClosure(_) => {
+                thread.frames.push(Frame::Native { bottom });
+                Ok(ControlFlow::Break(()))
+            }
+            value => match self.metamethod_of_object(Metamethod::Call, value) {
+                Some(metatable) => {
+                    thread.stack.insert(bottom, metatable);
+                    self.push_frame(thread, bottom)
+                }
+                None => Err(ErrorKind::TypeError {
+                    operation: Operation::Call,
+                    ty: value.ty(),
+                }),
+            },
+        }
+    }
 }
 
 impl<'gc> LuaThread<'gc> {
@@ -282,23 +309,6 @@ impl<'gc> LuaThread<'gc> {
             frame
         } else {
             unreachable!()
-        }
-    }
-
-    pub(crate) fn push_frame(&mut self, bottom: usize) -> Result<ControlFlow<()>, ErrorKind> {
-        match self.stack[bottom] {
-            Value::LuaClosure(_) => {
-                self.frames.push(Frame::Lua(LuaFrame::new(bottom)));
-                Ok(ControlFlow::Continue(()))
-            }
-            Value::NativeFunction(_) | Value::NativeClosure(_) => {
-                self.frames.push(Frame::Native { bottom });
-                Ok(ControlFlow::Break(()))
-            }
-            value => Err(ErrorKind::TypeError {
-                operation: Operation::Call,
-                ty: value.ty(),
-            }),
         }
     }
 }

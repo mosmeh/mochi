@@ -690,7 +690,7 @@ impl<'gc> Vm<'gc> {
                     thread_ref
                         .stack
                         .truncate(if b > 0 { base + a + b } else { saved_stack_top });
-                    return thread_ref.push_frame(base + a);
+                    return self.push_frame(&mut thread_ref, base + a);
                 }
                 opcode if opcode == OpCode::TailCall as u8 => {
                     let a = insn.a();
@@ -711,7 +711,7 @@ impl<'gc> Vm<'gc> {
                         thread_ref.stack.truncate(bottom + b);
                     }
                     thread_ref.frames.pop().unwrap();
-                    return thread_ref.push_frame(bottom);
+                    return self.push_frame(&mut thread_ref, bottom);
                 }
                 opcode if opcode == OpCode::Return as u8 => {
                     if insn.k() {
@@ -805,7 +805,7 @@ impl<'gc> Vm<'gc> {
                     thread_ref
                         .stack
                         .copy_within(arg_base..arg_base + 3, new_bottom);
-                    return thread_ref.push_frame(new_bottom);
+                    return self.push_frame(&mut thread_ref, new_bottom);
                 }
                 opcode if opcode == OpCode::TForLoop as u8 => {
                     let a = insn.a();

@@ -103,7 +103,8 @@ impl<'gc> Vm<'gc> {
             };
             match metamethod {
                 Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
-                    return Ok(thread.push_metamethod_frame_with_continuation(
+                    return Ok(self.push_metamethod_frame_with_continuation(
+                        thread,
                         metamethod,
                         &[table_like, key],
                         move |gc, vm, results| {
@@ -169,9 +170,11 @@ impl<'gc> Vm<'gc> {
             };
             match metamethod {
                 Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
-                    return Ok(
-                        thread.push_metamethod_frame(metamethod, &[table_like, key, value.into()])
-                    );
+                    return Ok(self.push_metamethod_frame(
+                        thread,
+                        metamethod,
+                        &[table_like, key, value.into()],
+                    ));
                 }
                 Value::Table(table) => {
                     let value = table.borrow().get(key);
@@ -220,7 +223,8 @@ impl<'gc> Vm<'gc> {
             }
         };
 
-        Ok(thread.push_metamethod_frame_with_continuation(
+        Ok(self.push_metamethod_frame_with_continuation(
+            thread,
             metamethod_value,
             &[a, b],
             move |gc, vm, results| {
@@ -251,7 +255,8 @@ impl<'gc> Vm<'gc> {
         let insn = code[pc - 1];
         let next_insn = code[pc];
 
-        Ok(thread.push_metamethod_frame_with_continuation(
+        Ok(self.push_metamethod_frame_with_continuation(
+            thread,
             metamethod,
             &[a, b],
             move |gc, vm, results| {
@@ -280,7 +285,8 @@ impl<'gc> Vm<'gc> {
                 ty: value.ty(),
             })?;
 
-        Ok(thread.push_metamethod_frame_with_continuation(
+        Ok(self.push_metamethod_frame_with_continuation(
+            thread,
             metamethod,
             &[value, value],
             move |gc, vm, results| {
@@ -290,24 +296,24 @@ impl<'gc> Vm<'gc> {
             },
         ))
     }
-}
 
-impl<'gc> LuaThread<'gc> {
     #[must_use]
     pub(super) fn push_metamethod_frame(
-        &mut self,
+        &self,
+        thread: &mut LuaThread<'gc>,
         metamethod: Value<'gc>,
         args: &[Value<'gc>],
     ) -> ControlFlow<()> {
-        let metamethod_bottom = self.stack.len();
-        self.stack.push(metamethod);
-        self.stack.extend_from_slice(args);
-        self.push_frame(metamethod_bottom).unwrap()
+        let metamethod_bottom = thread.stack.len();
+        thread.stack.push(metamethod);
+        thread.stack.extend_from_slice(args);
+        self.push_frame(thread, metamethod_bottom).unwrap()
     }
 
     #[must_use]
     pub(super) fn push_metamethod_frame_with_continuation<F>(
-        &mut self,
+        &self,
+        thread: &mut LuaThread<'gc>,
         metamethod: Value<'gc>,
         args: &[Value<'gc>],
         continuation: F,
@@ -316,17 +322,17 @@ impl<'gc> LuaThread<'gc> {
         F: 'static
             + Fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
     {
-        let current_bottom = self.current_lua_frame().bottom;
-        let metamethod_bottom = self.stack.len();
-        self.stack.push(metamethod);
-        self.stack.extend_from_slice(args);
-        self.frames.push(Frame::CallContinuation {
+        let current_bottom = thread.current_lua_frame().bottom;
+        let metamethod_bottom = thread.stack.len();
+        thread.stack.push(metamethod);
+        thread.stack.extend_from_slice(args);
+        thread.frames.push(Frame::CallContinuation {
             inner: ContinuationFrame {
                 bottom: current_bottom,
                 continuation: Some(Continuation::new(continuation)),
             },
             callee_bottom: metamethod_bottom,
         });
-        self.push_frame(metamethod_bottom).unwrap()
+        self.push_frame(thread, metamethod_bottom).unwrap()
     }
 }
