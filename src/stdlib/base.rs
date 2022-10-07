@@ -243,7 +243,7 @@ fn base_ipairs<'gc>(
         _: &mut Vm<'gc>,
         args: Vec<Value<'gc>>,
     ) -> Result<Action<'gc>, ErrorKind> {
-        let i = args.nth(2).to_integer()? + 1;
+        let i = args.nth(2).to_integer()?.wrapping_add(1);
         let value = args.nth(1).borrow_as_table()?.get(i);
 
         Ok(Action::Return(if value.is_nil() {
