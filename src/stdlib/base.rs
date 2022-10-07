@@ -212,14 +212,23 @@ fn base_error<'gc>(
 }
 
 fn base_getmetatable<'gc>(
-    _: &'gc GcContext,
+    gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let object = args.nth(1).as_value()?;
     let metatable = vm
         .metatable_of_object(object)
-        .map(Value::from)
+        .map(|metatable| {
+            let value = metatable
+                .borrow()
+                .get_field(gc.allocate_string(B("__metatable")));
+            if value.is_nil() {
+                metatable.into()
+            } else {
+                value
+            }
+        })
         .unwrap_or_default();
     Ok(Action::Return(vec![metatable]))
 }
@@ -455,24 +464,31 @@ fn base_setmetatable<'gc>(
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let table = {
-        let table_arg = args.nth(1);
-        let mut table = table_arg.borrow_as_table_mut(gc)?;
-        let metatable = match args.nth(2).get() {
-            Some(Value::Nil) => None,
-            Some(Value::Table(table)) => Some(table),
-            value => {
-                return Err(ErrorKind::ArgumentTypeError {
-                    nth: 2,
-                    expected_type: "nil or table",
-                    got_type: value.map(|value| value.ty().name()),
-                })
-            }
-        };
-        table.set_metatable(metatable);
-        table_arg.as_value()?
+    let table = args.nth(1).as_table()?;
+    let new_metatable = match args.nth(2).get() {
+        Some(Value::Nil) => None,
+        Some(Value::Table(t)) => Some(t),
+        value => {
+            return Err(ErrorKind::ArgumentTypeError {
+                nth: 2,
+                expected_type: "nil or table",
+                got_type: value.map(|value| value.ty().name()),
+            })
+        }
     };
-    Ok(Action::Return(vec![table]))
+    match table.borrow().metatable() {
+        Some(metatable)
+            if !metatable
+                .borrow()
+                .get_field(gc.allocate_string(B("__metatable")))
+                .is_nil() =>
+        {
+            return Err(ErrorKind::other("cannot change a protected metatable"))
+        }
+        _ => (),
+    }
+    table.borrow_mut(gc).set_metatable(new_metatable);
+    Ok(Action::Return(vec![table.into()]))
 }
 
 fn base_tonumber<'gc>(
