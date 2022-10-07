@@ -580,7 +580,22 @@ impl<'gc> Vm<'gc> {
                     let imm = insn.sb();
                     match ops::compare_with_immediate(ra, imm, PartialOrd::lt, PartialOrd::lt) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
-                        None => todo!("__lt for LTI"),
+                        None => {
+                            let imm = if insn.c() == 0 {
+                                (imm as Integer).into()
+                            } else {
+                                (imm as Number).into()
+                            };
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.compare_slow_path(
+                                &mut thread_ref,
+                                Metamethod::Lt,
+                                ra,
+                                imm,
+                                pc,
+                                code,
+                            );
+                        }
                     }
                 }
                 opcode if opcode == OpCode::LeI as u8 => {
@@ -588,7 +603,22 @@ impl<'gc> Vm<'gc> {
                     let imm = insn.sb();
                     match ops::compare_with_immediate(ra, imm, PartialOrd::le, PartialOrd::le) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
-                        None => todo!("__le for LEI"),
+                        None => {
+                            let imm = if insn.c() == 0 {
+                                (imm as Integer).into()
+                            } else {
+                                (imm as Number).into()
+                            };
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.compare_slow_path(
+                                &mut thread_ref,
+                                Metamethod::Le,
+                                ra,
+                                imm,
+                                pc,
+                                code,
+                            );
+                        }
                     }
                 }
                 opcode if opcode == OpCode::GtI as u8 => {
@@ -596,7 +626,22 @@ impl<'gc> Vm<'gc> {
                     let imm = insn.sb();
                     match ops::compare_with_immediate(ra, imm, PartialOrd::gt, PartialOrd::gt) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
-                        None => todo!("__lt for GTI"),
+                        None => {
+                            let imm = if insn.c() == 0 {
+                                (imm as Integer).into()
+                            } else {
+                                (imm as Number).into()
+                            };
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.compare_slow_path(
+                                &mut thread_ref,
+                                Metamethod::Lt,
+                                imm,
+                                ra,
+                                pc,
+                                code,
+                            );
+                        }
                     }
                 }
                 opcode if opcode == OpCode::GeI as u8 => {
@@ -604,7 +649,22 @@ impl<'gc> Vm<'gc> {
                     let imm = insn.sb();
                     match ops::compare_with_immediate(ra, imm, PartialOrd::ge, PartialOrd::ge) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
-                        None => todo!("__le for GEI"),
+                        None => {
+                            let imm = if insn.c() == 0 {
+                                (imm as Integer).into()
+                            } else {
+                                (imm as Number).into()
+                            };
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.compare_slow_path(
+                                &mut thread_ref,
+                                Metamethod::Le,
+                                imm,
+                                ra,
+                                pc,
+                                code,
+                            );
+                        }
                     }
                 }
                 opcode if opcode == OpCode::Test as u8 => {
