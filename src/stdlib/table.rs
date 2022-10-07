@@ -62,23 +62,23 @@ fn table_insert<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let table = args.nth(1);
     let mut table = table.borrow_as_table_mut(gc)?;
-    let len = table.lua_len();
+    let end = table.lua_len().wrapping_add(1);
 
-    match args.without_callee().len() {
-        2 => table.set(len + 1, args.without_callee()[1])?,
-        3 => {
+    match *args.without_callee() {
+        [_, value] => table.set(end, value)?,
+        [_, _, value] => {
             let pos = args.nth(2).to_integer()?;
-            if pos > len + 1 {
+            if pos < 1 || end < pos {
                 return Err(ErrorKind::ArgumentError {
                     nth: 2,
                     message: "position out of bounds",
                 });
             }
-            for i in (1..=len).rev() {
-                let value = table.get(i);
-                table.set(i + 1, value)?;
+            for i in (pos + 1..=end).rev() {
+                let v = table.get(i - 1);
+                table.set(i, v)?;
             }
-            table.set(pos, args.without_callee()[2])?;
+            table.set(pos, value)?;
         }
         _ => return Err(ErrorKind::other("wrong number of arguments to 'insert'")),
     };
@@ -161,7 +161,7 @@ fn table_remove<'gc>(
     let len = table.lua_len();
 
     let pos = args.nth(2).to_integer_or(len)?;
-    if pos > len + 1 {
+    if pos != len && (pos < 1 || len + 1 < pos) {
         return Err(ErrorKind::ArgumentError {
             nth: 2,
             message: "position out of bounds",
@@ -173,7 +173,7 @@ fn table_remove<'gc>(
         let value = table.get(i + 1);
         table.set(i, value)?;
     }
-    table.set(len, Value::Nil)?;
+    table.set(pos.max(len), Value::Nil)?;
     Ok(Action::Return(vec![removed]))
 }
 
