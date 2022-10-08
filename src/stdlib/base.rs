@@ -319,17 +319,28 @@ fn base_next<'gc>(
 }
 
 fn base_pairs<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
+    gc: &'gc GcContext,
+    vm: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let table = args.nth(1).as_value()?;
-
-    Ok(Action::Return(vec![
-        NativeFunction::new(base_next).into(),
-        table,
-        Value::Nil,
-    ]))
+    let metamethod = vm.metatable_of_object(table).and_then(|metatable| {
+        let value = metatable
+            .borrow()
+            .get_field(gc.allocate_string(B("__pairs")));
+        (!value.is_nil()).then_some(value)
+    });
+    match metamethod {
+        Some(metamethod) => Ok(Action::TailCall {
+            callee: metamethod,
+            args: vec![table],
+        }),
+        None => Ok(Action::Return(vec![
+            NativeFunction::new(base_next).into(),
+            table,
+            Value::Nil,
+        ])),
+    }
 }
 
 fn base_pcall<'gc>(
