@@ -740,6 +740,22 @@ impl<'gc> CodeGenerator<'gc> {
                 rhs,
                 flipped,
             } => {
+                if op == BinaryOp::Concat {
+                    let lhs = if dest.0 + 1 == self.current_frame().register_top.0 {
+                        self.discharge_to_register(*lhs, dest)?;
+                        dest
+                    } else {
+                        self.discharge_to_new_register(*lhs)?
+                    };
+                    self.ensure_register_window(lhs, 2)?;
+                    self.discharge_to_register(*rhs, RegisterIndex(lhs.0 + 1))?;
+                    self.emit(IrInstruction::Concatenate { dest: lhs });
+                    if lhs != dest {
+                        self.emit(IrInstruction::Move { dest, source: lhs });
+                    }
+                    return Ok(());
+                };
+
                 let (lhs, rhs) = match (*lhs, *rhs) {
                     (lhs, LazyRValue::LValue(LazyLValue::Register(rhs))) if rhs == dest => (
                         self.discharge_to_any_register(lhs)?,

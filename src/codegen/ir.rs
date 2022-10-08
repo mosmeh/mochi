@@ -223,6 +223,9 @@ pub enum IrInstruction {
         dest: RegisterIndex,
         operand: RegisterIndex,
     },
+    Concatenate {
+        dest: RegisterIndex,
+    },
     Compare {
         op: BinaryOp,
         lhs: RegisterIndex,
@@ -554,6 +557,28 @@ pub(super) fn lower_ir<'gc>(
                     opcode, dest.0, operand.0, 0, false,
                 ));
             }
+            IrInstruction::Concatenate { dest } => match code.last_mut() {
+                Some(prev_insn)
+                    if prev_insn.opcode() == OpCode::Concat
+                        && dest.0 as usize + 1 == prev_insn.a()
+                        && prev_insn.b() < u8::MAX as usize =>
+                {
+                    *prev_insn = Instruction::from_a_b_c_k(
+                        OpCode::Concat,
+                        dest.0,
+                        prev_insn.b() as u8 + 1,
+                        0,
+                        false,
+                    )
+                }
+                _ => code.push(Instruction::from_a_b_c_k(
+                    OpCode::Concat,
+                    dest.0,
+                    2,
+                    0,
+                    false,
+                )),
+            },
             IrInstruction::Compare {
                 op,
                 lhs,

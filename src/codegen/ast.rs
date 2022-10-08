@@ -526,10 +526,6 @@ impl<'gc> CodeGenerator<'gc> {
         expr: BinaryOpExpression<'gc>,
     ) -> Result<LazyRValue<'gc>, CodegenError> {
         let mut op = expr.op;
-        if op == BinaryOp::Concat {
-            todo!("concat")
-        }
-
         let mut lhs = self.evaluate_expr(*expr.lhs)?;
 
         let op_is_shortcircuit = matches!(op, BinaryOp::And | BinaryOp::Or);
