@@ -1,5 +1,8 @@
 use super::Instruction;
-use crate::types::{Integer, Number, Value};
+use crate::{
+    number_is_valid_integer,
+    types::{Integer, Number, Value},
+};
 
 fn arithmetic<'gc, I, F>(a: Value<'gc>, b: Value<'gc>, int_op: I, float_op: F) -> Option<Value<'gc>>
 where
@@ -43,33 +46,6 @@ where
         Some(Value::Integer(int_op(a, b)))
     } else {
         None
-    }
-}
-
-pub(super) fn compare<'gc, I, F, S>(
-    a: Value<'gc>,
-    b: Value<'gc>,
-    int_op: I,
-    float_op: F,
-    str_op: S,
-) -> Option<bool>
-where
-    I: Fn(&Integer, &Integer) -> bool,
-    F: Fn(&Number, &Number) -> bool,
-    S: Fn(&[u8], &[u8]) -> bool,
-{
-    match (a, b) {
-        (Value::Integer(a), Value::Integer(b)) => Some(int_op(&a, &b)),
-        (Value::String(ref a), Value::String(ref b)) => Some(str_op(a, b)),
-        _ => {
-            match (
-                a.to_number_without_string_coercion(),
-                b.to_number_without_string_coercion(),
-            ) {
-                (Some(a), Some(b)) => Some(float_op(&a, &b)),
-                _ => None,
-            }
-        }
     }
 }
 
@@ -282,4 +258,54 @@ pub(super) fn shl(x: Integer, y: Integer) -> Integer {
 
 pub(super) fn shr(x: Integer, y: Integer) -> Integer {
     shl(x, y.wrapping_neg())
+}
+
+pub(super) fn lt(a: Value, b: Value) -> Option<bool> {
+    match (a, b) {
+        (Value::Integer(a), Value::Integer(b)) => Some(a < b),
+        (Value::Number(a), Value::Number(b)) => Some(a < b),
+        (Value::Integer(a), Value::Number(b)) => {
+            let ceil_b = b.ceil();
+            Some(if number_is_valid_integer(ceil_b) {
+                a < ceil_b as Integer
+            } else {
+                b > 0.0
+            })
+        }
+        (Value::Number(a), Value::Integer(b)) => {
+            let floor_a = a.floor();
+            Some(if number_is_valid_integer(floor_a) {
+                (floor_a as Integer) < b
+            } else {
+                a < 0.0
+            })
+        }
+        (Value::String(a), Value::String(b)) => Some(a < b),
+        _ => None,
+    }
+}
+
+pub(super) fn le(a: Value, b: Value) -> Option<bool> {
+    match (a, b) {
+        (Value::Integer(a), Value::Integer(b)) => Some(a <= b),
+        (Value::Number(a), Value::Number(b)) => Some(a <= b),
+        (Value::Integer(a), Value::Number(b)) => {
+            let floor_b = b.floor();
+            Some(if number_is_valid_integer(floor_b) {
+                a <= floor_b as Integer
+            } else {
+                b > 0.0
+            })
+        }
+        (Value::Number(a), Value::Integer(b)) => {
+            let ceil_a = a.ceil();
+            Some(if number_is_valid_integer(ceil_a) {
+                ceil_a as Integer <= b
+            } else {
+                a < 0.0
+            })
+        }
+        (Value::String(a), Value::String(b)) => Some(a <= b),
+        _ => None,
+    }
 }

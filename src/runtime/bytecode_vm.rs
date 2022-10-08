@@ -539,7 +539,7 @@ impl<'gc> Vm<'gc> {
                 opcode if opcode == OpCode::Lt as u8 => {
                     let ra = stack[insn.a()];
                     let rb = stack[insn.b()];
-                    match ops::compare(ra, rb, PartialOrd::lt, PartialOrd::lt, PartialOrd::lt) {
+                    match ops::lt(ra, rb) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
                             thread_ref.current_lua_frame().pc = pc;
@@ -557,7 +557,7 @@ impl<'gc> Vm<'gc> {
                 opcode if opcode == OpCode::Le as u8 => {
                     let ra = stack[insn.a()];
                     let rb = stack[insn.b()];
-                    match ops::compare(ra, rb, PartialOrd::le, PartialOrd::le, PartialOrd::le) {
+                    match ops::le(ra, rb) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
                             thread_ref.current_lua_frame().pc = pc;

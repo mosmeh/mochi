@@ -1,6 +1,7 @@
 use super::helpers::ArgumentsExt;
 use crate::{
     gc::{GcCell, GcContext},
+    number_is_valid_integer,
     runtime::{Action, ErrorKind, Vm},
     stdlib::helpers::set_functions_to_table,
     types::{Integer, NativeClosure, Number, Table, Value},
@@ -416,9 +417,8 @@ fn random_in_range<R: Rng>(rng: &mut R, lower: Integer, upper: Integer) -> Integ
 }
 
 fn number_to_value<'gc>(x: Number) -> Value<'gc> {
-    let int = x as Integer;
-    if x == int as Number {
-        Value::Integer(int)
+    if number_is_valid_integer(x) {
+        Value::Integer(x as Integer)
     } else {
         Value::Number(x)
     }

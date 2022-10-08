@@ -14,7 +14,10 @@ pub(crate) use thread::ThreadStatus;
 pub use thread::{LuaThread, TracebackFrame};
 pub use user_data::UserData;
 
-use crate::gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer};
+use crate::{
+    gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
+    number_is_valid_integer,
+};
 use std::{
     any::Any,
     borrow::Cow,
@@ -149,9 +152,13 @@ impl PartialEq for Value<'_> {
             (Self::Nil, Self::Nil) => true,
             (Self::Boolean(lhs), Self::Boolean(rhs)) => lhs == rhs,
             (Self::Integer(lhs), Self::Integer(rhs)) => lhs == rhs,
-            (Self::Integer(lhs), Self::Number(rhs)) => *lhs as Number == *rhs,
             (Self::Number(lhs), Self::Number(rhs)) => lhs == rhs,
-            (Self::Number(lhs), Self::Integer(rhs)) => *lhs == *rhs as Number,
+            (Self::Integer(lhs), Self::Number(rhs)) => {
+                number_is_valid_integer(*rhs) && (*lhs == *rhs as Integer)
+            }
+            (Self::Number(lhs), Self::Integer(rhs)) => {
+                number_is_valid_integer(*lhs) && (*lhs as Integer == *rhs)
+            }
             (Self::NativeFunction(lhs), Self::NativeFunction(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
             (Self::Table(lhs), Self::Table(rhs)) => GcCell::ptr_eq(lhs, rhs),
@@ -266,14 +273,7 @@ impl<'gc> Value<'gc> {
 
     pub fn to_integer(&self) -> Option<Integer> {
         match self {
-            Self::Number(x) => {
-                let y = x.floor() as Integer;
-                if *x == y as Number {
-                    Some(y)
-                } else {
-                    None
-                }
-            }
+            Self::Number(x) if number_is_valid_integer(*x) => Some(*x as Integer),
             Self::Integer(x) => Some(*x),
             Self::String(x) => x.as_str().ok().and_then(|s| s.parse().ok()),
             _ => None,
@@ -282,14 +282,7 @@ impl<'gc> Value<'gc> {
 
     pub fn to_integer_without_string_coercion(&self) -> Option<Integer> {
         match self {
-            Self::Number(x) => {
-                let y = x.floor() as Integer;
-                if *x == y as Number {
-                    Some(y)
-                } else {
-                    None
-                }
-            }
+            Self::Number(x) if number_is_valid_integer(*x) => Some(*x as Integer),
             Self::Integer(x) => Some(*x),
             _ => None,
         }

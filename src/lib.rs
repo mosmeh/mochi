@@ -21,7 +21,7 @@ use std::{
     io::{BufReader, Cursor, Read},
     path::Path,
 };
-use types::{LuaClosure, LuaClosureProto};
+use types::{Integer, LuaClosure, LuaClosureProto, Number};
 
 pub const LUA_VERSION: (u8, u8) = (5, 4);
 
@@ -130,4 +130,9 @@ fn chunk_id_from_source(source: &str) -> Cow<str> {
             }
         }
     }
+}
+
+fn number_is_valid_integer(x: Number) -> bool {
+    const MIN: Number = Integer::MIN as Number;
+    x as Integer as Number == x && (MIN..-MIN).contains(&x)
 }

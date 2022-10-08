@@ -4,12 +4,12 @@ mod ir;
 
 use crate::{
     gc::GcContext,
+    number_is_valid_integer,
     parser::ast::{
         BinaryOp, Block, Chunk, Expression, FunctionArguments, FunctionParameter, UnaryOp,
     },
     types::{
-        Integer, LuaClosureProto, LuaString, Number, RegisterIndex, UpvalueDescription,
-        UpvalueIndex, Value,
+        Integer, LuaClosureProto, LuaString, RegisterIndex, UpvalueDescription, UpvalueIndex, Value,
     },
 };
 use ir::{ConstantIndex25, ConstantIndex8, IrAddress, IrInstruction, Label, ProtoIndex, RkIndex};
@@ -393,19 +393,16 @@ impl<'gc> CodeGenerator<'gc> {
                         return Ok(());
                     }
                 }
-                Value::Number(x) => {
-                    let int = x as Integer;
-                    if int as Number == x {
-                        if let Ok(rhs) = int.try_into() {
-                            self.emit(IrInstruction::CompareImmediate {
-                                op,
-                                lhs,
-                                rhs,
-                                rhs_is_float: true,
-                                jump_on,
-                            });
-                            return Ok(());
-                        }
+                Value::Number(x) if number_is_valid_integer(x) => {
+                    if let Ok(rhs) = (x as Integer).try_into() {
+                        self.emit(IrInstruction::CompareImmediate {
+                            op,
+                            lhs,
+                            rhs,
+                            rhs_is_float: true,
+                            jump_on,
+                        });
+                        return Ok(());
                     }
                 }
                 _ => (),
