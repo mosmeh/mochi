@@ -297,6 +297,73 @@ impl<'gc> Vm<'gc> {
         ))
     }
 
+    pub(super) fn concat_slow_path<R>(
+        &self,
+        thread: &mut LuaThread<'gc>,
+        lhs_index: usize,
+        rhs: R,
+        dest: usize,
+    ) -> Result<ControlFlow<()>, ErrorKind>
+    where
+        R: Into<Value<'gc>>,
+    {
+        let lhs = thread.stack[dest + lhs_index];
+        let rhs = rhs.into();
+        let metamethod = self
+            .metamethod_of_object(Metamethod::Concat, lhs)
+            .or_else(|| self.metamethod_of_object(Metamethod::Concat, rhs))
+            .ok_or_else(|| ErrorKind::TypeError {
+                operation: Operation::Concatenate,
+                ty: rhs.ty(),
+            })?;
+
+        Ok(self.push_metamethod_frame_with_continuation(
+            thread,
+            metamethod,
+            &[lhs, rhs],
+            move |gc, vm, results| {
+                let thread = vm.current_thread();
+                let mut thread = thread.borrow_mut(gc);
+                let stack = thread.stack.as_mut_slice();
+
+                let concatenated = results.first().copied().unwrap_or_default();
+                if lhs_index == 0 {
+                    stack[dest] = concatenated;
+                    return Ok(Action::ReturnArguments);
+                }
+
+                let s = match concatenated.to_string() {
+                    Some(s) => s,
+                    None => {
+                        vm.concat_slow_path(&mut thread, lhs_index - 1, concatenated, dest)?;
+                        return Ok(Action::ReturnArguments);
+                    }
+                };
+
+                let mut strings = vec![s];
+                for (i, value) in stack[dest..].iter().take(lhs_index).enumerate().rev() {
+                    if let Some(string) = value.to_string() {
+                        strings.push(string);
+                        continue;
+                    }
+                    let (lhs_index, rhs) = match strings.len() {
+                        0 => unreachable!(),
+                        1 => (i, concatenated),
+                        _ => {
+                            strings.reverse();
+                            (i, gc.allocate_string(strings.concat()).into())
+                        }
+                    };
+                    vm.concat_slow_path(&mut thread, lhs_index, rhs, dest)?;
+                    return Ok(Action::ReturnArguments);
+                }
+                strings.reverse();
+                stack[dest] = gc.allocate_string(strings.concat()).into();
+                Ok(Action::ReturnArguments)
+            },
+        ))
+    }
+
     #[must_use]
     pub(super) fn push_metamethod_frame(
         &self,

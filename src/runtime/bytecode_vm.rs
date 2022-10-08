@@ -481,15 +481,26 @@ impl<'gc> Vm<'gc> {
                     if b >= 1 {
                         let a = insn.a();
                         let mut strings = Vec::with_capacity(b);
-                        for value in stack[a..].iter().take(b).rev() {
+                        for (i, value) in stack[a..].iter().take(b).enumerate().rev() {
                             if let Some(string) = value.to_string() {
                                 strings.push(string);
-                            } else {
-                                return Err(ErrorKind::TypeError {
-                                    operation: Operation::Concatenate,
-                                    ty: value.ty(),
-                                });
+                                continue;
                             }
+                            let (lhs_index, rhs) = match strings.len() {
+                                0 => (i - 1, *value),
+                                1 => (i, stack[a + i + 1]),
+                                _ => {
+                                    strings.reverse();
+                                    (i, gc.allocate_string(strings.concat()).into())
+                                }
+                            };
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.concat_slow_path(
+                                &mut thread_ref,
+                                lhs_index,
+                                rhs,
+                                base + a,
+                            );
                         }
                         strings.reverse();
                         stack[a] = gc.allocate_string(strings.concat()).into();
