@@ -477,20 +477,23 @@ impl<'gc> Vm<'gc> {
                     stack[a] = len.into();
                 }
                 opcode if opcode == OpCode::Concat as u8 => {
-                    let a = insn.a();
                     let b = insn.b();
-                    let mut strings = Vec::with_capacity(b);
-                    for value in stack[a..].iter().take(b) {
-                        if let Some(string) = value.to_string() {
-                            strings.push(string);
-                        } else {
-                            return Err(ErrorKind::TypeError {
-                                operation: Operation::Concatenate,
-                                ty: value.ty(),
-                            });
+                    if b >= 1 {
+                        let a = insn.a();
+                        let mut strings = Vec::with_capacity(b);
+                        for value in stack[a..].iter().take(b).rev() {
+                            if let Some(string) = value.to_string() {
+                                strings.push(string);
+                            } else {
+                                return Err(ErrorKind::TypeError {
+                                    operation: Operation::Concatenate,
+                                    ty: value.ty(),
+                                });
+                            }
                         }
+                        strings.reverse();
+                        stack[a] = gc.allocate_string(strings.concat()).into();
                     }
-                    stack[a] = gc.allocate_string(strings.concat()).into();
                 }
                 opcode if opcode == OpCode::Close as u8 => {
                     thread_ref.current_lua_frame().pc = pc;
