@@ -462,12 +462,11 @@ impl<'gc> Vm<'gc> {
                     let len = match rb {
                         Value::String(s) => s.len() as Integer,
                         Value::Table(table) => {
-                            let table = table.borrow();
-                            if table.metatable().is_some() {
+                            if self.metamethod_of_object(Metamethod::Len, rb).is_some() {
                                 thread_ref.current_lua_frame().pc = pc;
                                 return self.len_slow_path(&mut thread_ref, rb, base + a);
                             } else {
-                                table.lua_len()
+                                table.borrow().lua_len()
                             }
                         }
                         _ => {
