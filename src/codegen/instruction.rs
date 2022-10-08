@@ -38,7 +38,7 @@ impl Instruction {
 
     /// iAsBx
     pub fn from_a_sbx(opcode: OpCode, a: u8, sbx: i32) -> Self {
-        Self::from_a_bx(opcode, a, (sbx as i32 + OFFSET_SBX) as u32)
+        Self::from_a_bx(opcode, a, (sbx + OFFSET_SBX) as u32)
     }
 
     /// iAx
