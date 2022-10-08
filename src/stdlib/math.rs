@@ -249,7 +249,9 @@ fn math_modf<'gc>(
         (x.into(), 0.0.into())
     } else {
         let x = x.to_number()?;
-        (number_to_value(x.trunc()), x.fract().into())
+        let trunc = number_to_value(x.trunc());
+        let fract = if x.is_infinite() { 0.0 } else { x.fract() };
+        (trunc, fract.into())
     };
     Ok(Action::Return(vec![trunc, fract]))
 }
