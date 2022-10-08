@@ -420,7 +420,7 @@ impl<'gc> Vm<'gc> {
                     let a = insn.a();
                     let rb = stack[insn.b()];
                     let result = if let Value::Integer(x) = rb {
-                        Value::Integer(-x)
+                        Value::Integer(x.wrapping_neg())
                     } else if let Some(x) = rb.to_number_without_string_coercion() {
                         Value::Number(-x)
                     } else {
