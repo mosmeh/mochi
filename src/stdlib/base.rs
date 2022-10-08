@@ -2,6 +2,7 @@ use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{Action, Continuation, ErrorKind, Vm},
+    trim_whitespaces,
     types::{Integer, LuaClosure, NativeClosure, NativeFunction, Number, Table, Value},
     LUA_VERSION,
 };
@@ -510,7 +511,7 @@ fn base_tonumber<'gc>(
     let result = match args.nth(1).as_value()? {
         Value::Integer(x) => Value::Integer(x),
         Value::Number(x) => Value::Number(x),
-        Value::String(s) => {
+        value @ Value::String(s) => {
             let base = args.nth(2);
             let maybe_value = if base.is_present() {
                 let base = base.to_integer()?;
@@ -520,20 +521,16 @@ fn base_tonumber<'gc>(
                         message: "base out of range",
                     });
                 }
-                s.as_str()
+                trim_whitespaces(&s)
+                    .to_str()
                     .ok()
                     .and_then(|s| Integer::from_str_radix(s, base as u32).ok())
                     .map(|i| i.into())
             } else {
-                s.as_str().ok().map(|s| {
-                    if let Ok(i) = s.parse() {
-                        Value::Integer(i)
-                    } else if let Ok(f) = s.parse() {
-                        Value::Number(f)
-                    } else {
-                        Value::Nil
-                    }
-                })
+                value
+                    .to_integer()
+                    .map(Value::from)
+                    .or_else(|| value.to_number().map(Value::from))
             };
             maybe_value.unwrap_or(Value::Nil)
         }

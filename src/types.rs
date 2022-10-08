@@ -16,8 +16,9 @@ pub use user_data::UserData;
 
 use crate::{
     gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
-    number_is_valid_integer,
+    number_is_valid_integer, trim_whitespaces,
 };
+use bstr::ByteSlice;
 use std::{
     any::Any,
     borrow::Cow,
@@ -258,7 +259,7 @@ impl<'gc> Value<'gc> {
         match self {
             Self::Number(x) => Some(*x),
             Self::Integer(x) => Some(*x as Number),
-            Self::String(x) => x.as_str().ok().and_then(|s| s.parse().ok()),
+            Self::String(s) => parse_number(trim_whitespaces(s)),
             _ => None,
         }
     }
@@ -275,7 +276,12 @@ impl<'gc> Value<'gc> {
         match self {
             Self::Number(x) if number_is_valid_integer(*x) => Some(*x as Integer),
             Self::Integer(x) => Some(*x),
-            Self::String(x) => x.as_str().ok().and_then(|s| s.parse().ok()),
+            Self::String(s) => {
+                let s = trim_whitespaces(s);
+                s.to_str().ok().and_then(|s| s.parse().ok()).or_else(|| {
+                    parse_number(s).and_then(|x| number_is_valid_integer(x).then_some(x as Integer))
+                })
+            }
             _ => None,
         }
     }
@@ -402,4 +408,19 @@ impl<'gc> Value<'gc> {
             _ => None,
         }
     }
+}
+
+fn parse_number<S: AsRef<[u8]>>(s: S) -> Option<Number> {
+    let s = s.as_ref();
+    let sign_stripped = match s.first() {
+        Some(b'+' | b'-') => &s[1..],
+        _ => s,
+    };
+    if sign_stripped.eq_ignore_ascii_case(b"inf")
+        || sign_stripped.eq_ignore_ascii_case(b"infinity")
+        || sign_stripped.eq_ignore_ascii_case(b"nan")
+    {
+        return None;
+    }
+    s.to_str().ok().and_then(|s| s.parse().ok())
 }

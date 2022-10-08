@@ -136,3 +136,27 @@ fn number_is_valid_integer(x: Number) -> bool {
     const MIN: Number = Integer::MIN as Number;
     x as Integer as Number == x && (MIN..-MIN).contains(&x)
 }
+
+fn trim_whitespaces(bytes: &[u8]) -> &[u8] {
+    fn is_whitespace(ch: u8) -> bool {
+        // u8::is_ascii_whitespace + 0xb
+        matches!(ch, b'\t' | b'\n' | 0xc | b'\r' | b' ' | 0xb)
+    }
+
+    let mut slice = bytes;
+    while let [first, rest @ ..] = slice {
+        if is_whitespace(*first) {
+            slice = rest;
+        } else {
+            break;
+        }
+    }
+    while let [rest @ .., last] = slice {
+        if is_whitespace(*last) {
+            slice = rest;
+        } else {
+            break;
+        }
+    }
+    slice
+}
