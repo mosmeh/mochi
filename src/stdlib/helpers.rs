@@ -55,6 +55,10 @@ impl<'gc> Argument<'gc> {
         self.to_type("value", |value| Some(*value))
     }
 
+    pub fn to_boolean(&self) -> Result<bool, ErrorKind> {
+        self.to_type("boolean", |value| Some(value.to_boolean()))
+    }
+
     pub fn to_integer(&self) -> Result<Integer, ErrorKind> {
         self.to_type("integer", Value::to_integer)
     }

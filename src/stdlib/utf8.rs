@@ -133,11 +133,7 @@ fn utf8_codes<'gc>(
         });
     }
 
-    let lax = args
-        .nth(2)
-        .get()
-        .map(|value| value.to_boolean())
-        .unwrap_or_default();
+    let lax = args.nth(2).to_boolean().unwrap_or_default();
 
     Ok(Action::Return(vec![
         NativeFunction::new(if lax { iterate_lax } else { iterate_strict }).into(),
@@ -155,11 +151,7 @@ fn utf8_codepoint<'gc>(
     let s = s.to_string()?;
     let i = args.nth(2).to_integer_or(1)?;
     let j = args.nth(3).to_integer_or(i)?;
-    let lax = args
-        .nth(4)
-        .get()
-        .map(|value| value.to_boolean())
-        .unwrap_or_default();
+    let lax = args.nth(4).to_boolean().unwrap_or_default();
     if i < 1 {
         return Err(ErrorKind::ArgumentError {
             nth: 2,
@@ -201,11 +193,7 @@ fn utf8_len<'gc>(
     let s = s.to_string()?;
     let i = args.nth(2).to_integer_or(1)?;
     let j = args.nth(3).to_integer_or(-1)?;
-    let lax = args
-        .nth(4)
-        .get()
-        .map(|value| value.to_boolean())
-        .unwrap_or_default();
+    let lax = args.nth(4).to_boolean().unwrap_or_default();
     if i < 1 || (s.len() as Integer) + 1 < i {
         return Err(ErrorKind::ArgumentError {
             nth: 2,
