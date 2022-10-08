@@ -113,7 +113,7 @@ fn math_abs<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let arg = args.nth(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
-        x.abs().into()
+        x.wrapping_abs().into()
     } else {
         arg.to_number()?.abs().into()
     };
