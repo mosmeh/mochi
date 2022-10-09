@@ -28,8 +28,8 @@ fn table_concat<'gc>(
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let table = args.nth(1);
-    let table = table.borrow_as_table()?;
+    let table = args.nth(1).as_table()?;
+    let table = table.borrow();
     let sep = args.nth(2);
     let sep = sep.to_string_or(B(""))?;
     let i = args.nth(3).to_integer_or(1)?;
@@ -60,8 +60,8 @@ fn table_insert<'gc>(
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let table = args.nth(1);
-    let mut table = table.borrow_as_table_mut(gc)?;
+    let table = args.nth(1).as_table()?;
+    let mut table = table.borrow_mut(gc);
     let end = table.lua_len().wrapping_add(1);
 
     match *args.without_callee() {
@@ -156,8 +156,8 @@ fn table_remove<'gc>(
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let table = args.nth(1);
-    let mut table = table.borrow_as_table_mut(gc)?;
+    let table = args.nth(1).as_table()?;
+    let mut table = table.borrow_mut(gc);
     let len = table.lua_len();
 
     let pos = args.nth(2).to_integer_or(len)?;
@@ -182,8 +182,8 @@ fn table_unpack<'gc>(
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let table = args.nth(1);
-    let table = table.borrow_as_table()?;
+    let table = args.nth(1).as_table()?;
+    let table = table.borrow();
     let start = args.nth(2).to_integer_or(1)?;
     let end = args.nth(3).to_integer_or_else(|| table.lua_len())?;
 

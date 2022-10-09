@@ -8,7 +8,7 @@ use crate::{
 use std::{
     any::Any,
     borrow::{Borrow, Cow},
-    cell::{Ref, RefMut},
+    cell::RefMut,
 };
 
 pub trait ArgumentsExt<'gc> {
@@ -111,14 +111,6 @@ impl<'gc> Argument<'gc> {
 
     pub fn as_userdata<T: Any>(&self) -> Result<GcCell<'gc, UserData<'gc>>, ErrorKind> {
         self.to_type("userdata", |value| value.as_userdata::<T>())
-    }
-
-    pub fn borrow_as_table(&self) -> Result<Ref<Table<'gc>>, ErrorKind> {
-        self.to_type("table", Value::borrow_as_table)
-    }
-
-    pub fn borrow_as_table_mut(&self, gc: &'gc GcContext) -> Result<RefMut<Table<'gc>>, ErrorKind> {
-        self.to_type("table", |value| value.borrow_as_table_mut(gc))
     }
 
     pub fn borrow_as_userdata_mut<'a, T: Any>(

@@ -332,11 +332,12 @@ fn os_time<'gc>(
     }
 
     let table = args.nth(1);
-    if table.get().is_none() {
+    if !table.is_present() {
         return Ok(Action::Return(vec![Utc::now().timestamp().into()]));
     }
 
-    let mut table = table.borrow_as_table_mut(gc)?;
+    let table = table.as_table()?;
+    let mut table = table.borrow_mut(gc);
     let datetime = Local
         .ymd_opt(
             get_field(gc, &table, b"year", None)?,

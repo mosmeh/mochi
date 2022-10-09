@@ -245,7 +245,7 @@ fn base_ipairs<'gc>(
         args: Vec<Value<'gc>>,
     ) -> Result<Action<'gc>, ErrorKind> {
         let i = args.nth(2).to_integer()?.wrapping_add(1);
-        let value = args.nth(1).borrow_as_table()?.get(i);
+        let value = args.nth(1).as_table()?.borrow().get(i);
 
         Ok(Action::Return(if value.is_nil() {
             vec![Value::Nil]
@@ -306,8 +306,8 @@ fn base_next<'gc>(
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let table = args.nth(1);
-    let table = table.borrow_as_table()?;
+    let table = args.nth(1).as_table()?;
+    let table = table.borrow();
     let index = args.nth(2).get().unwrap_or_default();
 
     Ok(Action::Return(
@@ -403,7 +403,7 @@ fn base_rawget<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let index = args.nth(2).as_value()?;
-    let value = args.nth(1).borrow_as_table()?.get(index);
+    let value = args.nth(1).as_table()?.borrow().get(index);
     Ok(Action::Return(vec![value]))
 }
 
@@ -431,13 +431,13 @@ fn base_rawset<'gc>(
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    let table = args.nth(1);
+    let table = args.nth(1).as_table()?;
     let index = args.nth(2).as_value()?;
     let value = args.nth(3).as_value()?;
 
-    table.borrow_as_table_mut(gc)?.set(index, value)?;
+    table.borrow_mut(gc).set(index, value)?;
 
-    Ok(Action::Return(vec![table.as_value()?]))
+    Ok(Action::Return(vec![table.into()]))
 }
 
 fn base_select<'gc>(
