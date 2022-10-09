@@ -457,24 +457,32 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
             _ => (),
         }
         let mut buf = Vec::new();
-        while let Some(ch) = self.consume()? {
-            if ch != b']' {
-                buf.push(ch);
-                continue;
-            }
-
-            let mut closing_level = 0;
-            while self.consume_if_eq(b'=')? {
-                closing_level += 1;
-            }
-            let has_second_bracket = self.consume_if_eq(b']')?;
-            if has_second_bracket && closing_level == opening_level {
-                return Ok(Token::String(self.gc.allocate_string(buf)));
-            }
-            buf.push(b']');
-            buf.resize(buf.len() + closing_level, b'=');
-            if has_second_bracket {
-                buf.push(b']');
+        while let Some(ch) = self.peek()? {
+            match ch {
+                b']' => {
+                    self.consume()?;
+                    let mut closing_level = 0;
+                    while self.consume_if_eq(b'=')? {
+                        closing_level += 1;
+                    }
+                    let has_second_bracket = self.consume_if_eq(b']')?;
+                    if has_second_bracket && closing_level == opening_level {
+                        return Ok(Token::String(self.gc.allocate_string(buf)));
+                    }
+                    buf.push(b']');
+                    buf.resize(buf.len() + closing_level, b'=');
+                    if has_second_bracket {
+                        buf.push(b']');
+                    }
+                }
+                b'\n' | b'\r' => {
+                    self.consume_newline()?;
+                    buf.push(b'\n');
+                }
+                _ => {
+                    self.consume()?;
+                    buf.push(ch)
+                }
             }
         }
         Err(LexerError::UnfinishedToken("long string"))
