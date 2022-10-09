@@ -2,7 +2,7 @@ mod token;
 
 pub use token::Token;
 
-use crate::{gc::GcContext, types::Integer};
+use crate::{gc::GcContext, string, types::Integer};
 use std::{
     collections::VecDeque,
     io::{Bytes, Read},
@@ -30,6 +30,12 @@ pub enum LexerError {
 
     #[error("hexadecimal digit expected")]
     HexadecimalDigitExpected,
+
+    #[error("missing '{}'", char::from(*.0))]
+    MissingEscapeCharacter(u8),
+
+    #[error("UTF-8 value too large")]
+    Utf8ValueTooLarge,
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -323,64 +329,64 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
         while let Some(ch) = self.consume()? {
             match ch {
                 b'\n' | b'\r' => break,
-                b'\\' => {
-                    let unescaped = match self.peek()? {
-                        None => break,
-                        Some(b'a') => {
-                            self.consume()?;
-                            0x7
+                b'\\' => match self.peek()? {
+                    None => break,
+                    Some(b'a') => {
+                        self.consume()?;
+                        string.push(0x7);
+                    }
+                    Some(b'b') => {
+                        self.consume()?;
+                        string.push(0x8);
+                    }
+                    Some(b'f') => {
+                        self.consume()?;
+                        string.push(0xc);
+                    }
+                    Some(b'n') => {
+                        self.consume()?;
+                        string.push(b'\n');
+                    }
+                    Some(b'r') => {
+                        self.consume()?;
+                        string.push(b'\r');
+                    }
+                    Some(b't') => {
+                        self.consume()?;
+                        string.push(b'\t');
+                    }
+                    Some(b'v') => {
+                        self.consume()?;
+                        string.push(0xb);
+                    }
+                    Some(b'x') => {
+                        self.consume()?;
+                        string.push(self.consume_hex_escape()?);
+                    }
+                    Some(b'u') => {
+                        self.consume()?;
+                        self.consume_utf8_escape(&mut string)?;
+                    }
+                    Some(b'\n' | b'\r') => {
+                        self.consume_newline()?;
+                        string.push(b'\n');
+                    }
+                    Some(ch @ (b'\\' | b'\"' | b'\'')) => {
+                        self.consume()?;
+                        string.push(ch);
+                    }
+                    Some(b'z') => {
+                        self.consume()?;
+                        self.consume_zap()?;
+                    }
+                    Some(ch) => {
+                        if ch.is_ascii_digit() {
+                            string.push(self.consume_decimal_escape()?);
+                        } else {
+                            return Err(LexerError::InvalidEscapeSequence(ch));
                         }
-                        Some(b'b') => {
-                            self.consume()?;
-                            0x8
-                        }
-                        Some(b'f') => {
-                            self.consume()?;
-                            0xc
-                        }
-                        Some(b'n') => {
-                            self.consume()?;
-                            b'\n'
-                        }
-                        Some(b'r') => {
-                            self.consume()?;
-                            b'\r'
-                        }
-                        Some(b't') => {
-                            self.consume()?;
-                            b'\t'
-                        }
-                        Some(b'v') => {
-                            self.consume()?;
-                            0xb
-                        }
-                        Some(b'x') => {
-                            self.consume()?;
-                            self.consume_hex_escape()?
-                        }
-                        Some(b'u') => todo!("UTF-8 escape sequence"),
-                        Some(b'\n' | b'\r') => {
-                            self.consume_newline()?;
-                            b'\n'
-                        }
-                        Some(ch @ (b'\\' | b'\"' | b'\'')) => {
-                            self.consume()?;
-                            ch
-                        }
-                        Some(b'z') => {
-                            self.consume()?;
-                            self.consume_zap()?;
-                            continue;
-                        }
-                        Some(ch) => {
-                            if !ch.is_ascii_digit() {
-                                return Err(LexerError::InvalidEscapeSequence(ch));
-                            }
-                            self.consume_decimal_escape()?
-                        }
-                    };
-                    string.push(unescaped);
-                }
+                    }
+                },
                 _ if ch == delimiter => return Ok(Token::String(self.gc.allocate_string(string))),
                 _ => string.push(ch),
             }
@@ -405,21 +411,36 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
     }
 
     fn consume_hex_escape(&mut self) -> Result<u8, LexerError> {
-        fn parse_hex_digit(ch: u8) -> u8 {
-            match ch {
-                b'0'..=b'9' => ch - b'0',
-                b'a'..=b'f' => ch - b'a' + 10,
-                b'A'..=b'F' => ch - b'A' + 10,
-                _ => unreachable!(),
-            }
-        }
-
         let a = self.consume_if(|ch| ch.is_ascii_hexdigit())?;
         let b = self.consume_if(|ch| ch.is_ascii_hexdigit())?;
         match (a, b) {
             (Some(a), Some(b)) => Ok(parse_hex_digit(a) * 16 + parse_hex_digit(b)),
             _ => Err(LexerError::HexadecimalDigitExpected),
         }
+    }
+
+    fn consume_utf8_escape(&mut self, buf: &mut Vec<u8>) -> Result<(), LexerError> {
+        if !self.consume_if_eq(b'{')? {
+            return Err(LexerError::MissingEscapeCharacter(b'{'));
+        }
+
+        let mut code = match self.consume_if(|ch| ch.is_ascii_hexdigit())? {
+            Some(ch) => parse_hex_digit(ch) as u32,
+            None => return Err(LexerError::HexadecimalDigitExpected),
+        };
+        while let Some(ch) = self.consume_if(|ch| ch.is_ascii_hexdigit())? {
+            if code > (string::MAX_UTF8 / 16) {
+                return Err(LexerError::Utf8ValueTooLarge);
+            }
+            code = code * 16 + parse_hex_digit(ch) as u32;
+        }
+
+        if !self.consume_if_eq(b'}')? {
+            return Err(LexerError::MissingEscapeCharacter(b'}'));
+        }
+
+        assert!(string::encode_utf8(code, buf));
+        Ok(())
     }
 
     fn consume_zap(&mut self) -> std::io::Result<()> {
@@ -535,4 +556,13 @@ fn is_lua_alphabetic(ch: u8) -> bool {
 
 fn is_lua_alphanumeric(ch: u8) -> bool {
     ch.is_ascii_alphanumeric() || ch == b'_'
+}
+
+fn parse_hex_digit(ch: u8) -> u8 {
+    match ch {
+        b'0'..=b'9' => ch - b'0',
+        b'a'..=b'f' => ch - b'a' + 10,
+        b'A'..=b'F' => ch - b'A' + 10,
+        _ => unreachable!(),
+    }
 }
