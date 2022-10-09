@@ -73,13 +73,15 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
                         if upper == 0 {
                             rng.gen::<Integer>().into()
                         } else {
-                            random_in_range(rng.deref_mut(), 1, upper).into()
+                            let random = random_in_range(rng.deref_mut(), 1, upper as u64);
+                            (random as Integer).into()
                         }
                     }
                     2 => {
-                        let lower = args.nth(1).to_integer()?;
-                        let upper = args.nth(2).to_integer()?;
-                        random_in_range(rng.deref_mut(), lower, upper).into()
+                        let lower = args.nth(1).to_integer()? as u64;
+                        let upper = args.nth(2).to_integer()? as u64;
+                        let random = random_in_range(rng.deref_mut(), lower, upper);
+                        (random as Integer).into()
                     }
                     _ => return Err(ErrorKind::other("wrong number of arguments")),
                 };
@@ -392,28 +394,28 @@ fn rng_from_seeds(n1: i64, n2: i64) -> Xoshiro256StarStar {
     rng
 }
 
-fn random_in_range<R: Rng>(rng: &mut R, lower: Integer, upper: Integer) -> Integer {
-    fn project<R: Rng>(rng: &mut R, range: Integer) -> Integer {
-        if range & (range + 1) == 0 {
-            return rng.gen::<Integer>() & range;
+fn random_in_range<R: Rng>(rng: &mut R, lower: u64, upper: u64) -> u64 {
+    fn project<R: Rng>(rng: &mut R, range: u64) -> u64 {
+        if range & (range.wrapping_add(1)) == 0 {
+            return rng.gen::<u64>() & range;
         }
 
-        let mut lim = range;
-        lim |= lim >> 1;
-        lim |= lim >> 2;
-        lim |= lim >> 4;
-        lim |= lim >> 8;
-        lim |= lim >> 16;
-        lim |= lim >> 32;
+        let mut mask = range;
+        mask |= mask >> 1;
+        mask |= mask >> 2;
+        mask |= mask >> 4;
+        mask |= mask >> 8;
+        mask |= mask >> 16;
+        mask |= mask >> 32;
 
         loop {
-            let rand = rng.gen::<Integer>() & lim;
+            let rand = rng.gen::<u64>() & mask;
             if rand <= range {
                 return rand;
             }
         }
     }
-    lower + project(rng, upper - lower)
+    lower.wrapping_add(project(rng, upper.wrapping_sub(lower)))
 }
 
 fn number_to_value<'gc>(x: Number) -> Value<'gc> {
