@@ -2,7 +2,7 @@ use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{Action, Continuation, ErrorKind, Vm},
-    trim_whitespaces,
+    string,
     types::{Integer, LuaClosure, NativeClosure, NativeFunction, Number, Table, Value},
     LUA_VERSION,
 };
@@ -521,7 +521,7 @@ fn base_tonumber<'gc>(
                         message: "base out of range",
                     });
                 }
-                trim_whitespaces(&s)
+                string::trim_whitespaces(&s)
                     .to_str()
                     .ok()
                     .and_then(|s| Integer::from_str_radix(s, base as u32).ok())

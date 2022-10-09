@@ -16,7 +16,8 @@ pub use user_data::UserData;
 
 use crate::{
     gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
-    number_is_valid_integer, trim_whitespaces,
+    number_is_valid_integer,
+    string::trim_whitespaces,
 };
 use bstr::ByteSlice;
 use std::{

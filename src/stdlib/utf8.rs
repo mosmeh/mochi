@@ -2,11 +2,10 @@ use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{Action, ErrorKind, Vm},
+    string,
     types::{Integer, NativeFunction, Table, Value},
 };
 use bstr::B;
-
-const MAXUTF: u32 = 0x7fffffff;
 
 pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
     let mut table = Table::new();
@@ -35,36 +34,14 @@ fn utf8_char<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let mut string = Vec::new();
     for i in 1..args.len() {
-        let mut code = args.nth(i).to_integer()? as u32;
-        if code > MAXUTF {
+        let code = args.nth(i).to_integer()? as u32;
+        if !string::encode_utf8(code, &mut string) {
             return Err(ErrorKind::ArgumentError {
                 nth: i,
                 message: "value out of range",
             });
         }
-
-        if code < 0x80 {
-            string.push(code as u8);
-            continue;
-        }
-
-        const BUF_LEN: usize = 6;
-        let mut buf = [0; BUF_LEN];
-        let mut len = 1;
-        let mut mfb = 0x3f;
-        loop {
-            buf[BUF_LEN - len] = 0x80 | (code as u8 & 0x3f);
-            len += 1;
-            code >>= 6;
-            mfb >>= 1;
-            if code <= mfb as u32 {
-                break;
-            }
-        }
-        buf[BUF_LEN - len] = (!mfb << 1) | code as u8;
-        string.extend_from_slice(&buf[BUF_LEN - len..]);
     }
-
     Ok(Action::Return(vec![gc.allocate_string(string).into()]))
 }
 
@@ -81,18 +58,18 @@ fn utf8_codes<'gc>(
         let mut i = n as usize;
         loop {
             match s.get(i) {
-                Some(ch) if !is_continuation_byte(*ch) => break,
+                Some(ch) if !string::is_utf8_continuation_byte(*ch) => break,
                 Some(_) => i += 1,
                 None => return Ok(Action::Return(Vec::new())),
             }
         }
-        match decode_utf8(&s[i..]) {
+        match string::decode_utf8(&s[i..]) {
             Some((ch, len))
                 if (lax || is_valid_unicode_char(ch))
                     && !s
                         .get(i + len)
                         .copied()
-                        .map(is_continuation_byte)
+                        .map(string::is_utf8_continuation_byte)
                         .unwrap_or_default() =>
             {
                 Ok(Action::Return(vec![
@@ -124,7 +101,7 @@ fn utf8_codes<'gc>(
     if s.to_string()?
         .first()
         .copied()
-        .map(is_continuation_byte)
+        .map(string::is_utf8_continuation_byte)
         .unwrap_or_default()
     {
         return Err(ErrorKind::ArgumentError {
@@ -171,7 +148,7 @@ fn utf8_codepoint<'gc>(
     let mut values = Vec::new();
     let mut pos = start;
     while pos < end {
-        match decode_utf8(slice) {
+        match string::decode_utf8(slice) {
             Some((ch, len)) if lax || is_valid_unicode_char(ch) => {
                 slice = &slice[len..];
                 pos += len;
@@ -213,7 +190,7 @@ fn utf8_len<'gc>(
     let mut n = 0 as Integer;
     let mut pos = start;
     while pos < end {
-        match decode_utf8(slice) {
+        match string::decode_utf8(slice) {
             Some((ch, len)) if lax || is_valid_unicode_char(ch) => {
                 slice = &slice[len..];
                 pos += len;
@@ -252,7 +229,7 @@ fn utf8_offset<'gc>(
     let mut pos = relative_to_absolute_pos(i - 1, s.len());
     if n == 0 {
         while let Some(b) = s.get(pos) {
-            if !is_continuation_byte(*b) {
+            if !string::is_utf8_continuation_byte(*b) {
                 break;
             }
             pos -= 1;
@@ -261,7 +238,7 @@ fn utf8_offset<'gc>(
     }
 
     match s.get(pos) {
-        Some(b) if is_continuation_byte(*b) => {
+        Some(b) if string::is_utf8_continuation_byte(*b) => {
             return Err(ErrorKind::other("initial position is a continuation byte"))
         }
         _ => (),
@@ -274,7 +251,7 @@ fn utf8_offset<'gc>(
                     break;
                 }
                 match s.get(pos) {
-                    Some(b) if !is_continuation_byte(*b) => break,
+                    Some(b) if !string::is_utf8_continuation_byte(*b) => break,
                     Some(_) => (),
                     None => break,
                 }
@@ -287,7 +264,7 @@ fn utf8_offset<'gc>(
             loop {
                 pos += 1;
                 match s.get(pos) {
-                    Some(b) if !is_continuation_byte(*b) => break,
+                    Some(b) if !string::is_utf8_continuation_byte(*b) => break,
                     Some(_) => (),
                     None => break,
                 }
@@ -305,34 +282,6 @@ fn utf8_offset<'gc>(
 
 fn is_valid_unicode_char(i: u32) -> bool {
     char::from_u32(i).is_some()
-}
-
-fn is_continuation_byte(b: u8) -> bool {
-    b & 0xc0 == 0x80
-}
-
-fn decode_utf8<B: AsRef<[u8]>>(bytes: B) -> Option<(u32, usize)> {
-    let bytes = bytes.as_ref();
-    let mut ch = match bytes.first() {
-        None => return None,
-        Some(&ch) if ch < 0x80 => return Some((ch as u32, 1)),
-        Some(&ch) => ch as u32,
-    };
-
-    const LIMITS: [u32; 6] = [!0, 0x80, 0x800, 0x10000, 0x200000, 0x4000000];
-    let mut count = 0;
-    let mut res = 0;
-    while ch & 0x40 != 0 {
-        count += 1;
-        let cc = *bytes.get(count)?;
-        if !is_continuation_byte(cc) {
-            return None;
-        }
-        res = (res << 6) | ((cc & 0x3f) as u32);
-        ch <<= 1;
-    }
-    res |= (ch & 0x7f) << (count * 5);
-    (res <= MAXUTF && res >= LIMITS[count]).then_some((res, count + 1))
 }
 
 fn relative_to_absolute_pos(pos: Integer, len: usize) -> usize {
