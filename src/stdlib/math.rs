@@ -66,26 +66,32 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
             gc.allocate_string(B("random")),
             gc.allocate(NativeClosure::new(move |_, _, args| {
                 let mut rng = rng.borrow_mut();
-                let result = match args.without_callee().len() {
-                    0 => rng.gen::<Number>().into(),
+                let (lower, upper) = match args.without_callee().len() {
+                    0 => return Ok(Action::Return(vec![rng.gen::<Number>().into()])),
                     1 => {
                         let upper = args.nth(1).to_integer()?;
                         if upper == 0 {
-                            rng.gen::<Integer>().into()
+                            return Ok(Action::Return(vec![rng.gen::<Integer>().into()]));
                         } else {
-                            let random = random_in_range(rng.deref_mut(), 1, upper as u64);
-                            (random as Integer).into()
+                            (1, upper)
                         }
                     }
                     2 => {
-                        let lower = args.nth(1).to_integer()? as u64;
-                        let upper = args.nth(2).to_integer()? as u64;
-                        let random = random_in_range(rng.deref_mut(), lower, upper);
-                        (random as Integer).into()
+                        let lower = args.nth(1).to_integer()?;
+                        let upper = args.nth(2).to_integer()?;
+                        (lower, upper)
                     }
                     _ => return Err(ErrorKind::other("wrong number of arguments")),
                 };
-                Ok(Action::Return(vec![result]))
+                if lower <= upper {
+                    let random = random_in_range(rng.deref_mut(), lower as u64, upper as u64);
+                    Ok(Action::Return(vec![(random as Integer).into()]))
+                } else {
+                    Err(ErrorKind::ArgumentError {
+                        nth: 1,
+                        message: "interval is empty",
+                    })
+                }
             })),
         );
     }
