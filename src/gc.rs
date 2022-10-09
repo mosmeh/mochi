@@ -301,6 +301,16 @@ impl GcContext {
         }
     }
 
+    fn propagate_gray(&mut self, ptr: GcPtr<dyn GarbageCollect>) -> usize {
+        let gc_box = unsafe { ptr.as_ref() };
+        debug_assert_eq!(gc_box.color.get(), Color::Gray);
+        gc_box.value.trace(&mut Tracer {
+            gray: &mut self.gray,
+        });
+        gc_box.color.set(Color::Black);
+        std::mem::size_of_val(gc_box)
+    }
+
     fn do_single_step(&mut self) -> usize {
         match self.phase {
             Phase::Pause => {
@@ -334,8 +344,8 @@ impl GcContext {
     }
 
     fn do_pause(&mut self) {
-        self.gray.clear();
-        self.gray_again.borrow_mut().clear();
+        debug_assert!(self.gray.is_empty());
+        debug_assert!(self.gray_again.borrow().is_empty());
         self.root.unwrap().trace(&mut Tracer {
             gray: &mut self.gray,
         });
@@ -343,12 +353,7 @@ impl GcContext {
 
     fn do_propagate(&mut self) -> usize {
         if let Some(ptr) = self.gray.pop() {
-            let gc_box = unsafe { ptr.as_ref() };
-            gc_box.value.trace(&mut Tracer {
-                gray: &mut self.gray,
-            });
-            gc_box.color.set(Color::Black);
-            std::mem::size_of_val(gc_box)
+            self.propagate_gray(ptr)
         } else {
             0
         }
@@ -361,22 +366,11 @@ impl GcContext {
 
         let mut work = 0;
         while let Some(ptr) = self.gray.pop() {
-            let gc_box = unsafe { ptr.as_ref() };
-            gc_box.value.trace(&mut Tracer {
-                gray: &mut self.gray,
-            });
-            gc_box.color.set(Color::Black);
-            work += std::mem::size_of_val(gc_box)
+            work += self.propagate_gray(ptr);
         }
-
-        let mut gray_again = self.gray_again.borrow_mut();
-        while let Some(ptr) = gray_again.pop() {
-            let gc_box = unsafe { ptr.as_ref() };
-            gc_box.value.trace(&mut Tracer {
-                gray: &mut self.gray,
-            });
-            gc_box.color.set(Color::Black);
-            work += std::mem::size_of_val(gc_box)
+        std::mem::swap(&mut self.gray, &mut self.gray_again.borrow_mut());
+        while let Some(ptr) = self.gray.pop() {
+            work += self.propagate_gray(ptr);
         }
 
         self.current_white = !self.current_white;
@@ -412,6 +406,7 @@ impl GcContext {
                 gc_box.value.finalize(&mut finalizer);
                 unsafe { Box::from_raw(ptr.as_ptr()) };
             } else {
+                debug_assert_eq!(gc_box.color.get(), Color::Black);
                 gc_box.color.set(current_white);
                 self.prev_sweep = Some(ptr);
                 self.sweep = gc_box.next;
