@@ -56,22 +56,22 @@ pub fn decode_utf8<B: AsRef<[u8]>>(bytes: B) -> Option<(u32, usize)> {
     (res <= MAX_UTF8 && res >= LIMITS[count]).then_some((res, count + 1))
 }
 
-pub fn trim_whitespaces(bytes: &[u8]) -> &[u8] {
-    fn is_whitespace(ch: u8) -> bool {
-        // u8::is_ascii_whitespace + 0xb
-        matches!(ch, b'\t' | b'\n' | 0xc | b'\r' | b' ' | 0xb)
-    }
+pub fn is_lua_whitespace(ch: u8) -> bool {
+    // u8::is_ascii_whitespace + 0xb
+    matches!(ch, b'\t' | b'\n' | 0xc | b'\r' | b' ' | 0xb)
+}
 
+pub fn trim_whitespaces(bytes: &[u8]) -> &[u8] {
     let mut slice = bytes;
     while let [first, rest @ ..] = slice {
-        if is_whitespace(*first) {
+        if is_lua_whitespace(*first) {
             slice = rest;
         } else {
             break;
         }
     }
     while let [rest @ .., last] = slice {
-        if is_whitespace(*last) {
+        if is_lua_whitespace(*last) {
             slice = rest;
         } else {
             break;

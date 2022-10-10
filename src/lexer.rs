@@ -447,11 +447,15 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
     }
 
     fn consume_zap(&mut self) -> std::io::Result<()> {
-        while self
-            .consume_if(|c| matches!(c, b'\t' | b'\n' | 0xb | 0xc | b'\r' | b' '))?
-            .is_some()
-        {}
-        Ok(())
+        loop {
+            match self.peek()? {
+                Some(ch) if is_newline(ch) => self.consume_newline()?,
+                Some(ch) if string::is_lua_whitespace(ch) => {
+                    self.consume()?;
+                }
+                _ => return Ok(()),
+            }
+        }
     }
 
     fn consume_long_string(&mut self, opening_level: usize) -> Result<Token<'gc>, LexerError> {
@@ -504,20 +508,26 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
         if !self.consume_if_eq(b'[')? {
             return Ok(false);
         }
-        while let Some(ch) = self.consume()? {
-            if ch != b']' {
-                continue;
-            }
-            loop {
-                let mut closing_level = 0;
-                while self.consume_if_eq(b'=')? {
-                    closing_level += 1;
+        while let Some(ch) = self.peek()? {
+            match ch {
+                b']' => {
+                    self.consume()?;
+                    loop {
+                        let mut closing_level = 0;
+                        while self.consume_if_eq(b'=')? {
+                            closing_level += 1;
+                        }
+                        if !self.consume_if_eq(b']')? {
+                            break;
+                        }
+                        if closing_level == opening_level {
+                            return Ok(true);
+                        }
+                    }
                 }
-                if !self.consume_if_eq(b']')? {
-                    break;
-                }
-                if closing_level == opening_level {
-                    return Ok(true);
+                b'\n' | b'\r' => self.consume_newline()?,
+                _ => {
+                    self.consume()?;
                 }
             }
         }
