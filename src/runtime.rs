@@ -1,9 +1,9 @@
 pub(crate) mod instruction;
 
 mod action;
+mod bytecode_vm;
 mod error;
 mod frame;
-mod lua_dispatch;
 mod metamethod;
 mod opcode;
 mod ops;
