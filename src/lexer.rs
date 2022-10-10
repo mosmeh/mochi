@@ -461,18 +461,20 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
             match ch {
                 b']' => {
                     self.consume()?;
-                    let mut closing_level = 0;
-                    while self.consume_if_eq(b'=')? {
-                        closing_level += 1;
-                    }
-                    let has_second_bracket = self.consume_if_eq(b']')?;
-                    if has_second_bracket && closing_level == opening_level {
-                        return Ok(Token::String(self.gc.allocate_string(buf)));
-                    }
-                    buf.push(b']');
-                    buf.resize(buf.len() + closing_level, b'=');
-                    if has_second_bracket {
+                    loop {
+                        let mut closing_level = 0;
+                        while self.consume_if_eq(b'=')? {
+                            closing_level += 1;
+                        }
+                        let has_second_bracket = self.consume_if_eq(b']')?;
+                        if has_second_bracket && closing_level == opening_level {
+                            return Ok(Token::String(self.gc.allocate_string(buf)));
+                        }
                         buf.push(b']');
+                        buf.resize(buf.len() + closing_level, b'=');
+                        if !has_second_bracket {
+                            break;
+                        }
                     }
                 }
                 b'\n' | b'\r' => {
@@ -503,12 +505,17 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
             if ch != b']' {
                 continue;
             }
-            let mut closing_level = 0;
-            while self.consume_if_eq(b'=')? {
-                closing_level += 1;
-            }
-            if self.consume_if_eq(b']')? && closing_level == opening_level {
-                return Ok(true);
+            loop {
+                let mut closing_level = 0;
+                while self.consume_if_eq(b'=')? {
+                    closing_level += 1;
+                }
+                if !self.consume_if_eq(b']')? {
+                    break;
+                }
+                if closing_level == opening_level {
+                    return Ok(true);
+                }
             }
         }
         Err(LexerError::UnfinishedToken("long comment"))
