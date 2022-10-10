@@ -191,12 +191,13 @@ impl GcContext {
 
     pub fn allocate<T: GarbageCollect>(&self, value: T) -> Gc<T> {
         let color = Color::White(self.current_white);
-        let gc_box = Box::new(GcBox {
+        let mut gc_box = Box::new(std::mem::MaybeUninit::uninit());
+        gc_box.write(GcBox {
             color: Cell::new(color),
-            next: self.all.take(),
+            next: self.all.get(),
             value,
         });
-        let ptr = Box::into_raw(gc_box);
+        let ptr = Box::into_raw(gc_box) as *mut GcBox<T>;
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
         self.all.set(Some(into_ptr_to_static(ptr)));
         self.debt
