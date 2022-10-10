@@ -261,7 +261,7 @@ impl GcContext {
     fn step(&mut self) {
         let mut debt = self.debt.get();
         let step_size = 1 << self.step_size.get();
-        let step_multiplier = self.step_multiplier.get();
+        let step_multiplier = self.step_multiplier.get() | 1; // avoid division by zero
         loop {
             let work = self.do_single_step() / step_multiplier;
             debt -= work as isize;
