@@ -44,7 +44,11 @@ pub struct Argument<'gc> {
 
 impl<'gc> Argument<'gc> {
     pub fn is_present(&self) -> bool {
-        self.value.is_some()
+        !matches!(self.value, Some(Value::Nil) | None)
+    }
+
+    pub fn is_none(&self) -> bool {
+        self.value.is_none()
     }
 
     pub fn get(&self) -> Option<Value<'gc>> {
@@ -64,7 +68,7 @@ impl<'gc> Argument<'gc> {
     }
 
     pub fn to_integer_or(&self, default: Integer) -> Result<Integer, ErrorKind> {
-        if self.value.is_some() {
+        if self.is_present() {
             self.to_type("integer", Value::to_integer)
         } else {
             Ok(default)
@@ -75,7 +79,7 @@ impl<'gc> Argument<'gc> {
     where
         F: FnOnce() -> Integer,
     {
-        if self.value.is_some() {
+        if self.is_present() {
             self.to_type("integer", Value::to_integer)
         } else {
             Ok(f())
@@ -94,7 +98,7 @@ impl<'gc> Argument<'gc> {
     where
         I: Into<Cow<'a, [u8]>>,
     {
-        if self.value.is_some() {
+        if self.is_present() {
             self.to_type("string", Value::to_string)
         } else {
             Ok(default.into())

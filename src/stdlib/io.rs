@@ -80,15 +80,15 @@ fn io_close<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let file = args.nth(1);
     file::translate_and_return_error(gc, || {
-        if file.is_present() {
-            file.borrow_as_userdata_mut::<FileHandle>(gc)?.close()?;
-        } else {
+        if file.is_none() {
             vm.registry()
                 .borrow()
                 .get_field(gc.allocate_string(IO_OUTPUT))
                 .borrow_as_userdata_mut::<FileHandle>(gc)
                 .unwrap()
                 .close()?;
+        } else {
+            file.borrow_as_userdata_mut::<FileHandle>(gc)?.close()?;
         }
         Ok(vec![true.into()])
     })

@@ -70,10 +70,10 @@ fn coroutine_isyieldable<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let co = args.nth(1);
-    let co = if co.is_present() {
-        co.as_thread()?
-    } else {
+    let co = if co.is_none() {
         vm.current_thread()
+    } else {
+        co.as_thread()?
     };
     let is_main_thread = GcCell::ptr_eq(&co, &vm.main_thread());
 
