@@ -909,7 +909,8 @@ impl<'gc> Vm<'gc> {
                 }
                 opcode if opcode == OpCode::VarArgPrep as u8 => {
                     let num_fixed_args = insn.a();
-                    let new_num_extra_args = saved_stack_top - bottom - 1 - num_fixed_args;
+                    let new_num_extra_args =
+                        saved_stack_top.saturating_sub(bottom + 1 + num_fixed_args);
                     if new_num_extra_args > 0 {
                         let new_base = saved_stack_top + 1;
                         {
