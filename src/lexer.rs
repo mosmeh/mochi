@@ -109,7 +109,7 @@ impl<'gc, R: Read> Lexer<'gc, R> {
 struct LexerInner<'gc, R: Read> {
     gc: &'gc GcContext,
     bytes: Bytes<R>,
-    peeked: Option<u8>,
+    peeked: VecDeque<u8>,
     lineno: usize,
 }
 
@@ -118,7 +118,7 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
         Self {
             gc,
             bytes: reader.bytes(),
-            peeked: None,
+            peeked: Default::default(),
             lineno: 1,
         }
     }
@@ -224,17 +224,20 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
                 }
                 b'"' | b'\'' => return self.consume_string().map(Some),
                 b'.' => {
-                    self.consume()?;
-                    return if self.consume_if_eq(b'.')? {
-                        Ok(Some(if self.consume_if_eq(b'.')? {
-                            Token::Dots
-                        } else {
-                            Token::Concat
-                        }))
-                    } else {
-                        match self.peek()? {
-                            Some(ch) if ch.is_ascii_digit() => self.consume_numeral().map(Some),
-                            _ => Ok(Some(Token::Dot)),
+                    return match self.peek2()? {
+                        Some(b'.') => {
+                            self.consume()?;
+                            self.consume()?;
+                            Ok(Some(if self.consume_if_eq(b'.')? {
+                                Token::Dots
+                            } else {
+                                Token::Concat
+                            }))
+                        }
+                        Some(ch) if ch.is_ascii_digit() => self.consume_numeral().map(Some),
+                        _ => {
+                            self.consume()?;
+                            Ok(Some(Token::Dot))
                         }
                     };
                 }
@@ -522,14 +525,25 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
     }
 
     fn peek(&mut self) -> std::io::Result<Option<u8>> {
-        if self.peeked.is_none() {
-            self.peeked = self.bytes.next().transpose()?;
+        if self.peeked.is_empty() {
+            if let Some(ch) = self.bytes.next().transpose()? {
+                self.peeked.push_back(ch);
+            }
         }
-        Ok(self.peeked)
+        Ok(self.peeked.front().copied())
+    }
+
+    fn peek2(&mut self) -> std::io::Result<Option<u8>> {
+        if self.peeked.len() < 2 {
+            if let Some(ch) = self.bytes.next().transpose()? {
+                self.peeked.push_back(ch);
+            }
+        }
+        Ok(self.peeked.get(1).copied())
     }
 
     fn consume(&mut self) -> std::io::Result<Option<u8>> {
-        if let Some(peeked) = self.peeked.take() {
+        if let Some(peeked) = self.peeked.pop_front() {
             Ok(Some(peeked))
         } else {
             self.bytes.next().transpose()
