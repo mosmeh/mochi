@@ -9,17 +9,17 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-20.04]
-        rust: [stable, beta, nightly]
+        toolchain: [stable, beta, nightly]
         include:
         - os: macos-11
-          rust: stable
+          toolchain: stable
         - os: windows-2022
-          rust: stable
+          toolchain: stable
     steps:
-    - uses: actions/checkout@v2
-    - uses: hecrj/setup-rust-action@v1
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@master
       with:
-        rust-version: ${{ matrix.rust }}
+        toolchain: ${{ matrix.toolchain }}
         components: rustfmt, clippy
     - run: cargo build --verbose
     - run: cargo build --all-features --verbose
