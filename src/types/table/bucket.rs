@@ -73,16 +73,9 @@ impl<'gc> Bucket<'gc> {
         (self.value_tag, self.value_payload) = value.into_parts();
     }
 
-    pub fn remove_item(&mut self) {
-        debug_assert!(self.has_key());
-        self.key_tag = Tag::Nil;
-        self.value_tag = Tag::Nil;
-    }
-
     pub fn update_or_remove_item(&mut self, value: Value<'gc>) {
         debug_assert!(self.has_key());
         if value.is_nil() {
-            self.key_tag = Tag::Nil;
             self.value_tag = Tag::Nil;
         } else {
             (self.value_tag, self.value_payload) = value.into_parts();

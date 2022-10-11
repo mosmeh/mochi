@@ -151,12 +151,14 @@ impl<'gc> Table<'gc> {
                 None => key,
             },
         };
-        Ok(if let Some(index) = self.find_bucket(key) {
-            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
-            true
-        } else {
-            false
-        })
+        if let Some(index) = self.find_bucket(key) {
+            let bucket = unsafe { self.buckets.get_unchecked_mut(index) };
+            if bucket.has_value() {
+                bucket.update_or_remove_item(value);
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub(crate) fn replace_field<V>(&mut self, field: LuaString<'gc>, value: V) -> bool
@@ -164,11 +166,13 @@ impl<'gc> Table<'gc> {
         V: Into<Value<'gc>>,
     {
         if let Some(index) = self.find_bucket(Value::String(field)) {
-            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value.into());
-            true
-        } else {
-            false
+            let bucket = unsafe { self.buckets.get_unchecked_mut(index) };
+            if bucket.has_value() {
+                bucket.update_or_remove_item(value.into());
+                return true;
+            }
         }
+        false
     }
 
     pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
@@ -203,7 +207,11 @@ impl<'gc> Table<'gc> {
         // exponential search
         let mut i = self.array.len() as Integer;
         let mut j = i + 1;
-        while self.find_bucket(j.into()).is_some() {
+        while self
+            .find_bucket(j.into())
+            .map(|index| self.buckets[index].has_value())
+            .unwrap_or_default()
+        {
             if j == Integer::MAX {
                 return j;
             }
@@ -211,7 +219,11 @@ impl<'gc> Table<'gc> {
         }
         while j - i > 1 {
             let m = (j - i) / 2 + i;
-            if self.find_bucket(m.into()).is_some() {
+            if self
+                .find_bucket(m.into())
+                .map(|index| self.buckets[index].has_value())
+                .unwrap_or_default()
+            {
                 i = m;
             } else {
                 j = m;
@@ -323,16 +335,15 @@ impl<'gc> Table<'gc> {
                         .set_next_index(None);
                 }
 
-                self.buckets.get_unchecked_mut(main_index).remove_item();
                 main_index
             }
         } else {
             main_index
         };
 
-        let bucket = self.buckets.get_unchecked_mut(index);
-        debug_assert!(!bucket.has_value());
-        bucket.set_new_item(key, value);
+        self.buckets
+            .get_unchecked_mut(index)
+            .set_new_item(key, value);
     }
 
     fn find_bucket(&self, key: Value<'gc>) -> Option<usize> {
