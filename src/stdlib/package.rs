@@ -224,11 +224,19 @@ fn package_require<'gc>(
                             continuation: Continuation::with_context(
                                 (name, loaded, loader_data),
                                 |gc, _, (name, loaded, loader_data), results: Vec<Value>| {
+                                    let mut loaded = loaded.borrow_mut(gc);
                                     let value = match results.first() {
-                                        Some(Value::Nil) | None => Value::Boolean(true),
+                                        Some(Value::Nil) | None => {
+                                            let value = loaded.get(name);
+                                            if value.is_nil() {
+                                                Value::Boolean(true)
+                                            } else {
+                                                value
+                                            }
+                                        }
                                         Some(value) => *value,
                                     };
-                                    loaded.borrow_mut(gc).set(name, value)?;
+                                    loaded.set(name, value)?;
                                     Ok(Action::Return(vec![value, loader_data]))
                                 },
                             ),
