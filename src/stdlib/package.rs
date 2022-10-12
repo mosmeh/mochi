@@ -157,7 +157,7 @@ fn package_require<'gc>(
         .unwrap();
 
     let value = loaded.borrow().get_field(name);
-    if !value.is_nil() {
+    if value.to_boolean() {
         return Ok(Action::Return(vec![value]));
     }
 
