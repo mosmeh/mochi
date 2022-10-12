@@ -159,7 +159,13 @@ fn io_output<'gc>(
     vm: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
-    common_io_input_or_output(gc, vm, args, IO_OUTPUT, OpenOptions::new().write(true))
+    common_io_input_or_output(
+        gc,
+        vm,
+        args,
+        IO_OUTPUT,
+        OpenOptions::new().write(true).truncate(true).create(true),
+    )
 }
 
 fn io_read<'gc>(
