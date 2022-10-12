@@ -227,21 +227,30 @@ impl<'gc> Vm<'gc> {
                 Err(kind) => {
                     let thread = self.current_thread();
                     let mut thread_ref = thread.borrow_mut(gc);
-                    if let Some((i, frame)) =
-                        thread_ref
-                            .frames
-                            .iter_mut()
-                            .enumerate()
-                            .rfind(|(_, frame)| {
-                                matches!(frame, Frame::ProtectedCallContinuation { .. })
-                            })
-                    {
-                        if let Frame::ProtectedCallContinuation { inner, .. } = frame {
-                            inner.continuation.as_mut().unwrap().set_args(Err(kind));
-                        } else {
-                            unreachable!()
-                        }
-                        thread_ref.frames.truncate(i + 1);
+
+                    let protection_boundary = thread_ref
+                        .frames
+                        .iter_mut()
+                        .enumerate()
+                        .rev()
+                        .find_map(|(i, frame)| match frame {
+                            Frame::ProtectedCallContinuation {
+                                inner,
+                                callee_bottom,
+                            } => {
+                                inner
+                                    .continuation
+                                    .as_mut()
+                                    .unwrap()
+                                    .set_args(Err(kind.clone()));
+                                Some((i, *callee_bottom))
+                            }
+                            _ => None,
+                        });
+
+                    if let Some((frame_index, boundary)) = protection_boundary {
+                        thread_ref.close_upvalues(gc, boundary);
+                        thread_ref.frames.truncate(frame_index + 1);
                     } else {
                         self.thread_stack.pop().unwrap();
                         thread_ref.status = ThreadStatus::Error(kind.clone());
@@ -268,6 +277,7 @@ impl<'gc> Vm<'gc> {
                 return Ok(RuntimeAction::StepGc);
             }
         }
+
         Ok(if gc.should_perform_gc() {
             RuntimeAction::StepGc
         } else {
