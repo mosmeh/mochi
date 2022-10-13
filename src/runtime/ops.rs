@@ -214,11 +214,17 @@ pub(super) fn do_conditional_jump(
 }
 
 pub(super) fn idivi(m: Integer, n: Integer) -> Integer {
-    let q = m / n;
-    if m ^ n < 0 && m % n != 0 {
-        q - 1
-    } else {
-        q
+    match n {
+        0 => todo!("attempt to divide by zero"),
+        -1 => m.wrapping_neg(),
+        _ => {
+            let q = m / n;
+            if m ^ n < 0 && m % n != 0 {
+                q - 1
+            } else {
+                q
+            }
+        }
     }
 }
 
@@ -227,11 +233,17 @@ pub(super) fn idivf(m: Number, n: Number) -> Number {
 }
 
 pub(super) fn modi(m: Integer, n: Integer) -> Integer {
-    let r = m % n;
-    if r != 0 && r ^ n < 0 {
-        r + n
-    } else {
-        r
+    match n {
+        0 => todo!("attempt to perform 'n%0'"),
+        -1 => 0,
+        _ => {
+            let r = m % n;
+            if r != 0 && r ^ n < 0 {
+                r + n
+            } else {
+                r
+            }
+        }
     }
 }
 
