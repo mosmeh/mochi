@@ -9,7 +9,7 @@ pub type NativeFunctionPtr =
     for<'gc> fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>;
 
 #[derive(Clone, Copy)]
-pub struct NativeFunction(pub NativeFunctionPtr);
+pub struct NativeFunction(pub(crate) NativeFunctionPtr);
 
 impl Debug for NativeFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -36,7 +36,7 @@ impl NativeFunction {
         Self(x)
     }
 
-    pub fn as_ptr(&self) -> *const () {
+    pub(crate) fn as_ptr(&self) -> *const () {
         self.0 as *const ()
     }
 }
@@ -68,8 +68,8 @@ pub enum LineRange {
 
 #[derive(Debug, Clone)]
 pub struct LuaClosure<'gc> {
-    pub proto: Gc<'gc, LuaClosureProto<'gc>>,
-    pub upvalues: Vec<GcCell<'gc, Upvalue<'gc>>>,
+    pub(crate) proto: Gc<'gc, LuaClosureProto<'gc>>,
+    pub(crate) upvalues: Vec<GcCell<'gc, Upvalue<'gc>>>,
 }
 
 unsafe impl GarbageCollect for LuaClosure<'_> {
