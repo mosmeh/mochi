@@ -769,42 +769,47 @@ impl<'gc> Vm<'gc> {
                 }
                 opcode if opcode == OpCode::ForLoop as u8 => {
                     let a = insn.a();
-                    if let Some(step) = stack[a + 2].to_integer() {
-                        let count = stack[a + 1].to_integer().unwrap();
-                        if count > 0 {
-                            let index = stack[a].to_integer().unwrap();
-                            stack[a + 1] = (count - 1).into();
-                            let index = Value::from(index + step);
-                            stack[a] = index;
-                            stack[a + 3] = index;
-                            pc -= insn.bx();
+                    let next_index = match stack[a + 2] {
+                        Value::Integer(step) => {
+                            let count = match stack[a + 1] {
+                                Value::Integer(i) => i,
+                                _ => unreachable!(),
+                            };
+                            if count > 0 {
+                                let index = match stack[a] {
+                                    Value::Integer(i) => i,
+                                    _ => unreachable!(),
+                                };
+                                stack[a + 1] = count.wrapping_sub(1).into();
+                                Some(index.wrapping_add(step).into())
+                            } else {
+                                None
+                            }
                         }
-                    } else {
-                        todo!("float FORLOOP")
+                        Value::Number(step) => {
+                            let (index, limit) = match (stack[a], stack[a + 1]) {
+                                (Value::Number(index), Value::Number(limit)) => (index, limit),
+                                _ => unreachable!(),
+                            };
+                            let next_index = index + step;
+                            if step >= 0.0 {
+                                limit >= next_index
+                            } else {
+                                next_index >= limit
+                            }
+                            .then_some(next_index.into())
+                        }
+                        _ => unreachable!(),
+                    };
+                    if let Some(next_index) = next_index {
+                        stack[a] = next_index;
+                        stack[a + 3] = next_index;
+                        pc -= insn.bx();
                     }
                 }
                 opcode if opcode == OpCode::ForPrep as u8 => {
-                    let a = insn.a();
-                    if let (Some(init), Some(limit), Some(step)) = (
-                        stack[a].to_integer(),
-                        stack[a + 1].to_integer(),
-                        stack[a + 2].to_integer(),
-                    ) {
-                        assert!(step != 0);
-                        let skip = if step > 0 { init > limit } else { init < limit };
-                        if skip {
-                            pc += insn.bx() + 1;
-                        } else {
-                            stack[a + 3] = stack[a];
-                            let count = if step > 0 {
-                                (limit - init) / step
-                            } else {
-                                (init - limit) / (-(step + 1) + 1)
-                            };
-                            stack[a + 1] = count.into();
-                        }
-                    } else {
-                        todo!("float FORPREP")
+                    if !ops::do_forprep(&mut stack[insn.a()..])? {
+                        pc += insn.bx() + 1;
                     }
                 }
                 opcode if opcode == OpCode::TForPrep as u8 => pc += insn.bx(),

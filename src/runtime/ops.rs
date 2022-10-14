@@ -1,4 +1,4 @@
-use super::Instruction;
+use super::{ErrorKind, Instruction};
 use crate::{
     number_is_valid_integer,
     types::{Integer, Number, Value},
@@ -211,6 +211,100 @@ pub(super) fn do_conditional_jump(
     } else {
         *pc += 1;
     }
+}
+
+pub(super) fn do_forprep(for_stack: &mut [Value]) -> Result<bool, ErrorKind> {
+    let [init_value, limit_value, step_value, control_variable]: &mut [_; 4] =
+        (&mut for_stack[..4]).try_into().unwrap();
+
+    if let (Value::Integer(init), Value::Integer(step)) = (*init_value, *step_value) {
+        if step == 0 {
+            return Err(ErrorKind::other("'for' step is zero"));
+        }
+
+        *control_variable = *init_value;
+
+        let limit = match limit_value.to_integer() {
+            Some(l) => l,
+            None => {
+                let float_limit = match limit_value.to_number() {
+                    Some(l) => l,
+                    None => {
+                        return Err(ErrorKind::ForError {
+                            what: "limit",
+                            got_type: limit_value.ty().name(),
+                        })
+                    }
+                };
+                let round_limit = if step < 0 {
+                    float_limit.ceil()
+                } else {
+                    float_limit.floor()
+                };
+                if number_is_valid_integer(round_limit) {
+                    round_limit as Integer
+                } else if float_limit > 0.0 {
+                    if step < 0 {
+                        return Ok(false);
+                    }
+                    Integer::MAX
+                } else {
+                    if step > 0 {
+                        return Ok(false);
+                    }
+                    Integer::MIN
+                }
+            }
+        };
+        if step > 0 {
+            if init > limit {
+                return Ok(false);
+            }
+        } else if init < limit {
+            return Ok(false);
+        }
+
+        let (uint_init, uint_limit, uint_step) = (init as u64, limit as u64, step as u64);
+        let count = if step > 0 {
+            uint_limit.wrapping_sub(uint_init) / uint_step
+        } else {
+            uint_init.wrapping_sub(uint_limit) / uint_step.wrapping_neg()
+        };
+        *limit_value = (count as Integer).into();
+        return Ok(true);
+    }
+
+    let limit = limit_value.to_number().ok_or(ErrorKind::ForError {
+        what: "limit",
+        got_type: limit_value.ty().name(),
+    })?;
+    let step = step_value.to_number().ok_or(ErrorKind::ForError {
+        what: "step",
+        got_type: step_value.ty().name(),
+    })?;
+    let init = init_value.to_number().ok_or(ErrorKind::ForError {
+        what: "initial value",
+        got_type: init_value.ty().name(),
+    })?;
+    if step == 0.0 {
+        return Err(ErrorKind::other("'for' step is zero"));
+    }
+    if step > 0.0 {
+        if init > limit {
+            return Ok(false);
+        }
+    } else if init < limit {
+        return Ok(false);
+    }
+
+    *limit_value = limit.into();
+    *step_value = step.into();
+
+    let init = init.into();
+    *init_value = init;
+    *control_variable = init;
+
+    Ok(true)
 }
 
 pub(super) fn idivi(m: Integer, n: Integer) -> Integer {

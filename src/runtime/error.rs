@@ -39,6 +39,12 @@ pub enum ErrorKind {
         got_type: Option<&'static str>,
     },
 
+    #[error("bad 'for' {what} (number expected, got {got_type})")]
+    ForError {
+        what: &'static str,
+        got_type: &'static str,
+    },
+
     #[error(transparent)]
     Table(#[from] TableError),
 
@@ -69,6 +75,7 @@ impl Clone for ErrorKind {
                 expected_type,
                 got_type: *got_type,
             },
+            Self::ForError { what, got_type } => Self::ForError { what, got_type },
             Self::Table(e) => Self::Table(e.clone()),
             Self::Io(e) => Self::Io(std::io::Error::new(e.kind(), e.to_string())),
             Self::Other(s) => Self::Other(s.clone()),
