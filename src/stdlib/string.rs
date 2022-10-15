@@ -144,8 +144,17 @@ fn string_rep<'gc>(
     let sep = args.nth(3);
     let sep = sep.to_string_or(B(""))?;
 
-    let count = n.max(0) as usize;
-    let string = if count > 0 {
+    let string = if n > 0 {
+        let is_too_large = match s.len().checked_add(sep.len()) {
+            Some(l) if l > (Integer::MAX / n) as usize => true,
+            Some(_) => false,
+            None => true,
+        };
+        if is_too_large {
+            return Err(ErrorKind::other("resulting string too large"));
+        }
+
+        let count = n as usize;
         let mut string = Vec::with_capacity(count * s.len() + (count - 1) * sep.len());
         for _ in 0..count - 1 {
             string.extend_from_slice(s.as_ref());
