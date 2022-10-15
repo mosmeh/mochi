@@ -216,20 +216,20 @@ impl<'gc> Value<'gc> {
             Self::Boolean(x) => write!(f, "{}", x),
             Self::Integer(x) => write!(f, "{}", x),
             Self::Number(x) => write!(f, "{}", x),
-            Self::NativeFunction(x) => write!(f, "function: {:?}", x.as_ptr()),
+            Self::NativeFunction(x) => write!(f, "function: {:p}", x.as_ptr()),
             Self::String(x) => f.write_all(x.as_bytes()),
-            Self::Table(x) => write!(f, "table: {:?}", x.as_ptr()),
+            Self::Table(x) => write!(f, "table: {:p}", x.as_ptr()),
             Self::LuaClosure(x) => {
-                write!(f, "function: {:?}", x.as_ptr())
+                write!(f, "function: {:p}", x.as_ptr())
             }
             Self::NativeClosure(x) => {
-                write!(f, "function: {:?}", x.as_ptr())
+                write!(f, "function: {:p}", x.as_ptr())
             }
             Self::UserData(x) => {
-                write!(f, "userdata: {:?}", x.as_ptr())
+                write!(f, "userdata: {:p}", x.as_ptr())
             }
             Self::Thread(x) => {
-                write!(f, "thread: {:?}", x.as_ptr())
+                write!(f, "thread: {:p}", x.as_ptr())
             }
         }
     }
