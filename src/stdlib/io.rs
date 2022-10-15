@@ -1,11 +1,11 @@
 use super::{
     file::{self, FileError, FileHandle, FullyBufferedFile, LineBufferedFile, LuaFile},
-    helpers::{set_functions_to_table, ArgumentsExt},
+    helpers::{set_functions_to_table, Argument, ArgumentsExt},
 };
 use crate::{
     gc::{GcCell, GcContext},
     runtime::{Action, ErrorKind, Metamethod, Vm},
-    types::{Integer, Table, Type, UserData, Value},
+    types::{Integer, Number, Table, Type, UserData, Value},
 };
 use bstr::{ByteSlice, B};
 use std::{
@@ -221,7 +221,7 @@ fn io_write<'gc>(
     file::translate_and_return_error(gc, || {
         if let Some(output_ref) = output_ref.get_mut() {
             for i in 1..args.len() {
-                output_ref.write_all(args.nth(i).to_string()?.as_ref())?;
+                write_arg(output_ref, &args.nth(i))?;
             }
             Ok(vec![output])
         } else {
@@ -375,9 +375,7 @@ fn file_write<'gc>(
     file::translate_and_return_error(gc, || {
         if let Some(file) = handle_ref.get_mut() {
             for i in 2..args.len() {
-                let s = args.nth(i);
-                let s = s.to_string()?;
-                file.write_all(&s)?;
+                write_arg(file, &args.nth(i))?;
             }
             Ok(vec![handle.as_value()?])
         } else {
@@ -522,4 +520,42 @@ fn open_file<'gc, P: AsRef<[u8]>>(
         registry,
         FullyBufferedFile::new(file),
     ))
+}
+
+fn write_arg<W: std::io::Write>(writer: &mut W, arg: &Argument) -> Result<(), FileError> {
+    match arg.get() {
+        Some(Value::Integer(i)) => write!(writer, "{}", i)?,
+        Some(Value::Number(x)) => write_number(writer, x)?,
+        _ => writer.write_all(&arg.to_string()?)?,
+    }
+    Ok(())
+}
+
+// sprintf("%.14g")
+fn write_number<W: std::io::Write>(writer: &mut W, x: Number) -> std::io::Result<()> {
+    if x == 0.0 {
+        return writer.write_all(b"0");
+    } else if x.is_nan() {
+        if x.is_sign_negative() {
+            writer.write_all(b"-")?;
+        }
+        return writer.write_all(b"nan");
+    }
+
+    let log_x = x.abs().log10();
+    let mut precision = 14;
+    if log_x < -3.0 || (precision as Number) < log_x {
+        return write!(writer, "{x:.precision$e}");
+    }
+
+    precision = (precision as isize - log_x.trunc() as isize) as usize;
+    if log_x < 0.0 {
+        precision += 1
+    }
+    let s = format!("{x:.precision$}");
+    let mut s = s.as_str();
+    if s.contains('.') {
+        s = s.trim_end_matches('0').trim_end_matches('.');
+    }
+    writer.write_all(s.as_bytes())
 }
