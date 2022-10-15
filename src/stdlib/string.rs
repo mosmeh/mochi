@@ -1,3 +1,5 @@
+mod format;
+
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     binary_chunk,
@@ -17,6 +19,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
             (B("byte"), string_byte),
             (B("char"), string_char),
             (B("dump"), string_dump),
+            (B("format"), format::string_format),
             (B("len"), string_len),
             (B("lower"), string_lower),
             (B("sub"), string_sub),

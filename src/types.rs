@@ -410,6 +410,19 @@ impl<'gc> Value<'gc> {
             _ => None,
         }
     }
+
+    pub(crate) fn as_ptr(&self) -> Option<*const ()> {
+        match self {
+            Self::Nil | Self::Boolean(_) | Self::Integer(_) | Self::Number(_) => None,
+            Self::NativeFunction(n) => Some(n.as_ptr()),
+            Self::String(s) => Some(s.0.as_ptr() as *const _),
+            Self::Table(t) => Some(t.as_ptr() as *const _),
+            Self::LuaClosure(l) => Some(l.as_ptr() as *const _),
+            Self::NativeClosure(n) => Some(n.as_ptr() as *const _),
+            Self::UserData(u) => Some(u.as_ptr() as *const _),
+            Self::Thread(t) => Some(t.as_ptr() as *const _),
+        }
+    }
 }
 
 fn parse_number<S: AsRef<[u8]>>(s: S) -> Option<Number> {
