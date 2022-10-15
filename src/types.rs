@@ -215,7 +215,7 @@ impl<'gc> Value<'gc> {
             Self::Nil => f.write_all(b"nil"),
             Self::Boolean(x) => write!(f, "{}", x),
             Self::Integer(x) => write!(f, "{}", x),
-            Self::Number(x) => write!(f, "{}", x),
+            Self::Number(x) => fmt_number(f, *x),
             Self::NativeFunction(x) => write!(f, "function: {:p}", x.as_ptr()),
             Self::String(x) => f.write_all(x.as_bytes()),
             Self::Table(x) => write!(f, "table: {:p}", x.as_ptr()),
@@ -306,7 +306,7 @@ impl<'gc> Value<'gc> {
             }
             Self::Number(x) => {
                 let mut bytes = Vec::new();
-                write!(&mut bytes, "{}", x).ok()?;
+                fmt_number(&mut bytes, *x).ok()?;
                 Some(Cow::Owned(bytes))
             }
             _ => None,
@@ -425,4 +425,40 @@ fn parse_number<S: AsRef<[u8]>>(s: S) -> Option<Number> {
         return None;
     }
     s.to_str().ok().and_then(|s| s.parse().ok())
+}
+
+// sprintf("%.14g") except it does not remove suffix ".0" when x is an integer
+fn fmt_number<W: std::io::Write>(writer: &mut W, x: Number) -> std::io::Result<()> {
+    if x == 0.0 {
+        return writer.write_all(b"0.0");
+    } else if x.is_nan() {
+        if x.is_sign_negative() {
+            writer.write_all(b"-")?;
+        }
+        return writer.write_all(b"nan");
+    }
+
+    let mut precision = 14;
+    let log_x = x.abs().log10();
+    if log_x < -3.0 || (precision as Number) < log_x {
+        return write!(writer, "{x:.precision$e}");
+    }
+
+    precision = (precision as isize - log_x.trunc() as isize) as usize;
+    if log_x < 0.0 {
+        precision += 1
+    }
+
+    let s = format!("{x:.precision$}");
+    let mut s = s.as_bytes();
+    if !s.contains(&b'.') {
+        return writer.write_all(s);
+    }
+
+    s = s.trim_end_with(|ch| ch == '0');
+    writer.write_all(s)?;
+    if let Some(b'.') = s.last() {
+        writer.write_all(b"0")?;
+    }
+    Ok(())
 }
