@@ -106,6 +106,7 @@ impl Default for Tag {
 
 #[derive(Clone, Copy)]
 union Payload<'gc> {
+    nil: (),
     boolean: bool,
     integer: Integer,
     number: Number,
@@ -120,7 +121,7 @@ union Payload<'gc> {
 
 impl Default for Payload<'_> {
     fn default() -> Self {
-        Self { boolean: false }
+        Self { nil: () }
     }
 }
 
