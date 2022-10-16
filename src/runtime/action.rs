@@ -253,12 +253,11 @@ impl<'gc> Vm<'gc> {
                     Ok(()) => (),
                     Err(err) => {
                         drop(coroutine_ref);
-                        if let Frame::ResumeContinuation(frame) =
-                            thread.borrow_mut(gc).frames.last_mut().unwrap()
-                        {
-                            frame.continuation.as_mut().unwrap().set_args(Err(err));
-                        } else {
-                            unreachable!()
+                        match thread.borrow_mut(gc).frames.as_mut_slice() {
+                            [.., Frame::ResumeContinuation(frame)] => {
+                                frame.continuation.as_mut().unwrap().set_args(Err(err))
+                            }
+                            _ => unreachable!(),
                         }
                         return Ok(None);
                     }
@@ -287,10 +286,11 @@ impl<'gc> Vm<'gc> {
                 thread_ref.status = ThreadStatus::Resumable;
 
                 let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
-                if let Frame::ResumeContinuation(frame) = resumer_ref.frames.last_mut().unwrap() {
-                    frame.continuation.as_mut().unwrap().set_args(Ok(values));
-                } else {
-                    unreachable!()
+                match resumer_ref.frames.as_mut_slice() {
+                    [.., Frame::ResumeContinuation(frame)] => {
+                        frame.continuation.as_mut().unwrap().set_args(Ok(values))
+                    }
+                    _ => unreachable!(),
                 }
             }
             Action::MutateGc {

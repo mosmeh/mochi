@@ -742,29 +742,26 @@ impl<'gc> Vm<'gc> {
                         .copy_within(base + a..base + a + num_results, bottom);
                     thread_ref.stack.truncate(bottom + num_results);
                     thread_ref.frames.pop().unwrap();
-                    return Ok(if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
-                        ControlFlow::Continue(())
-                    } else {
-                        ControlFlow::Break(())
+                    return Ok(match thread_ref.frames.as_slice() {
+                        [.., Frame::Lua(_)] => ControlFlow::Continue(()),
+                        _ => ControlFlow::Break(()),
                     });
                 }
                 opcode if opcode == OpCode::Return0 as u8 => {
                     thread_ref.stack.truncate(bottom);
                     thread_ref.frames.pop().unwrap();
-                    return Ok(if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
-                        ControlFlow::Continue(())
-                    } else {
-                        ControlFlow::Break(())
+                    return Ok(match thread_ref.frames.as_slice() {
+                        [.., Frame::Lua(_)] => ControlFlow::Continue(()),
+                        _ => ControlFlow::Break(()),
                     });
                 }
                 opcode if opcode == OpCode::Return1 as u8 => {
                     thread_ref.stack[bottom] = stack[insn.a()];
                     thread_ref.stack.truncate(bottom + 1);
                     thread_ref.frames.pop().unwrap();
-                    return Ok(if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
-                        ControlFlow::Continue(())
-                    } else {
-                        ControlFlow::Break(())
+                    return Ok(match thread_ref.frames.as_slice() {
+                        [.., Frame::Lua(_)] => ControlFlow::Continue(()),
+                        _ => ControlFlow::Break(()),
                     });
                 }
                 opcode if opcode == OpCode::ForLoop as u8 => {

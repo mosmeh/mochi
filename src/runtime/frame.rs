@@ -81,7 +81,7 @@ impl<'gc> Vm<'gc> {
         let thread = self.current_thread();
         let mut thread_ref = thread.borrow_mut(gc);
 
-        if let Some(Frame::Lua(_)) = thread_ref.frames.last() {
+        if let [.., Frame::Lua(_)] = thread_ref.frames.as_slice() {
             drop(thread_ref);
             while self.execute_lua_frame(gc)?.is_continue() {}
             return Ok(None);
@@ -158,12 +158,11 @@ impl<'gc> Vm<'gc> {
 
                 let values = std::mem::take(&mut thread_ref.stack);
                 if let Some(coroutine) = self.thread_stack.last() {
-                    if let Frame::ResumeContinuation(frame) =
-                        coroutine.borrow_mut(gc).frames.last_mut().unwrap()
-                    {
-                        frame.continuation.as_mut().unwrap().set_args(Ok(values));
-                    } else {
-                        unreachable!()
+                    match coroutine.borrow_mut(gc).frames.as_mut_slice() {
+                        [.., Frame::ResumeContinuation(frame)] => {
+                            frame.continuation.as_mut().unwrap().set_args(Ok(values))
+                        }
+                        _ => unreachable!(),
                     }
                 }
                 return Ok(None);

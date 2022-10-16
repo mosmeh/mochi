@@ -144,10 +144,10 @@ impl<'gc> Vm<'gc> {
     }
 
     pub fn current_thread(&self) -> GcCell<'gc, LuaThread<'gc>> {
-        self.thread_stack
-            .last()
-            .copied()
-            .unwrap_or(self.main_thread)
+        match self.thread_stack.as_slice() {
+            [.., current] => *current,
+            _ => self.main_thread,
+        }
     }
 
     pub fn globals(&self) -> GcCell<'gc, Table<'gc>> {
@@ -263,12 +263,11 @@ impl<'gc> Vm<'gc> {
                         drop(thread_ref);
 
                         let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
-                        if let Frame::ResumeContinuation(frame) =
-                            resumer_ref.frames.last_mut().unwrap()
-                        {
-                            frame.continuation.as_mut().unwrap().set_args(Err(kind));
-                        } else {
-                            unreachable!()
+                        match resumer_ref.frames.as_mut_slice() {
+                            [.., Frame::ResumeContinuation(frame)] => {
+                                frame.continuation.as_mut().unwrap().set_args(Err(kind))
+                            }
+                            _ => unreachable!(),
                         }
                     }
                 }
@@ -315,10 +314,9 @@ impl<'gc> Vm<'gc> {
 
 impl<'gc> LuaThread<'gc> {
     fn current_lua_frame(&mut self) -> &mut LuaFrame {
-        if let Some(Frame::Lua(frame)) = self.frames.last_mut() {
-            frame
-        } else {
-            unreachable!()
+        match self.frames.as_mut_slice() {
+            [.., Frame::Lua(frame)] => frame,
+            _ => unreachable!(),
         }
     }
 }
