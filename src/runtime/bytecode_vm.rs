@@ -97,41 +97,43 @@ impl<'gc> Vm<'gc> {
                         Value::String(s) => s,
                         _ => unreachable!(),
                     };
-                    let raw_value = table
-                        .borrow_as_table()
-                        .map(|table| table.get_field(rc))
-                        .unwrap_or_default();
-                    if raw_value.is_nil() {
-                        thread_ref.current_lua_frame().pc = pc;
-                        return self.index_slow_path(&mut thread_ref, table, rc, base + insn.a());
+                    let value = table.borrow_as_table().map(|table| table.get_field(rc));
+                    match value {
+                        Some(Value::Nil) | None => {
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.index_slow_path(
+                                &mut thread_ref,
+                                table,
+                                rc,
+                                base + insn.a(),
+                            );
+                        }
+                        Some(v) => stack[insn.a()] = v,
                     }
-                    stack[insn.a()] = raw_value;
                 }
                 opcode if opcode == OpCode::GetTable as u8 => {
                     let rb = stack[insn.b()];
                     let rc = stack[insn.c() as usize];
-                    let raw_value = rb
-                        .borrow_as_table()
-                        .map(|table| table.get(rc))
-                        .unwrap_or_default();
-                    if raw_value.is_nil() {
-                        thread_ref.current_lua_frame().pc = pc;
-                        return self.index_slow_path(&mut thread_ref, rb, rc, base + insn.a());
+                    let value = rb.borrow_as_table().map(|table| table.get(rc));
+                    match value {
+                        Some(Value::Nil) | None => {
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.index_slow_path(&mut thread_ref, rb, rc, base + insn.a());
+                        }
+                        Some(v) => stack[insn.a()] = v,
                     }
-                    stack[insn.a()] = raw_value;
                 }
                 opcode if opcode == OpCode::GetI as u8 => {
                     let rb = stack[insn.b()];
                     let c = insn.c() as Integer;
-                    let raw_value = rb
-                        .borrow_as_table()
-                        .map(|table| table.get(c))
-                        .unwrap_or_default();
-                    if raw_value.is_nil() {
-                        thread_ref.current_lua_frame().pc = pc;
-                        return self.index_slow_path(&mut thread_ref, rb, c, base + insn.a());
+                    let value = rb.borrow_as_table().map(|table| table.get(c));
+                    match value {
+                        Some(Value::Nil) | None => {
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.index_slow_path(&mut thread_ref, rb, c, base + insn.a());
+                        }
+                        Some(v) => stack[insn.a()] = v,
                     }
-                    stack[insn.a()] = raw_value;
                 }
                 opcode if opcode == OpCode::GetField as u8 => {
                     let rb = stack[insn.b()];
@@ -139,15 +141,14 @@ impl<'gc> Vm<'gc> {
                         Value::String(s) => s,
                         _ => unreachable!(),
                     };
-                    let raw_value = rb
-                        .borrow_as_table()
-                        .map(|table| table.get_field(rc))
-                        .unwrap_or_default();
-                    if raw_value.is_nil() {
-                        thread_ref.current_lua_frame().pc = pc;
-                        return self.index_slow_path(&mut thread_ref, rb, rc, base + insn.a());
+                    let value = rb.borrow_as_table().map(|table| table.get_field(rc));
+                    match value {
+                        Some(Value::Nil) | None => {
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.index_slow_path(&mut thread_ref, rb, rc, base + insn.a());
+                        }
+                        Some(v) => stack[insn.a()] = v,
                     }
-                    stack[insn.a()] = raw_value;
                 }
                 opcode if opcode == OpCode::SetTabUp as u8 => {
                     let kb = match constants[insn.b()] {
@@ -239,15 +240,14 @@ impl<'gc> Vm<'gc> {
                         Value::String(s) => s,
                         _ => unreachable!(),
                     };
-                    let raw_value = rb
-                        .borrow_as_table()
-                        .map(|table| table.get_field(rkc))
-                        .unwrap_or_default();
-                    if raw_value.is_nil() {
-                        thread_ref.current_lua_frame().pc = pc;
-                        return self.index_slow_path(&mut thread_ref, rb, rkc, base + a);
+                    let value = rb.borrow_as_table().map(|table| table.get_field(rkc));
+                    match value {
+                        Some(Value::Nil) | None => {
+                            thread_ref.current_lua_frame().pc = pc;
+                            return self.index_slow_path(&mut thread_ref, rb, rkc, base + a);
+                        }
+                        Some(v) => stack[a] = v,
                     }
-                    stack[a] = raw_value;
                 }
                 opcode if opcode == OpCode::AddI as u8 => ops::do_arithmetic_with_immediate(
                     stack,
