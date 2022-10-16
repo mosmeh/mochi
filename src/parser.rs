@@ -109,7 +109,6 @@ impl<'gc, R: Read> Parser<'gc, R> {
     }
 
     fn parse_chunk(&mut self) -> Result<Chunk<'gc>, ErrorKind> {
-        self.lexer.skip_prelude()?;
         let block = self.parse_block()?;
         self.expect(None)?;
         Ok(Chunk(block))

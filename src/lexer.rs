@@ -54,11 +54,6 @@ impl<'gc, R: Read> Lexer<'gc, R> {
         }
     }
 
-    pub fn skip_prelude(&mut self) -> Result<(), LexerError> {
-        self.inner.consume_prelude()?;
-        Ok(())
-    }
-
     pub fn consume(&mut self) -> Result<Option<Token<'gc>>, LexerError> {
         if let Some(peeked) = self.peeked.pop_front() {
             Ok(Some(peeked))
@@ -121,22 +116,6 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
             peeked: Default::default(),
             lineno: 1,
         }
-    }
-
-    fn consume_prelude(&mut self) -> std::io::Result<()> {
-        const BOM: &[u8] = b"\xef\xbb\xbf";
-        for ch in BOM {
-            if !self.consume_if_eq(*ch)? {
-                break;
-            }
-        }
-
-        // shebang
-        if self.consume_if_eq(b'#')? {
-            while self.consume_if(|ch| !is_newline(ch))?.is_some() {}
-        }
-
-        Ok(())
     }
 
     fn consume_token(&mut self) -> Result<Option<Token<'gc>>, LexerError> {

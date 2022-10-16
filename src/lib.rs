@@ -13,15 +13,9 @@ pub mod parser;
 mod stdlib;
 mod string;
 
-use bstr::ByteVec;
+use bstr::{ByteSlice, ByteVec};
 use gc::GcContext;
-use std::{
-    borrow::Cow,
-    fmt::Debug,
-    fs::File,
-    io::{BufReader, Cursor, Read},
-    path::Path,
-};
+use std::{borrow::Cow, fmt::Debug, io::Cursor, path::Path};
 use types::{Integer, LuaClosure, LuaClosureProto, Number};
 
 pub const LUA_VERSION: (u8, u8) = (5, 4);
@@ -80,12 +74,22 @@ where
 }
 
 pub fn load_file<P: AsRef<Path>>(gc: &GcContext, path: P) -> Result<LuaClosureProto, Error> {
-    let mut reader = BufReader::new(File::open(&path)?);
-    let mut bytes = Vec::new();
-    reader.read_to_end(&mut bytes)?;
+    const BOM: &[u8] = b"\xef\xbb\xbf";
+
+    let bytes = std::fs::read(&path)?;
+    let mut slice = bytes.as_slice();
+    if let Some(s) = slice.strip_prefix(BOM) {
+        slice = s;
+    }
+
+    // shebang
+    if let Some(s) = slice.strip_prefix(b"#") {
+        slice = s.trim_start_with(|ch| ch != '\n');
+    }
+
     let mut source = b"@".to_vec();
     source.extend_from_slice(&Vec::from_path_lossy(path.as_ref()));
-    load(gc, bytes, source)
+    load(gc, slice, source)
 }
 
 macro_rules! count  {
