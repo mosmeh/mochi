@@ -27,6 +27,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
             (B("getmetatable"), base_getmetatable),
             (B("ipairs"), base_ipairs),
             (B("load"), base_load),
+            (B("loadfile"), base_loadfile),
             (B("next"), base_next),
             (B("pairs"), base_pairs),
             (B("pcall"), base_pcall),
@@ -270,7 +271,7 @@ fn base_load<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let mode = args.nth(3);
     let mode = mode.to_string_or(B("bt"))?;
-    if mode.as_ref() != b"bt" {
+    if !mode.contains(&b'b') || !mode.contains(&b't') {
         todo!("mode != \"bt\"")
     }
 
@@ -292,6 +293,51 @@ fn base_load<'gc>(
 
     let mut closure = LuaClosure::from(gc.allocate(proto));
     let upvalue = if let Some(upvalue) = args.nth(4).get() {
+        upvalue.into()
+    } else {
+        Value::Table(vm.globals()).into()
+    };
+    closure.upvalues.push(gc.allocate_cell(upvalue));
+
+    Ok(Action::Return(vec![gc.allocate(closure).into()]))
+}
+
+fn base_loadfile<'gc>(
+    gc: &'gc GcContext,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
+) -> Result<Action<'gc>, ErrorKind> {
+    let mode = args.nth(2);
+    let mode = mode.to_string_or(B("bt"))?;
+    if !mode.contains(&b'b') || !mode.contains(&b't') {
+        todo!("mode != \"bt\"")
+    }
+
+    let proto = if let Some(Value::String(filename)) = args.nth(1).get() {
+        filename
+            .to_path()
+            .map_err(|err| err.to_string())
+            .and_then(|path| crate::load_file(gc, path).map_err(|err| err.to_string()))
+    } else {
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .read_to_end(&mut bytes)
+            .map_err(Into::into)
+            .and_then(|_| crate::load(gc, bytes, b"=stdin"))
+            .map_err(|err| err.to_string())
+    };
+    let proto = match proto {
+        Ok(proto) => proto,
+        Err(err) => {
+            return Ok(Action::Return(vec![
+                Value::Nil,
+                gc.allocate_string(err.into_bytes()).into(),
+            ]))
+        }
+    };
+
+    let mut closure = LuaClosure::from(gc.allocate(proto));
+    let upvalue = if let Some(upvalue) = args.nth(3).get() {
         upvalue.into()
     } else {
         Value::Table(vm.globals()).into()
