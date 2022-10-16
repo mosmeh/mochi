@@ -229,6 +229,10 @@ impl<'gc> Vm<'gc> {
                     let table = Table::with_size(c, b);
                     stack[insn.a()] = gc.allocate_cell(table).into();
                     pc += 1;
+                    if gc.should_perform_gc() {
+                        thread_ref.current_lua_frame().pc = pc;
+                        return Ok(ControlFlow::Break(()));
+                    }
                 }
                 opcode if opcode == OpCode::Self_ as u8 => {
                     let a = insn.a();
@@ -504,6 +508,10 @@ impl<'gc> Vm<'gc> {
                         }
                         strings.reverse();
                         stack[a] = gc.allocate_string(strings.concat()).into();
+                        if gc.should_perform_gc() {
+                            thread_ref.current_lua_frame().pc = pc;
+                            return Ok(ControlFlow::Break(()));
+                        }
                     }
                 }
                 opcode if opcode == OpCode::Close as u8 => {
@@ -862,7 +870,6 @@ impl<'gc> Vm<'gc> {
                     }
                 }
                 opcode if opcode == OpCode::Closure as u8 => {
-                    thread_ref.current_lua_frame().pc = pc;
                     let proto = proto.protos[insn.bx()];
                     let upvalues = proto
                         .upvalues
@@ -879,7 +886,12 @@ impl<'gc> Vm<'gc> {
                         .collect();
                     thread_ref.stack[base + insn.a()] =
                         gc.allocate(LuaClosure { proto, upvalues }).into();
-                    return Ok(ControlFlow::Continue(()));
+                    thread_ref.current_lua_frame().pc = pc;
+                    return Ok(if gc.should_perform_gc() {
+                        ControlFlow::Break(())
+                    } else {
+                        ControlFlow::Continue(())
+                    });
                 }
                 opcode if opcode == OpCode::VarArg as u8 => {
                     let a = insn.a();
@@ -937,11 +949,6 @@ impl<'gc> Vm<'gc> {
                 }
                 opcode if opcode == OpCode::ExtraArg as u8 => unreachable!(),
                 _ => panic!("unknown opcode"),
-            }
-
-            if gc.should_perform_gc() {
-                thread_ref.current_lua_frame().pc = pc;
-                return Ok(ControlFlow::Break(()));
             }
         }
     }
