@@ -38,8 +38,7 @@ impl<'gc> Vm<'gc> {
 
         let (lower_stack, stack) = thread_ref.stack.split_at_mut(base);
 
-        loop {
-            let insn = code[pc];
+        while let Some(&insn) = code.get(pc) {
             pc += 1;
 
             match insn.raw_opcode() {
@@ -951,5 +950,7 @@ impl<'gc> Vm<'gc> {
                 _ => panic!("unknown opcode"),
             }
         }
+
+        unreachable!()
     }
 }
