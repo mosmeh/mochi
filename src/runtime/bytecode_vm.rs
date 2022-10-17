@@ -863,7 +863,7 @@ impl<'gc> Vm<'gc> {
                         if new_array_len > table.array().len() {
                             table.resize_array(new_array_len);
                         }
-                        for (i, x) in stack[a + 1..=a + n].iter().cloned().enumerate() {
+                        for (i, x) in stack[a + 1..=a + n].iter().copied().enumerate() {
                             table.set((offset + i + 1) as Integer, x)?;
                         }
                     }
