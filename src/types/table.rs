@@ -1,7 +1,10 @@
 mod bucket;
 
 use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Value};
-use crate::gc::{GarbageCollect, GcCell, Tracer};
+use crate::{
+    gc::{GarbageCollect, GcCell, Tracer},
+    number_is_valid_integer,
+};
 use bucket::Bucket;
 use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
@@ -79,17 +82,16 @@ impl<'gc> Table<'gc> {
     where
         K: Into<Value<'gc>>,
     {
-        let key = key.into();
-        let key = match key.to_integer_without_string_coercion() {
-            Some(i @ 1..) => {
-                if let Some(value) = self.array.get((i - 1) as usize) {
-                    return *value;
-                }
-                Value::Integer(i)
+        let mut key = key.into();
+        match key {
+            Value::Number(x) if number_is_valid_integer(x) => key = Value::Integer(x as Integer),
+            _ => (),
+        }
+        if let Value::Integer(i) = key {
+            if let Some(value) = self.array.get((i as usize).wrapping_sub(1)) {
+                return *value;
             }
-            Some(i) => Value::Integer(i),
-            None => key,
-        };
+        }
         self.get_hashtable_key(key)
     }
 
@@ -102,23 +104,20 @@ impl<'gc> Table<'gc> {
         K: Into<Value<'gc>>,
         V: Into<Value<'gc>>,
     {
-        let value = value.into();
-        let key = match key.into() {
+        let mut key = key.into();
+        match key {
             Value::Nil => return Err(TableError::IndexIsNil),
             Value::Number(x) if x.is_nan() => return Err(TableError::IndexIsNaN),
-            key => match key.to_integer_without_string_coercion() {
-                Some(i @ 1..) => {
-                    if let Some(slot) = self.array.get_mut((i - 1) as usize) {
-                        *slot = value;
-                        return Ok(());
-                    }
-                    Value::Integer(i)
-                }
-                Some(i) => Value::Integer(i),
-                None => key,
-            },
-        };
-        self.set_hashtable_key(key, value);
+            Value::Number(x) if number_is_valid_integer(x) => key = Value::Integer(x as Integer),
+            _ => (),
+        }
+        if let Value::Integer(i) = key {
+            if let Some(slot) = self.array.get_mut((i as usize).wrapping_sub(1)) {
+                *slot = value.into();
+                return Ok(());
+            }
+        }
+        self.set_hashtable_key(key, value.into());
         Ok(())
     }
 
@@ -134,27 +133,27 @@ impl<'gc> Table<'gc> {
         K: Into<Value<'gc>>,
         V: Into<Value<'gc>>,
     {
-        let value = value.into();
-        let key = match key.into() {
+        let mut key = key.into();
+        match key {
             Value::Nil => return Err(TableError::IndexIsNil),
             Value::Number(x) if x.is_nan() => return Err(TableError::IndexIsNaN),
-            key => match key.to_integer_without_string_coercion() {
-                Some(i @ 1..) => match self.array.get_mut((i - 1) as usize) {
-                    Some(Value::Nil) => return Ok(false),
-                    Some(slot) => {
-                        *slot = value;
-                        return Ok(true);
-                    }
-                    None => Value::Integer(i),
-                },
-                Some(i) => Value::Integer(i),
-                None => key,
-            },
-        };
+            Value::Number(x) if number_is_valid_integer(x) => key = Value::Integer(x as Integer),
+            _ => (),
+        }
+        if let Value::Integer(i) = key {
+            match self.array.get_mut((i as usize).wrapping_sub(1)) {
+                Some(Value::Nil) => return Ok(false),
+                Some(slot) => {
+                    *slot = value.into();
+                    return Ok(true);
+                }
+                None => (),
+            }
+        }
         if let Some(index) = self.find_bucket(key) {
             let bucket = unsafe { self.buckets.get_unchecked_mut(index) };
             if bucket.has_value() {
-                bucket.update_or_remove_item(value);
+                bucket.update_or_remove_item(value.into());
                 return Ok(true);
             }
         }
