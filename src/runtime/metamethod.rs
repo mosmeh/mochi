@@ -266,7 +266,7 @@ impl<'gc> Vm<'gc> {
                 } else {
                     pc + 1
                 };
-                vm.current_thread().borrow_mut(gc).current_lua_frame().pc = new_pc;
+                vm.current_thread().borrow_mut(gc).save_pc(new_pc);
                 Ok(Action::ReturnArguments)
             },
         ))
@@ -389,7 +389,10 @@ impl<'gc> Vm<'gc> {
         F: 'static
             + Fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
     {
-        let current_bottom = thread.current_lua_frame().bottom;
+        let current_bottom = match thread.frames.as_slice() {
+            [.., Frame::Lua(frame)] => frame.bottom,
+            _ => unreachable!(),
+        };
         let metamethod_bottom = thread.stack.len();
         thread.stack.push(metamethod);
         thread.stack.extend_from_slice(args);

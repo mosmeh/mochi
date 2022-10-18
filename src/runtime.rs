@@ -313,9 +313,9 @@ impl<'gc> Vm<'gc> {
 }
 
 impl<'gc> LuaThread<'gc> {
-    fn current_lua_frame(&mut self) -> &mut LuaFrame {
+    fn save_pc(&mut self, pc: usize) {
         match self.frames.as_mut_slice() {
-            [.., Frame::Lua(frame)] => frame,
+            [.., Frame::Lua(frame)] => frame.pc = pc,
             _ => unreachable!(),
         }
     }

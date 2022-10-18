@@ -16,12 +16,16 @@ impl<'gc> Vm<'gc> {
     ) -> Result<ControlFlow<()>, ErrorKind> {
         let thread = self.current_thread();
         let mut thread_ref = thread.borrow_mut(gc);
+        let frame = match thread_ref.frames.as_slice() {
+            [.., Frame::Lua(frame)] => frame.clone(),
+            _ => unreachable!(),
+        };
         let LuaFrame {
             bottom,
             base,
             mut pc,
             num_extra_args,
-        } = thread_ref.current_lua_frame().clone();
+        } = frame;
 
         let bottom_value = thread_ref.stack[bottom];
         let closure = bottom_value.as_lua_closure().unwrap();
@@ -99,7 +103,7 @@ impl<'gc> Vm<'gc> {
                     let value = table.borrow_as_table().map(|table| table.get_field(rc));
                     match value {
                         Some(Value::Nil) | None => {
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.index_slow_path(
                                 &mut thread_ref,
                                 table,
@@ -116,7 +120,7 @@ impl<'gc> Vm<'gc> {
                     let value = rb.borrow_as_table().map(|table| table.get(rc));
                     match value {
                         Some(Value::Nil) | None => {
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.index_slow_path(&mut thread_ref, rb, rc, base + insn.a());
                         }
                         Some(v) => stack[insn.a()] = v,
@@ -128,7 +132,7 @@ impl<'gc> Vm<'gc> {
                     let value = rb.borrow_as_table().map(|table| table.get(c));
                     match value {
                         Some(Value::Nil) | None => {
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.index_slow_path(&mut thread_ref, rb, c, base + insn.a());
                         }
                         Some(v) => stack[insn.a()] = v,
@@ -143,7 +147,7 @@ impl<'gc> Vm<'gc> {
                     let value = rb.borrow_as_table().map(|table| table.get_field(rc));
                     match value {
                         Some(Value::Nil) | None => {
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.index_slow_path(&mut thread_ref, rb, rc, base + insn.a());
                         }
                         Some(v) => stack[insn.a()] = v,
@@ -164,7 +168,7 @@ impl<'gc> Vm<'gc> {
                         .map(|mut table| table.replace_field(kb, rkc))
                         .unwrap_or_default();
                     if !replaced {
-                        thread_ref.current_lua_frame().pc = pc;
+                        thread_ref.save_pc(pc);
                         return self.new_index_slow_path(gc, &mut thread_ref, table, kb, rkc);
                     }
                 }
@@ -179,7 +183,7 @@ impl<'gc> Vm<'gc> {
                         .transpose()?
                         .unwrap_or_default();
                     if !replaced {
-                        thread_ref.current_lua_frame().pc = pc;
+                        thread_ref.save_pc(pc);
                         return self.new_index_slow_path(gc, &mut thread_ref, ra, rb, rkc);
                     }
                 }
@@ -194,7 +198,7 @@ impl<'gc> Vm<'gc> {
                         .transpose()?
                         .unwrap_or_default();
                     if !replaced {
-                        thread_ref.current_lua_frame().pc = pc;
+                        thread_ref.save_pc(pc);
                         return self.new_index_slow_path(gc, &mut thread_ref, ra, b, rkc);
                     }
                 }
@@ -211,7 +215,7 @@ impl<'gc> Vm<'gc> {
                         .map(|mut table| table.replace_field(kb, rkc))
                         .unwrap_or_default();
                     if !replaced {
-                        thread_ref.current_lua_frame().pc = pc;
+                        thread_ref.save_pc(pc);
                         return self.new_index_slow_path(gc, &mut thread_ref, ra, kb, rkc);
                     }
                 }
@@ -229,7 +233,7 @@ impl<'gc> Vm<'gc> {
                     stack[insn.a()] = gc.allocate_cell(table).into();
                     pc += 1;
                     if gc.should_perform_gc() {
-                        thread_ref.current_lua_frame().pc = pc;
+                        thread_ref.save_pc(pc);
                         return Ok(ControlFlow::Break(()));
                     }
                 }
@@ -246,7 +250,7 @@ impl<'gc> Vm<'gc> {
                     let value = rb.borrow_as_table().map(|table| table.get_field(rkc));
                     match value {
                         Some(Value::Nil) | None => {
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.index_slow_path(&mut thread_ref, rb, rkc, base + a);
                         }
                         Some(v) => stack[a] = v,
@@ -394,7 +398,7 @@ impl<'gc> Vm<'gc> {
                     let dest = base + prev_insn.a();
                     let metamethod = Metamethod::from(insn.c());
 
-                    thread_ref.current_lua_frame().pc = pc;
+                    thread_ref.save_pc(pc);
                     return self.arithmetic_slow_path(&mut thread_ref, metamethod, ra, rb, dest);
                 }
                 opcode if opcode == OpCode::MmBinI as u8 => {
@@ -405,7 +409,7 @@ impl<'gc> Vm<'gc> {
                     let dest = base + prev_insn.a();
                     let (a, b) = if insn.k() { (imm, ra) } else { (ra, imm) };
 
-                    thread_ref.current_lua_frame().pc = pc;
+                    thread_ref.save_pc(pc);
                     return self.arithmetic_slow_path(&mut thread_ref, metamethod, a, b, dest);
                 }
                 opcode if opcode == OpCode::MmBinK as u8 => {
@@ -416,7 +420,7 @@ impl<'gc> Vm<'gc> {
                     let dest = base + prev_insn.a();
                     let (a, b) = if insn.k() { (imm, ra) } else { (ra, imm) };
 
-                    thread_ref.current_lua_frame().pc = pc;
+                    thread_ref.save_pc(pc);
                     return self.arithmetic_slow_path(&mut thread_ref, metamethod, a, b, dest);
                 }
                 opcode if opcode == OpCode::Unm as u8 => {
@@ -427,7 +431,7 @@ impl<'gc> Vm<'gc> {
                     } else if let Some(x) = rb.to_number_without_string_coercion() {
                         Value::Number(-x)
                     } else {
-                        thread_ref.current_lua_frame().pc = pc;
+                        thread_ref.save_pc(pc);
                         return self.arithmetic_slow_path(
                             &mut thread_ref,
                             Metamethod::Unm,
@@ -444,7 +448,7 @@ impl<'gc> Vm<'gc> {
                     let result = if let Some(x) = rb.to_integer_without_string_coercion() {
                         Value::Integer(!x)
                     } else {
-                        thread_ref.current_lua_frame().pc = pc;
+                        thread_ref.save_pc(pc);
                         return self.arithmetic_slow_path(
                             &mut thread_ref,
                             Metamethod::BNot,
@@ -466,14 +470,14 @@ impl<'gc> Vm<'gc> {
                         Value::String(s) => s.len() as Integer,
                         Value::Table(table) => {
                             if self.metamethod_of_object(Metamethod::Len, rb).is_some() {
-                                thread_ref.current_lua_frame().pc = pc;
+                                thread_ref.save_pc(pc);
                                 return self.len_slow_path(&mut thread_ref, rb, base + a);
                             } else {
                                 table.borrow().lua_len()
                             }
                         }
                         _ => {
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.len_slow_path(&mut thread_ref, rb, base + a);
                         }
                     };
@@ -497,7 +501,7 @@ impl<'gc> Vm<'gc> {
                                     (i, gc.allocate_string(strings.concat()).into())
                                 }
                             };
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.concat_slow_path(
                                 &mut thread_ref,
                                 lhs_index,
@@ -508,13 +512,13 @@ impl<'gc> Vm<'gc> {
                         strings.reverse();
                         stack[a] = gc.allocate_string(strings.concat()).into();
                         if gc.should_perform_gc() {
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return Ok(ControlFlow::Break(()));
                         }
                     }
                 }
                 opcode if opcode == OpCode::Close as u8 => {
-                    thread_ref.current_lua_frame().pc = pc;
+                    thread_ref.save_pc(pc);
                     thread_ref.close_upvalues(gc, base + insn.a());
                     return Ok(ControlFlow::Continue(()));
                 }
@@ -530,7 +534,7 @@ impl<'gc> Vm<'gc> {
                     } else if self.metamethod_of_object(Metamethod::Eq, ra).is_some()
                         || self.metamethod_of_object(Metamethod::Eq, rb).is_some()
                     {
-                        thread_ref.current_lua_frame().pc = pc;
+                        thread_ref.save_pc(pc);
                         return self.compare_slow_path(
                             &mut thread_ref,
                             Metamethod::Eq,
@@ -549,7 +553,7 @@ impl<'gc> Vm<'gc> {
                     match ops::lt(ra, rb) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.compare_slow_path(
                                 &mut thread_ref,
                                 Metamethod::Lt,
@@ -567,7 +571,7 @@ impl<'gc> Vm<'gc> {
                     match ops::le(ra, rb) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.compare_slow_path(
                                 &mut thread_ref,
                                 Metamethod::Le,
@@ -606,7 +610,7 @@ impl<'gc> Vm<'gc> {
                             } else {
                                 (imm as Number).into()
                             };
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.compare_slow_path(
                                 &mut thread_ref,
                                 Metamethod::Lt,
@@ -629,7 +633,7 @@ impl<'gc> Vm<'gc> {
                             } else {
                                 (imm as Number).into()
                             };
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.compare_slow_path(
                                 &mut thread_ref,
                                 Metamethod::Le,
@@ -652,7 +656,7 @@ impl<'gc> Vm<'gc> {
                             } else {
                                 (imm as Number).into()
                             };
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.compare_slow_path(
                                 &mut thread_ref,
                                 Metamethod::Lt,
@@ -675,7 +679,7 @@ impl<'gc> Vm<'gc> {
                             } else {
                                 (imm as Number).into()
                             };
-                            thread_ref.current_lua_frame().pc = pc;
+                            thread_ref.save_pc(pc);
                             return self.compare_slow_path(
                                 &mut thread_ref,
                                 Metamethod::Le,
@@ -706,7 +710,7 @@ impl<'gc> Vm<'gc> {
                     let a = insn.a();
                     let b = insn.b();
 
-                    thread_ref.current_lua_frame().pc = pc;
+                    thread_ref.save_pc(pc);
                     thread_ref
                         .stack
                         .truncate(if b > 0 { base + a + b } else { saved_stack_top });
@@ -819,7 +823,7 @@ impl<'gc> Vm<'gc> {
                 opcode if opcode == OpCode::TForPrep as u8 => pc += insn.bx(),
                 opcode if opcode == OpCode::TForCall as u8 => {
                     let a = insn.a();
-                    thread_ref.current_lua_frame().pc = pc;
+                    thread_ref.save_pc(pc);
 
                     let arg_base = base + a;
                     let new_bottom = arg_base + 4;
@@ -885,7 +889,7 @@ impl<'gc> Vm<'gc> {
                         .collect();
                     thread_ref.stack[base + insn.a()] =
                         gc.allocate(LuaClosure { proto, upvalues }).into();
-                    thread_ref.current_lua_frame().pc = pc;
+                    thread_ref.save_pc(pc);
                     return Ok(if gc.should_perform_gc() {
                         ControlFlow::Break(())
                     } else {
@@ -901,7 +905,7 @@ impl<'gc> Vm<'gc> {
                         num_extra_args
                     };
 
-                    thread_ref.current_lua_frame().pc = pc;
+                    thread_ref.save_pc(pc);
                     thread_ref.stack.resize(base + a + num_wanted, Value::Nil);
 
                     if num_wanted > 0 {
@@ -926,12 +930,14 @@ impl<'gc> Vm<'gc> {
                         saved_stack_top.saturating_sub(bottom + 1 + num_fixed_args);
                     if new_num_extra_args > 0 {
                         let new_base = saved_stack_top + 1;
-                        {
-                            let frame = thread_ref.current_lua_frame();
-                            frame.pc = pc;
-                            frame.base = new_base;
-                            frame.num_extra_args = new_num_extra_args;
-                        }
+                        match thread_ref.frames.as_mut_slice() {
+                            [.., Frame::Lua(frame)] => {
+                                frame.pc = pc;
+                                frame.base = new_base;
+                                frame.num_extra_args = new_num_extra_args;
+                            }
+                            _ => unreachable!(),
+                        };
 
                         let new_stack_len = new_base + proto.max_stack_size as usize;
                         if thread_ref.stack.len() < new_stack_len {
