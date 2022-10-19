@@ -1,4 +1,4 @@
-use super::{ops, ErrorKind, Frame, LuaFrame, Metamethod, OpCode, Operation, Vm};
+use super::{opcode, ops, ErrorKind, Frame, LuaFrame, Metamethod, Operation, Vm};
 use crate::{
     gc::GcContext,
     types::{Integer, Number, Table, Upvalue, UpvalueDescription, Value},
@@ -45,43 +45,31 @@ impl<'gc> Vm<'gc> {
                 pc += 1;
 
                 match insn.raw_opcode() {
-                    opcode if opcode == OpCode::Move as u8 => stack[insn.a()] = stack[insn.b()],
-                    opcode if opcode == OpCode::LoadI as u8 => {
-                        stack[insn.a()] = Value::Integer(insn.sbx() as Integer)
-                    }
-                    opcode if opcode == OpCode::LoadF as u8 => {
-                        stack[insn.a()] = Value::Number(insn.sbx() as Number)
-                    }
-                    opcode if opcode == OpCode::LoadK as u8 => {
-                        stack[insn.a()] = constants[insn.bx()];
-                    }
-                    opcode if opcode == OpCode::LoadKX as u8 => {
+                    opcode::MOVE => stack[insn.a()] = stack[insn.b()],
+                    opcode::LOADI => stack[insn.a()] = Value::Integer(insn.sbx() as Integer),
+                    opcode::LOADF => stack[insn.a()] = Value::Number(insn.sbx() as Number),
+                    opcode::LOADK => stack[insn.a()] = constants[insn.bx()],
+                    opcode::LOADKX => {
                         let next_insn = code[pc];
                         let rb = constants[next_insn.ax()];
                         stack[insn.a()] = rb;
                         pc += 1;
                     }
-                    opcode if opcode == OpCode::LoadFalse as u8 => {
-                        stack[insn.a()] = Value::Boolean(false)
-                    }
-                    opcode if opcode == OpCode::LFalseSkip as u8 => {
+                    opcode::LOADFALSE => stack[insn.a()] = Value::Boolean(false),
+                    opcode::LFALSESKIP => {
                         stack[insn.a()] = Value::Boolean(false);
                         pc += 1;
                     }
-                    opcode if opcode == OpCode::LoadTrue as u8 => {
-                        stack[insn.a()] = Value::Boolean(true)
-                    }
-                    opcode if opcode == OpCode::LoadNil as u8 => {
-                        stack[insn.a()..][..=insn.b()].fill(Value::Nil)
-                    }
-                    opcode if opcode == OpCode::GetUpval as u8 => {
+                    opcode::LOADTRUE => stack[insn.a()] = Value::Boolean(true),
+                    opcode::LOADNIL => stack[insn.a()..][..=insn.b()].fill(Value::Nil),
+                    opcode::GETUPVAL => {
                         let value =
                             upvalues[insn.b()]
                                 .borrow()
                                 .get(thread, base, lower_stack, stack);
                         stack[insn.a()] = value;
                     }
-                    opcode if opcode == OpCode::SetUpval as u8 => {
+                    opcode::SETUPVAL => {
                         let value = stack[insn.a()];
                         upvalues[insn.b()].borrow_mut(gc).set(
                             gc,
@@ -92,7 +80,7 @@ impl<'gc> Vm<'gc> {
                             value,
                         );
                     }
-                    opcode if opcode == OpCode::GetTabUp as u8 => {
+                    opcode::GETTABUP => {
                         let table =
                             upvalues[insn.b()]
                                 .borrow()
@@ -118,7 +106,7 @@ impl<'gc> Vm<'gc> {
                             Some(v) => stack[insn.a()] = v,
                         }
                     }
-                    opcode if opcode == OpCode::GetTable as u8 => {
+                    opcode::GETTABLE => {
                         let rb = stack[insn.b()];
                         let rc = stack[insn.c() as usize];
                         let value = rb.borrow_as_table().map(|table| table.get(rc));
@@ -138,7 +126,7 @@ impl<'gc> Vm<'gc> {
                             Some(v) => stack[insn.a()] = v,
                         }
                     }
-                    opcode if opcode == OpCode::GetI as u8 => {
+                    opcode::GETI => {
                         let rb = stack[insn.b()];
                         let c = insn.c() as Integer;
                         let value = rb.borrow_as_table().map(|table| table.get(c));
@@ -158,7 +146,7 @@ impl<'gc> Vm<'gc> {
                             Some(v) => stack[insn.a()] = v,
                         }
                     }
-                    opcode if opcode == OpCode::GetField as u8 => {
+                    opcode::GETFIELD => {
                         let rb = stack[insn.b()];
                         let rc = match constants[insn.c() as usize] {
                             Value::String(s) => s,
@@ -181,7 +169,7 @@ impl<'gc> Vm<'gc> {
                             Some(v) => stack[insn.a()] = v,
                         }
                     }
-                    opcode if opcode == OpCode::SetTabUp as u8 => {
+                    opcode::SETTABUP => {
                         let kb = match constants[insn.b()] {
                             Value::String(s) => s,
                             _ => unreachable!(),
@@ -204,7 +192,7 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::SetTable as u8 => {
+                    opcode::SETTABLE => {
                         let ra = stack[insn.a()];
                         let rb = stack[insn.b()];
                         let c = insn.c() as usize;
@@ -222,7 +210,7 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::SetI as u8 => {
+                    opcode::SETI => {
                         let ra = stack[insn.a()];
                         let b = insn.b() as Integer;
                         let c = insn.c() as usize;
@@ -240,7 +228,7 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::SetField as u8 => {
+                    opcode::SETFIELD => {
                         let ra = stack[insn.a()];
                         let kb = match constants[insn.b()] {
                             Value::String(s) => s,
@@ -260,7 +248,7 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::NewTable as u8 => {
+                    opcode::NEWTABLE => {
                         let mut b = insn.b();
                         if b > 0 {
                             b = 1 << (b - 1);
@@ -278,7 +266,7 @@ impl<'gc> Vm<'gc> {
                             return Ok(());
                         }
                     }
-                    opcode if opcode == OpCode::Self_ as u8 => {
+                    opcode::SELF => {
                         let a = insn.a();
                         let rb = stack[insn.b()];
                         stack[a + 1] = rb;
@@ -300,14 +288,14 @@ impl<'gc> Vm<'gc> {
                             Some(v) => stack[a] = v,
                         }
                     }
-                    opcode if opcode == OpCode::AddI as u8 => ops::do_arithmetic_with_immediate(
+                    opcode::ADDI => ops::do_arithmetic_with_immediate(
                         stack,
                         &mut pc,
                         insn,
                         Integer::wrapping_add,
                         Number::add,
                     ),
-                    opcode if opcode == OpCode::AddK as u8 => ops::do_arithmetic_with_constant(
+                    opcode::ADDK => ops::do_arithmetic_with_constant(
                         stack,
                         &mut pc,
                         constants,
@@ -315,7 +303,7 @@ impl<'gc> Vm<'gc> {
                         Integer::wrapping_add,
                         Number::add,
                     ),
-                    opcode if opcode == OpCode::SubK as u8 => ops::do_arithmetic_with_constant(
+                    opcode::SUBK => ops::do_arithmetic_with_constant(
                         stack,
                         &mut pc,
                         constants,
@@ -323,7 +311,7 @@ impl<'gc> Vm<'gc> {
                         Integer::wrapping_sub,
                         Number::sub,
                     ),
-                    opcode if opcode == OpCode::MulK as u8 => ops::do_arithmetic_with_constant(
+                    opcode::MULK => ops::do_arithmetic_with_constant(
                         stack,
                         &mut pc,
                         constants,
@@ -331,7 +319,7 @@ impl<'gc> Vm<'gc> {
                         Integer::wrapping_mul,
                         Number::mul,
                     ),
-                    opcode if opcode == OpCode::ModK as u8 => ops::do_arithmetic_with_constant(
+                    opcode::MODK => ops::do_arithmetic_with_constant(
                         stack,
                         &mut pc,
                         constants,
@@ -339,25 +327,21 @@ impl<'gc> Vm<'gc> {
                         ops::modi,
                         ops::modf,
                     ),
-                    opcode if opcode == OpCode::PowK as u8 => {
-                        ops::do_float_arithmetic_with_constant(
-                            stack,
-                            &mut pc,
-                            constants,
-                            insn,
-                            Number::powf,
-                        )
-                    }
-                    opcode if opcode == OpCode::DivK as u8 => {
-                        ops::do_float_arithmetic_with_constant(
-                            stack,
-                            &mut pc,
-                            constants,
-                            insn,
-                            Number::div,
-                        )
-                    }
-                    opcode if opcode == OpCode::IDivK as u8 => ops::do_arithmetic_with_constant(
+                    opcode::POWK => ops::do_float_arithmetic_with_constant(
+                        stack,
+                        &mut pc,
+                        constants,
+                        insn,
+                        Number::powf,
+                    ),
+                    opcode::DIVK => ops::do_float_arithmetic_with_constant(
+                        stack,
+                        &mut pc,
+                        constants,
+                        insn,
+                        Number::div,
+                    ),
+                    opcode::IDIVK => ops::do_arithmetic_with_constant(
                         stack,
                         &mut pc,
                         constants,
@@ -365,28 +349,28 @@ impl<'gc> Vm<'gc> {
                         ops::idivi,
                         ops::idivf,
                     ),
-                    opcode if opcode == OpCode::BAndK as u8 => ops::do_bitwise_op_with_constant(
+                    opcode::BANDK => ops::do_bitwise_op_with_constant(
                         stack,
                         &mut pc,
                         constants,
                         insn,
                         Integer::bitand,
                     ),
-                    opcode if opcode == OpCode::BOrK as u8 => ops::do_bitwise_op_with_constant(
+                    opcode::BORK => ops::do_bitwise_op_with_constant(
                         stack,
                         &mut pc,
                         constants,
                         insn,
                         Integer::bitor,
                     ),
-                    opcode if opcode == OpCode::BXorK as u8 => ops::do_bitwise_op_with_constant(
+                    opcode::BXORK => ops::do_bitwise_op_with_constant(
                         stack,
                         &mut pc,
                         constants,
                         insn,
                         Integer::bitxor,
                     ),
-                    opcode if opcode == OpCode::ShrI as u8 => {
+                    opcode::SHRI => {
                         let rb = stack[insn.b()];
                         if let Some(lhs) = rb.to_integer_without_string_coercion() {
                             let ic = insn.sc() as Integer;
@@ -394,7 +378,7 @@ impl<'gc> Vm<'gc> {
                             pc += 1;
                         }
                     }
-                    opcode if opcode == OpCode::ShlI as u8 => {
+                    opcode::SHLI => {
                         let rb = stack[insn.b()];
                         if let Some(rhs) = rb.to_integer_without_string_coercion() {
                             let ic = insn.sc() as Integer;
@@ -402,43 +386,27 @@ impl<'gc> Vm<'gc> {
                             pc += 1;
                         }
                     }
-                    opcode if opcode == OpCode::Add as u8 => {
+                    opcode::ADD => {
                         ops::do_arithmetic(stack, &mut pc, insn, Integer::wrapping_add, Number::add)
                     }
-                    opcode if opcode == OpCode::Sub as u8 => {
+                    opcode::SUB => {
                         ops::do_arithmetic(stack, &mut pc, insn, Integer::wrapping_sub, Number::sub)
                     }
-                    opcode if opcode == OpCode::Mul as u8 => {
+                    opcode::MUL => {
                         ops::do_arithmetic(stack, &mut pc, insn, Integer::wrapping_mul, Number::mul)
                     }
-                    opcode if opcode == OpCode::Mod as u8 => {
-                        ops::do_arithmetic(stack, &mut pc, insn, ops::modi, ops::modf)
-                    }
-                    opcode if opcode == OpCode::Pow as u8 => {
-                        ops::do_float_arithmetic(stack, &mut pc, insn, Number::powf)
-                    }
-                    opcode if opcode == OpCode::Div as u8 => {
-                        ops::do_float_arithmetic(stack, &mut pc, insn, Number::div)
-                    }
-                    opcode if opcode == OpCode::IDiv as u8 => {
+                    opcode::MOD => ops::do_arithmetic(stack, &mut pc, insn, ops::modi, ops::modf),
+                    opcode::POW => ops::do_float_arithmetic(stack, &mut pc, insn, Number::powf),
+                    opcode::DIV => ops::do_float_arithmetic(stack, &mut pc, insn, Number::div),
+                    opcode::IDIV => {
                         ops::do_arithmetic(stack, &mut pc, insn, ops::idivi, ops::idivf)
                     }
-                    opcode if opcode == OpCode::BAnd as u8 => {
-                        ops::do_bitwise_op(stack, &mut pc, insn, Integer::bitand)
-                    }
-                    opcode if opcode == OpCode::BOr as u8 => {
-                        ops::do_bitwise_op(stack, &mut pc, insn, Integer::bitor)
-                    }
-                    opcode if opcode == OpCode::BXor as u8 => {
-                        ops::do_bitwise_op(stack, &mut pc, insn, Integer::bitxor)
-                    }
-                    opcode if opcode == OpCode::Shr as u8 => {
-                        ops::do_bitwise_op(stack, &mut pc, insn, ops::shr)
-                    }
-                    opcode if opcode == OpCode::Shl as u8 => {
-                        ops::do_bitwise_op(stack, &mut pc, insn, ops::shl)
-                    }
-                    opcode if opcode == OpCode::MmBin as u8 => {
+                    opcode::BAND => ops::do_bitwise_op(stack, &mut pc, insn, Integer::bitand),
+                    opcode::BOR => ops::do_bitwise_op(stack, &mut pc, insn, Integer::bitor),
+                    opcode::BXOR => ops::do_bitwise_op(stack, &mut pc, insn, Integer::bitxor),
+                    opcode::SHR => ops::do_bitwise_op(stack, &mut pc, insn, ops::shr),
+                    opcode::SHL => ops::do_bitwise_op(stack, &mut pc, insn, ops::shl),
+                    opcode::MMBIN => {
                         let ra = stack[insn.a()];
                         let rb = stack[insn.b()];
                         let prev_insn = code[pc - 2];
@@ -458,7 +426,7 @@ impl<'gc> Vm<'gc> {
                             ControlFlow::Break(()) => return Ok(()),
                         }
                     }
-                    opcode if opcode == OpCode::MmBinI as u8 => {
+                    opcode::MMBINI => {
                         let ra = stack[insn.a()];
                         let imm = (insn.sb() as Integer).into();
                         let metamethod = Metamethod::from(insn.c());
@@ -472,7 +440,7 @@ impl<'gc> Vm<'gc> {
                             ControlFlow::Break(()) => return Ok(()),
                         }
                     }
-                    opcode if opcode == OpCode::MmBinK as u8 => {
+                    opcode::MMBINK => {
                         let ra = stack[insn.a()];
                         let imm = constants[insn.b()];
                         let metamethod = Metamethod::from(insn.c());
@@ -486,7 +454,7 @@ impl<'gc> Vm<'gc> {
                             ControlFlow::Break(()) => return Ok(()),
                         }
                     }
-                    opcode if opcode == OpCode::Unm as u8 => {
+                    opcode::UNM => {
                         let a = insn.a();
                         let rb = stack[insn.b()];
                         let result = if let Value::Integer(x) = rb {
@@ -508,7 +476,7 @@ impl<'gc> Vm<'gc> {
                         };
                         stack[a] = result;
                     }
-                    opcode if opcode == OpCode::BNot as u8 => {
+                    opcode::BNOT => {
                         let a = insn.a();
                         let rb = stack[insn.b()];
                         let result = if let Some(x) = rb.to_integer_without_string_coercion() {
@@ -528,11 +496,11 @@ impl<'gc> Vm<'gc> {
                         };
                         stack[a] = result;
                     }
-                    opcode if opcode == OpCode::Not as u8 => {
+                    opcode::NOT => {
                         let rb = stack[insn.b()];
                         stack[insn.a()] = Value::Boolean(!rb.to_boolean())
                     }
-                    opcode if opcode == OpCode::Len as u8 => {
+                    opcode::LEN => {
                         let a = insn.a();
                         let rb = stack[insn.b()];
                         let len = match rb {
@@ -558,7 +526,7 @@ impl<'gc> Vm<'gc> {
                         };
                         stack[a] = len.into();
                     }
-                    opcode if opcode == OpCode::Concat as u8 => {
+                    opcode::CONCAT => {
                         let b = insn.b();
                         if b >= 1 {
                             let a = insn.a();
@@ -595,16 +563,14 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::Close as u8 => {
+                    opcode::CLOSE => {
                         thread_ref.save_pc(pc);
                         thread_ref.close_upvalues(gc, base + insn.a());
                         continue 'start;
                     }
-                    opcode if opcode == OpCode::Tbc as u8 => todo!("TBC"),
-                    opcode if opcode == OpCode::Jmp as u8 => {
-                        pc = (pc as isize + insn.sj() as isize) as usize
-                    }
-                    opcode if opcode == OpCode::Eq as u8 => {
+                    opcode::TBC => todo!("TBC"),
+                    opcode::JMP => pc = (pc as isize + insn.sj() as isize) as usize,
+                    opcode::EQ => {
                         let ra = stack[insn.a()];
                         let rb = stack[insn.b()];
                         if ra == rb {
@@ -628,7 +594,7 @@ impl<'gc> Vm<'gc> {
                             ops::do_conditional_jump(&mut pc, code, insn, false);
                         }
                     }
-                    opcode if opcode == OpCode::Lt as u8 => {
+                    opcode::LT => {
                         let ra = stack[insn.a()];
                         let rb = stack[insn.b()];
                         match ops::lt(ra, rb) {
@@ -649,7 +615,7 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::Le as u8 => {
+                    opcode::LE => {
                         let ra = stack[insn.a()];
                         let rb = stack[insn.b()];
                         match ops::le(ra, rb) {
@@ -670,13 +636,13 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::EqK as u8 => {
+                    opcode::EQK => {
                         let ra = stack[insn.a()];
                         let rb = constants[insn.b()];
                         let cond = ra == rb;
                         ops::do_conditional_jump(&mut pc, code, insn, cond)
                     }
-                    opcode if opcode == OpCode::EqI as u8 => {
+                    opcode::EQI => {
                         let ra = stack[insn.a()];
                         let imm = insn.sb();
                         let cond = match ra {
@@ -686,7 +652,7 @@ impl<'gc> Vm<'gc> {
                         };
                         ops::do_conditional_jump(&mut pc, code, insn, cond)
                     }
-                    opcode if opcode == OpCode::LtI as u8 => {
+                    opcode::LTI => {
                         let ra = stack[insn.a()];
                         let imm = insn.sb();
                         match ops::compare_with_immediate(ra, imm, PartialOrd::lt, PartialOrd::lt) {
@@ -712,7 +678,7 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::LeI as u8 => {
+                    opcode::LEI => {
                         let ra = stack[insn.a()];
                         let imm = insn.sb();
                         match ops::compare_with_immediate(ra, imm, PartialOrd::le, PartialOrd::le) {
@@ -738,7 +704,7 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::GtI as u8 => {
+                    opcode::GTI => {
                         let ra = stack[insn.a()];
                         let imm = insn.sb();
                         match ops::compare_with_immediate(ra, imm, PartialOrd::gt, PartialOrd::gt) {
@@ -764,7 +730,7 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::GeI as u8 => {
+                    opcode::GEI => {
                         let ra = stack[insn.a()];
                         let imm = insn.sb();
                         match ops::compare_with_immediate(ra, imm, PartialOrd::ge, PartialOrd::ge) {
@@ -790,11 +756,11 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::Test as u8 => {
+                    opcode::TEST => {
                         let cond = stack[insn.a()].to_boolean();
                         ops::do_conditional_jump(&mut pc, code, insn, cond);
                     }
-                    opcode if opcode == OpCode::TestSet as u8 => {
+                    opcode::TESTSET => {
                         let rb = stack[insn.b()];
                         let cond = rb.to_boolean();
                         if cond == insn.k() {
@@ -805,7 +771,7 @@ impl<'gc> Vm<'gc> {
                             pc += 1;
                         }
                     }
-                    opcode if opcode == OpCode::Call as u8 => {
+                    opcode::CALL => {
                         let a = insn.a();
                         let b = insn.b();
 
@@ -820,7 +786,7 @@ impl<'gc> Vm<'gc> {
                             ControlFlow::Break(()) => return Ok(()),
                         }
                     }
-                    opcode if opcode == OpCode::TailCall as u8 => {
+                    opcode::TAILCALL => {
                         let a = insn.a();
                         let b = insn.b();
                         if insn.k() {
@@ -844,7 +810,7 @@ impl<'gc> Vm<'gc> {
                             ControlFlow::Break(()) => return Ok(()),
                         }
                     }
-                    opcode if opcode == OpCode::Return as u8 => {
+                    opcode::RETURN => {
                         if insn.k() {
                             thread_ref.close_upvalues(gc, bottom);
                         }
@@ -865,7 +831,7 @@ impl<'gc> Vm<'gc> {
                             _ => return Ok(()),
                         }
                     }
-                    opcode if opcode == OpCode::Return0 as u8 => {
+                    opcode::RETURN0 => {
                         thread_ref.stack.truncate(bottom);
                         thread_ref.frames.pop().unwrap();
                         match thread_ref.frames.as_slice() {
@@ -873,7 +839,7 @@ impl<'gc> Vm<'gc> {
                             _ => return Ok(()),
                         }
                     }
-                    opcode if opcode == OpCode::Return1 as u8 => {
+                    opcode::RETURN1 => {
                         thread_ref.stack[bottom] = stack[insn.a()];
                         thread_ref.stack.truncate(bottom + 1);
                         thread_ref.frames.pop().unwrap();
@@ -882,7 +848,7 @@ impl<'gc> Vm<'gc> {
                             _ => return Ok(()),
                         }
                     }
-                    opcode if opcode == OpCode::ForLoop as u8 => {
+                    opcode::FORLOOP => {
                         let a = insn.a();
                         let next_index = match stack[a + 2] {
                             Value::Integer(step) => {
@@ -922,13 +888,13 @@ impl<'gc> Vm<'gc> {
                             pc -= insn.bx();
                         }
                     }
-                    opcode if opcode == OpCode::ForPrep as u8 => {
+                    opcode::FORPREP => {
                         if !ops::do_forprep(&mut stack[insn.a()..])? {
                             pc += insn.bx() + 1;
                         }
                     }
-                    opcode if opcode == OpCode::TForPrep as u8 => pc += insn.bx(),
-                    opcode if opcode == OpCode::TForCall as u8 => {
+                    opcode::TFORPREP => pc += insn.bx(),
+                    opcode::TFORCALL => {
                         let a = insn.a();
                         thread_ref.save_pc(pc);
 
@@ -943,7 +909,7 @@ impl<'gc> Vm<'gc> {
                             ControlFlow::Break(()) => return Ok(()),
                         }
                     }
-                    opcode if opcode == OpCode::TForLoop as u8 => {
+                    opcode::TFORLOOP => {
                         let a = insn.a();
                         let control = stack[a + 4];
                         if !control.is_nil() {
@@ -951,7 +917,7 @@ impl<'gc> Vm<'gc> {
                             pc -= insn.bx();
                         }
                     }
-                    opcode if opcode == OpCode::SetList as u8 => {
+                    opcode::SETLIST => {
                         let a = insn.a();
                         let n = if insn.b() > 0 {
                             Some(insn.b())
@@ -982,7 +948,7 @@ impl<'gc> Vm<'gc> {
                             }
                         }
                     }
-                    opcode if opcode == OpCode::Closure as u8 => {
+                    opcode::CLOSURE => {
                         let proto = proto.protos[insn.bx()];
                         let upvalues = proto
                             .upvalues
@@ -1006,7 +972,7 @@ impl<'gc> Vm<'gc> {
                             continue 'start;
                         }
                     }
-                    opcode if opcode == OpCode::VarArg as u8 => {
+                    opcode::VARARG => {
                         let a = insn.a();
                         let n = insn.c();
                         let num_wanted = if n > 0 {
@@ -1034,7 +1000,7 @@ impl<'gc> Vm<'gc> {
 
                         continue 'start;
                     }
-                    opcode if opcode == OpCode::VarArgPrep as u8 => {
+                    opcode::VARARGPREP => {
                         let num_fixed_args = insn.a();
                         let new_num_extra_args =
                             saved_stack_top.saturating_sub(bottom + 1 + num_fixed_args);
@@ -1063,7 +1029,7 @@ impl<'gc> Vm<'gc> {
                             continue 'start;
                         }
                     }
-                    opcode if opcode == OpCode::ExtraArg as u8 => unreachable!(),
+                    opcode::EXTRAARG => unreachable!(),
                     _ => panic!("unknown opcode"),
                 }
             }
