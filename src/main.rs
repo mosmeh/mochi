@@ -373,15 +373,16 @@ impl CompileCommand {
                     Value::Integer(_) => b"I",
                     Value::Number(_) => b"F",
                     Value::String(_) => b"S",
-                    _ => unreachable!(),
+                    _ => b"?",
                 })?;
                 match constant {
-                    Value::Nil => w.write_all(b"\tnil\n")?,
-                    Value::Boolean(b) => writeln!(w, "\t{}", b)?,
-                    Value::Integer(i) => writeln!(w, "\t{}", i)?,
-                    Value::Number(x) => writeln!(w, "\t{}", x)?,
-                    Value::String(s) => writeln!(w, "\t\"{}\"", s.as_bstr())?,
-                    _ => unreachable!(),
+                    Value::Nil | Value::Boolean(_) | Value::Integer(_) | Value::Number(_) => {
+                        w.write_all(b"\t")?;
+                        constant.fmt_bytes(w)?;
+                        w.write_all(b"\n")?;
+                    }
+                    Value::String(s) => writeln!(w, "\t{:?}", s)?,
+                    _ => w.write_all(b"\t?\n")?,
                 };
             }
 

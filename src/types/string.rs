@@ -1,14 +1,28 @@
 use crate::gc::{BoxedString, GarbageCollect, Gc, Tracer};
-use std::{cmp::Ordering, hash::Hash, ops::Deref, str::Utf8Error};
+use std::{cmp::Ordering, fmt::Write, hash::Hash, ops::Deref, str::Utf8Error};
 
 #[derive(Clone, Copy)]
 pub struct LuaString<'gc>(pub(crate) Gc<'gc, BoxedString>);
 
 impl std::fmt::Debug for LuaString<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_tuple("LuaString")
-            .field(&String::from_utf8_lossy(&self.0))
-            .finish()
+        f.write_char('"')?;
+        for ch in self.0.as_bytes() {
+            match *ch {
+                b'"' => f.write_str("\\\"")?,
+                b'\\' => f.write_str("\\\\")?,
+                0x7 => f.write_str("\\a")?,
+                0x8 => f.write_str("\\b")?,
+                0xc => f.write_str("\\f")?,
+                b'\n' => f.write_str("\\n")?,
+                b'\r' => f.write_str("\\r")?,
+                b'\t' => f.write_str("\\t")?,
+                0xb => f.write_str("\\v")?,
+                ch if ch == b' ' || ch.is_ascii_graphic() => f.write_char(char::from(ch))?,
+                ch => write!(f, "\\{:03}", ch)?,
+            }
+        }
+        f.write_char('"')
     }
 }
 
