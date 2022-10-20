@@ -429,6 +429,8 @@ fn parse_number<S: AsRef<[u8]>>(s: S) -> Option<Number> {
 
 // sprintf("%.14g") except it does not remove suffix ".0" when x is an integer
 fn fmt_number<W: std::io::Write>(writer: &mut W, x: Number) -> std::io::Result<()> {
+    const PRECISION: usize = 14;
+
     if x == 0.0 {
         return writer.write_all(b"0.0");
     } else if x.is_nan() {
@@ -438,7 +440,7 @@ fn fmt_number<W: std::io::Write>(writer: &mut W, x: Number) -> std::io::Result<(
         return writer.write_all(b"nan");
     }
 
-    let mut precision = 14;
+    let mut precision = PRECISION - 1;
     let log_x = x.abs().log10();
     if log_x < -3.0 || (precision as Number) < log_x {
         return write!(writer, "{x:.precision$e}");

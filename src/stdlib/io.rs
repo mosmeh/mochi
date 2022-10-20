@@ -533,6 +533,8 @@ fn write_arg<W: std::io::Write>(writer: &mut W, arg: &Argument) -> Result<(), Fi
 
 // sprintf("%.14g")
 fn write_number<W: std::io::Write>(writer: &mut W, x: Number) -> std::io::Result<()> {
+    const PRECISION: usize = 14;
+
     if x == 0.0 {
         return writer.write_all(b"0");
     } else if x.is_nan() {
@@ -543,7 +545,7 @@ fn write_number<W: std::io::Write>(writer: &mut W, x: Number) -> std::io::Result
     }
 
     let log_x = x.abs().log10();
-    let mut precision = 14;
+    let mut precision = PRECISION - 1;
     if log_x < -3.0 || (precision as Number) < log_x {
         return write!(writer, "{x:.precision$e}");
     }
