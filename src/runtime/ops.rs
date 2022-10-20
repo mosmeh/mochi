@@ -21,34 +21,6 @@ where
     None
 }
 
-fn float_arithmetic<'gc, F>(a: Value<'gc>, b: Value<'gc>, float_op: F) -> Option<Value<'gc>>
-where
-    F: Fn(Number, Number) -> Number,
-{
-    if let (Some(a), Some(b)) = (
-        a.to_number_without_string_coercion(),
-        b.to_number_without_string_coercion(),
-    ) {
-        Some(Value::Number(float_op(a, b)))
-    } else {
-        None
-    }
-}
-
-fn bitwise_op<'gc, I>(a: Value<'gc>, b: Value<'gc>, int_op: I) -> Option<Value<'gc>>
-where
-    I: Fn(Integer, Integer) -> Integer,
-{
-    if let (Some(a), Some(b)) = (
-        a.to_integer_without_string_coercion(),
-        b.to_integer_without_string_coercion(),
-    ) {
-        Some(Value::Integer(int_op(a, b)))
-    } else {
-        None
-    }
-}
-
 pub(super) fn compare_with_immediate<I, F>(
     a: Value,
     imm: i16,
@@ -97,6 +69,7 @@ pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
 {
     let rb = stack[insn.b()];
     let kc = constants[insn.c() as usize];
+    debug_assert!(matches!(kc, Value::Integer(_) | Value::Number(_)));
     if let Some(result) = arithmetic(rb, kc, int_op, float_op) {
         stack[insn.a()] = result;
         *pc += 1;
@@ -139,8 +112,11 @@ pub(super) fn do_float_arithmetic<'gc, F>(
 {
     let rb = stack[insn.b()];
     let rc = stack[insn.c() as usize];
-    if let Some(result) = float_arithmetic(rb, rc, float_op) {
-        stack[insn.a()] = result;
+    if let (Some(a), Some(b)) = (
+        rb.to_number_without_string_coercion(),
+        rc.to_number_without_string_coercion(),
+    ) {
+        stack[insn.a()] = Value::Number(float_op(a, b));
         *pc += 1;
     }
 }
@@ -156,6 +132,7 @@ pub(super) fn do_float_arithmetic_with_constant<'gc, F>(
 {
     let rb = stack[insn.b()];
     let kc = constants[insn.c() as usize];
+    debug_assert!(matches!(kc, Value::Integer(_) | Value::Number(_)));
     if let (Some(b), Some(c)) = (
         rb.to_number_without_string_coercion(),
         kc.to_number_without_string_coercion(),
@@ -175,8 +152,11 @@ pub(super) fn do_bitwise_op<'gc, I>(
 {
     let rb = stack[insn.b()];
     let rc = stack[insn.c() as usize];
-    if let Some(result) = bitwise_op(rb, rc, int_op) {
-        stack[insn.a()] = result;
+    if let (Some(a), Some(b)) = (
+        rb.to_integer_without_string_coercion(),
+        rc.to_integer_without_string_coercion(),
+    ) {
+        stack[insn.a()] = Value::Integer(int_op(a, b));
         *pc += 1;
     }
 }
@@ -191,10 +171,11 @@ pub(super) fn do_bitwise_op_with_constant<'gc, I>(
     I: Fn(Integer, Integer) -> Integer,
 {
     let rb = stack[insn.b()];
-    let kc = constants[insn.c() as usize];
-    debug_assert!(matches!(kc, Value::Integer(_)));
-    if let Some(result) = bitwise_op(rb, kc, int_op) {
-        stack[insn.a()] = result;
+    if let Some(a) = rb.to_integer_without_string_coercion() {
+        stack[insn.a()] = match constants[insn.c() as usize] {
+            Value::Integer(b) => Value::Integer(int_op(a, b)),
+            _ => unreachable!(),
+        };
         *pc += 1;
     }
 }
