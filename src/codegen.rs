@@ -766,62 +766,85 @@ impl<'gc> CodeGenerator<'gc> {
                 };
 
                 if let LazyRValue::Constant(constant) = rhs {
-                    if op == BinaryOp::Sub {
-                        if let Value::Integer(i) = constant {
-                            if let Ok(rhs) = (-i).try_into() {
-                                self.emit(IrInstruction::BinaryOpImmediate {
-                                    op: BinaryOp::Add,
-                                    dest,
-                                    lhs,
-                                    rhs,
-                                    flipped,
-                                });
-                                return Ok(());
+                    match constant {
+                        Value::Integer(i) => {
+                            if op == BinaryOp::Sub {
+                                if let Ok(rhs) = (-i).try_into() {
+                                    self.emit(IrInstruction::BinaryOpImmediate {
+                                        op: BinaryOp::Add,
+                                        dest,
+                                        lhs,
+                                        rhs,
+                                        flipped,
+                                    });
+                                    return Ok(());
+                                }
                             }
-                        }
-                    }
 
-                    let op_has_immediate_variant =
-                        matches!(op, BinaryOp::Add | BinaryOp::Shr | BinaryOp::Shl);
-                    if op_has_immediate_variant {
-                        if let Value::Integer(i) = constant {
-                            if let Ok(rhs) = i.try_into() {
-                                self.emit(IrInstruction::BinaryOpImmediate {
-                                    op,
-                                    dest,
-                                    lhs,
-                                    rhs,
-                                    flipped,
-                                });
-                                return Ok(());
+                            if matches!(op, BinaryOp::Add | BinaryOp::Shr | BinaryOp::Shl) {
+                                if let Ok(rhs) = i.try_into() {
+                                    self.emit(IrInstruction::BinaryOpImmediate {
+                                        op,
+                                        dest,
+                                        lhs,
+                                        rhs,
+                                        flipped,
+                                    });
+                                    return Ok(());
+                                }
                             }
-                        }
-                    }
 
-                    let op_has_constant_variant = matches!(
-                        op,
-                        BinaryOp::Add
-                            | BinaryOp::Sub
-                            | BinaryOp::Mul
-                            | BinaryOp::Div
-                            | BinaryOp::IDiv
-                            | BinaryOp::Pow
-                            | BinaryOp::Mod
-                            | BinaryOp::BAnd
-                            | BinaryOp::BXor
-                            | BinaryOp::BOr
-                    );
-                    if op_has_constant_variant {
-                        if let Some(rhs) = self.try_allocate_rk_constant(constant) {
-                            self.emit(IrInstruction::BinaryOpConstant {
+                            let op_has_constant_variant = matches!(
                                 op,
-                                dest,
-                                lhs,
-                                rhs,
-                                flipped,
-                            });
-                            return Ok(());
+                                BinaryOp::Add
+                                    | BinaryOp::Sub
+                                    | BinaryOp::Mul
+                                    | BinaryOp::Div
+                                    | BinaryOp::IDiv
+                                    | BinaryOp::Pow
+                                    | BinaryOp::Mod
+                                    | BinaryOp::BAnd
+                                    | BinaryOp::BXor
+                                    | BinaryOp::BOr
+                            );
+                            if op_has_constant_variant {
+                                if let Some(rhs) = self.try_allocate_rk_constant(constant) {
+                                    self.emit(IrInstruction::BinaryOpConstant {
+                                        op,
+                                        dest,
+                                        lhs,
+                                        rhs,
+                                        flipped,
+                                    });
+                                    return Ok(());
+                                }
+                            }
                         }
+                        Value::Number(_) => {
+                            let op_has_constant_variant = matches!(
+                                op,
+                                BinaryOp::Add
+                                    | BinaryOp::Sub
+                                    | BinaryOp::Mul
+                                    | BinaryOp::Div
+                                    | BinaryOp::IDiv
+                                    | BinaryOp::Pow
+                                    | BinaryOp::Mod
+                            );
+                            if op_has_constant_variant {
+                                if let Some(rhs) = self.try_allocate_rk_constant(constant) {
+                                    self.emit(IrInstruction::BinaryOpConstant {
+                                        op,
+                                        dest,
+                                        lhs,
+                                        rhs,
+                                        flipped,
+                                    });
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        _ => (),
                     }
                 }
 
