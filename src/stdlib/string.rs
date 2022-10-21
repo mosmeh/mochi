@@ -7,7 +7,7 @@ use crate::{
     runtime::{Action, ErrorKind, Metamethod, Vm},
     types::{Integer, Table, Type, Value},
 };
-use bstr::B;
+use bstr::{ByteSlice, B};
 use std::ops::Range;
 
 pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
@@ -19,6 +19,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
             (B("byte"), string_byte),
             (B("char"), string_char),
             (B("dump"), string_dump),
+            (B("find"), string_find),
             (B("format"), format::string_format),
             (B("len"), string_len),
             (B("lower"), string_lower),
@@ -99,6 +100,47 @@ fn string_dump<'gc>(
             got_type: value.map(|value| value.ty().name()),
         }),
     }
+}
+
+fn string_find<'gc>(
+    _: &'gc GcContext,
+    _: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
+) -> Result<Action<'gc>, ErrorKind> {
+    let s = args.nth(1);
+    let s = s.to_string()?;
+    let pattern = args.nth(2);
+    let pattern = pattern.to_string()?;
+    let init = args.nth(3).to_integer_or(1)?;
+    let plain = args.nth(4).to_boolean().unwrap_or_default();
+
+    let len = s.len();
+    let start = match init {
+        1.. => init - 1,
+        0 => 0,
+        _ if init < -(len as Integer) => 0,
+        _ => len as Integer + init,
+    } as usize;
+    if start >= len {
+        return Ok(Action::Return(vec![Value::Nil]));
+    }
+
+    const SPECIALS: &[u8] = b"^$*+?.([%-";
+    if !plain && pattern.find_byteset(SPECIALS).is_some() {
+        todo!("regex")
+    }
+
+    Ok(Action::Return(
+        if let Some(pos) = &s[start..].find(&pattern) {
+            let i = *pos + start;
+            vec![
+                ((i + 1) as Integer).into(),
+                ((i + pattern.len()) as Integer).into(),
+            ]
+        } else {
+            vec![Value::Nil]
+        },
+    ))
 }
 
 fn string_len<'gc>(
