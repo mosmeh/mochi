@@ -9,11 +9,11 @@ path = "src/main.rs"
 required-features = ["bin"]
 
 [dependencies]
-anyhow = { version = "1.0.66", optional = true }
-bstr = { version = "1.0.1", features = ["std"], default-features = false }
+anyhow = { version = "1.0.68", optional = true }
+bstr = { version = "1.1.0", features = ["std"], default-features = false }
 byteorder = "1.4.3"
 chrono = { version = "0.4.23", features = ["clock"], default-features = false }
-clap = { version = "4.0.27", features = ["std", "help", "usage", "error-context", "derive", "deprecated"], default-features = false, optional = true }
+clap = { version = "4.0.29", features = ["std", "help", "usage", "error-context", "derive", "deprecated"], default-features = false, optional = true }
 cpu-time = "1.0.0"
 hashbrown = { version = "0.13.1", features = ["inline-more", "raw"], default-features = false }
 rand = { version = "0.8.5", features = ["getrandom"], default-features = false }
@@ -21,7 +21,7 @@ rand_xoshiro = "0.6.0"
 rlua = { version = "0.19.4", features = ["builtin-lua54", "lua-no-oslib"], optional = true }
 rustc-hash = "1.1.0"
 rustyline = { version = "10.0.0", default-features = false, optional = true }
-thiserror = "1.0.37"
+thiserror = "1.0.38"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = { version = "0.5.0", optional = true }
@@ -32,7 +32,31 @@ lto = true
 panic = "abort"
 
 [features]
-default = ["bin", "jemalloc"]
+default = ["bin", "jemalloc", "luac"]
 bin = ["anyhow", "clap", "rustyline"]
 jemalloc = ["jemallocator"]
 luac = ["rlua"]
+
+[profile.reldev]
+inherits = "dev"
+opt-level = 3
+
+#[dev-dependencies]
+#criterion = "0.4.0"
+
+#[profile.bench]
+#codegen-units = 1
+#lto = true
+
+#[[bench]]
+#name = "bench"
+#harness = false
+
+#[profile.dev]
+#opt-level = 3
+#debug-assertions = false
+#panic = "abort"
+
+[profile.debugrel]
+inherits = "release"
+debug = true
