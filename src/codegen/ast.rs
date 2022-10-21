@@ -714,39 +714,53 @@ impl<'gc> CodeGenerator<'gc> {
     ) -> Result<LazyLValue, CodegenError> {
         let index = self.evaluate_expr(index)?;
         let table = self.force_lvalue(table)?;
-        let indexed = match table {
-            LValue::Register(table) => match index {
-                LazyRValue::Constant(Value::Integer(i)) if 0 <= i && i <= u8::MAX as Integer => {
-                    LazyLValue::TableIntegerKey {
-                        table,
-                        key: i as u8,
+
+        let table = match (table, &index) {
+            (LValue::Register(table), _) => table,
+            (LValue::Upvalue(upvalue), LazyRValue::Constant(Value::String(index))) => {
+                let indexed = match self.discharge_to_rk(*index)? {
+                    RkIndex::Register(key) => {
+                        let table = self.allocate_register()?;
+                        self.emit(IrInstruction::GetUpvalue {
+                            dest: table,
+                            upvalue,
+                        });
+                        LazyLValue::TableGenericKey { table, key }
                     }
+                    RkIndex::Constant(field) => LazyLValue::UpvalueField {
+                        table: upvalue,
+                        field,
+                    },
+                };
+                return Ok(indexed);
+            }
+            (LValue::Upvalue(upvalue), _) => {
+                let table = self.allocate_register()?;
+                self.emit(IrInstruction::GetUpvalue {
+                    dest: table,
+                    upvalue,
+                });
+                table
+            }
+        };
+
+        let indexed = match index {
+            LazyRValue::Constant(Value::Integer(i)) if 0 <= i && i <= u8::MAX as Integer => {
+                LazyLValue::TableIntegerKey {
+                    table,
+                    key: i as u8,
                 }
-                string @ LazyRValue::Constant(Value::String(_)) => {
-                    match self.discharge_to_rk(string)? {
-                        RkIndex::Register(key) => LazyLValue::TableGenericKey { table, key },
-                        RkIndex::Constant(field) => LazyLValue::TableField { table, field },
-                    }
+            }
+            string @ LazyRValue::Constant(Value::String(_)) => {
+                match self.discharge_to_rk(string)? {
+                    RkIndex::Register(key) => LazyLValue::TableGenericKey { table, key },
+                    RkIndex::Constant(field) => LazyLValue::TableField { table, field },
                 }
-                key => {
-                    let key = self.discharge_to_any_register(key)?;
-                    LazyLValue::TableGenericKey { table, key }
-                }
-            },
-            LValue::Upvalue(upvalue) => match self.discharge_to_rk(index)? {
-                RkIndex::Register(key) => {
-                    let table = self.allocate_register()?;
-                    self.emit(IrInstruction::GetUpvalue {
-                        dest: table,
-                        upvalue,
-                    });
-                    LazyLValue::TableGenericKey { table, key }
-                }
-                RkIndex::Constant(field) => LazyLValue::UpvalueField {
-                    table: upvalue,
-                    field,
-                },
-            },
+            }
+            key => {
+                let key = self.discharge_to_any_register(key)?;
+                LazyLValue::TableGenericKey { table, key }
+            }
         };
         Ok(indexed)
     }
