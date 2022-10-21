@@ -244,8 +244,6 @@ impl<'gc> CodeGenerator<'gc> {
                 step,
                 body,
             } => {
-                self.ensure_register_window(base, 4)?;
-
                 let init_register = base;
                 self.current_frame()
                     .local_variable_stack
@@ -253,6 +251,7 @@ impl<'gc> CodeGenerator<'gc> {
                 let initial_value = self.evaluate_expr(initial_value)?;
                 self.discharge_to_register(initial_value, init_register)?;
 
+                self.ensure_register_window(base, 2)?;
                 let limit_register = RegisterIndex(base.0 + 1);
                 self.current_frame()
                     .local_variable_stack
@@ -260,6 +259,7 @@ impl<'gc> CodeGenerator<'gc> {
                 let limit = self.evaluate_expr(limit)?;
                 self.discharge_to_register(limit, limit_register)?;
 
+                self.ensure_register_window(base, 3)?;
                 let step_register = RegisterIndex(base.0 + 2);
                 self.current_frame()
                     .local_variable_stack
@@ -271,6 +271,7 @@ impl<'gc> CodeGenerator<'gc> {
                 };
                 self.discharge_to_register(step, step_register)?;
 
+                self.ensure_register_window(base, 4)?;
                 let control_register = RegisterIndex(base.0 + 3);
                 self.current_frame()
                     .local_variable_stack
@@ -283,8 +284,6 @@ impl<'gc> CodeGenerator<'gc> {
                 expressions,
                 body,
             } => {
-                self.ensure_register_window(base, 4 + variables.len())?;
-
                 let mut expr_registers = self.emit_assigned_values(expressions, 4)?.into_iter();
                 for i in 0..4 {
                     let expr_rvalue: LazyRValue = if let Some(register) = expr_registers.next() {
@@ -292,6 +291,7 @@ impl<'gc> CodeGenerator<'gc> {
                     } else {
                         Value::Nil.into()
                     };
+                    self.ensure_register_window(base, i as usize + 1)?;
                     let register = RegisterIndex(base.0 + i);
                     self.discharge_to_register(expr_rvalue, register)?;
                     self.current_frame()
@@ -299,6 +299,7 @@ impl<'gc> CodeGenerator<'gc> {
                         .push((None, register));
                 }
 
+                self.ensure_register_window(base, 4 + variables.len())?;
                 for (i, variable) in variables.into_iter().enumerate() {
                     self.current_frame()
                         .local_variable_stack
