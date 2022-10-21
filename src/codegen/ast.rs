@@ -1,14 +1,14 @@
 use super::{
     ir::{IrInstruction, RkIndex},
-    CodeGenerator, CodegenError, LValue, LazyLValue, LazyRValue,
+    CodeGenerator, CodegenError, Frame, LValue, LazyLValue, LazyRValue,
 };
 use crate::{
     parser::ast::{
         AssignmentStatement, BinaryOp, BinaryOpExpression, Block, Chunk, Expression, ForStatement,
-        FunctionCallStatement, FunctionExpression, FunctionParameter, FunctionStatement,
-        IfStatement, LocalVariableStatement, Primary, RepeatStatement, Statement, Suffix,
-        SuffixedExpression, TableConstructorExpression, TableField, TableRecordKey,
-        UnaryOpExpression, Variable, WhileStatement,
+        FunctionCallStatement, FunctionExpression, FunctionStatement, IfStatement,
+        LocalVariableStatement, Primary, RepeatStatement, Statement, Suffix, SuffixedExpression,
+        TableConstructorExpression, TableField, TableRecordKey, UnaryOpExpression, Variable,
+        WhileStatement,
     },
     types::{Integer, LuaString, RegisterIndex, Value},
 };
@@ -21,10 +21,22 @@ impl<'gc> CodeGenerator<'gc> {
         let has_return = chunk.0.return_statement.is_some();
         self.codegen_block(chunk.0)?;
         if !has_return {
+            let Frame {
+                num_fixed_args,
+                is_vararg,
+                needs_to_close_upvalues: close_upvalues,
+                ..
+            } = *self.current_frame();
+
+            assert_eq!(num_fixed_args, 0);
+            assert!(is_vararg);
+
             self.emit(IrInstruction::Return {
                 base: RegisterIndex(0),
                 count: Some(0),
-                close_upvalues: false,
+                num_fixed_args: 0,
+                is_vararg: true,
+                close_upvalues,
             });
         }
         Ok(())
@@ -50,10 +62,17 @@ impl<'gc> CodeGenerator<'gc> {
                     (base, count.map(|c| c.try_into().unwrap()))
                 }
             };
-            let close_upvalues = self.current_frame().needs_to_close_upvalues;
+            let Frame {
+                num_fixed_args,
+                is_vararg,
+                needs_to_close_upvalues: close_upvalues,
+                ..
+            } = *self.current_frame();
             self.emit(IrInstruction::Return {
                 base,
                 count,
+                num_fixed_args,
+                is_vararg,
                 close_upvalues,
             });
         }
@@ -70,7 +89,7 @@ impl<'gc> CodeGenerator<'gc> {
             Expression::String(s) => Ok(s.into()),
             Expression::Nil => Ok(Value::Nil.into()),
             Expression::Boolean(b) => Ok(b.into()),
-            Expression::VarArg => todo!("vararg"),
+            Expression::VarArg => self.evaluate_vararg(),
             Expression::TableConstructor(t) => self.evaluate_table_constructor_expr(t),
             Expression::Function(f) => self.evaluate_func_expr(f),
             Expression::Suffixed(s) => self.evaluate_suffixed_expr(s),
@@ -248,7 +267,7 @@ impl<'gc> CodeGenerator<'gc> {
                 self.current_frame()
                     .local_variable_stack
                     .push((None, init_register));
-                let initial_value = self.evaluate_expr(initial_value)?;
+                let initial_value = self.evaluate_expr(*initial_value)?;
                 self.discharge_to_register(initial_value, init_register)?;
 
                 self.ensure_register_window(base, 2)?;
@@ -256,7 +275,7 @@ impl<'gc> CodeGenerator<'gc> {
                 self.current_frame()
                     .local_variable_stack
                     .push((None, limit_register));
-                let limit = self.evaluate_expr(limit)?;
+                let limit = self.evaluate_expr(*limit)?;
                 self.discharge_to_register(limit, limit_register)?;
 
                 self.ensure_register_window(base, 3)?;
@@ -265,7 +284,7 @@ impl<'gc> CodeGenerator<'gc> {
                     .local_variable_stack
                     .push((None, step_register));
                 let step = if let Some(step) = step {
-                    self.evaluate_expr(step)?
+                    self.evaluate_expr(*step)?
                 } else {
                     1.into()
                 };
@@ -372,23 +391,22 @@ impl<'gc> CodeGenerator<'gc> {
 
     fn codegen_func_statement(
         &mut self,
-        statement: FunctionStatement<'gc>,
+        mut statement: FunctionStatement<'gc>,
     ) -> Result<(), CodegenError> {
         let mut lvalue = self.resolve_name(statement.name)?;
         for field in statement.fields {
             lvalue = self.resolve_table_field(lvalue, field)?;
         }
 
-        let proto = if let Some(method) = statement.method {
+        if let Some(method) = statement.method {
             lvalue = self.resolve_table_field(lvalue, method)?;
+            statement
+                .expression
+                .params
+                .insert(0, self.gc.allocate_string(B("self")));
+        }
 
-            let mut params = vec![FunctionParameter::Name(self.gc.allocate_string(B("self")))];
-            params.extend_from_slice(&statement.params);
-            self.emit_function(params, statement.body)?
-        } else {
-            self.emit_function(statement.params, statement.body)?
-        };
-
+        let proto = self.emit_function(statement.expression)?;
         self.emit_assignment(lvalue, proto)?;
         Ok(())
     }
@@ -463,12 +481,21 @@ impl<'gc> CodeGenerator<'gc> {
         Ok(())
     }
 
+    fn evaluate_vararg(&mut self) -> Result<LazyRValue<'gc>, CodegenError> {
+        if self.current_frame().is_vararg {
+            Ok(LazyRValue::VarArg {
+                may_have_multiple_values: true,
+            })
+        } else {
+            Err(CodegenError::VarArgExpressionOutsideVarArgFunction)
+        }
+    }
+
     fn evaluate_func_expr(
         &mut self,
         expr: FunctionExpression<'gc>,
     ) -> Result<LazyRValue<'gc>, CodegenError> {
-        let proto = self.emit_function(expr.params, expr.body)?;
-        Ok(proto.into())
+        Ok(self.emit_function(expr)?.into())
     }
 
     fn evaluate_suffixed_expr(
@@ -513,25 +540,21 @@ impl<'gc> CodeGenerator<'gc> {
             Primary::Expression(expr) => {
                 let value = self.evaluate_expr(*expr)?;
                 let value = match value {
-                    LazyRValue::FunctionCall {
-                        callee,
-                        args,
-                        may_return_multiple_values: _,
-                    } => LazyRValue::FunctionCall {
+                    LazyRValue::FunctionCall { callee, args, .. } => LazyRValue::FunctionCall {
                         callee,
                         args,
                         may_return_multiple_values: false,
                     },
                     LazyRValue::MethodCall {
-                        table,
-                        name,
-                        args,
-                        may_return_multiple_values: _,
+                        table, name, args, ..
                     } => LazyRValue::MethodCall {
                         table,
                         name,
                         args,
                         may_return_multiple_values: false,
+                    },
+                    LazyRValue::VarArg { .. } => LazyRValue::VarArg {
+                        may_have_multiple_values: false,
                     },
                     _ => value,
                 };

@@ -47,9 +47,9 @@ pub struct WhileStatement<'gc> {
 pub enum ForStatement<'gc> {
     Numerical {
         control: LuaString<'gc>,
-        initial_value: Expression<'gc>,
-        limit: Expression<'gc>,
-        step: Option<Expression<'gc>>,
+        initial_value: Box<Expression<'gc>>,
+        limit: Box<Expression<'gc>>,
+        step: Option<Box<Expression<'gc>>>,
         body: Block<'gc>,
     },
     Generic {
@@ -70,14 +70,7 @@ pub struct FunctionStatement<'gc> {
     pub name: LuaString<'gc>,
     pub fields: Vec<LuaString<'gc>>,
     pub method: Option<LuaString<'gc>>,
-    pub params: Vec<FunctionParameter<'gc>>,
-    pub body: Block<'gc>,
-}
-
-#[derive(Debug, Clone)]
-pub enum FunctionParameter<'gc> {
-    Name(LuaString<'gc>),
-    VarArg,
+    pub expression: FunctionExpression<'gc>,
 }
 
 #[derive(Debug, Clone)]
@@ -149,7 +142,8 @@ pub enum TableRecordKey<'gc> {
 
 #[derive(Debug, Clone)]
 pub struct FunctionExpression<'gc> {
-    pub params: Vec<FunctionParameter<'gc>>,
+    pub params: Vec<LuaString<'gc>>,
+    pub is_vararg: bool,
     pub body: Block<'gc>,
 }
 

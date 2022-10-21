@@ -6,7 +6,7 @@ use crate::{
     gc::GcContext,
     number_is_valid_integer,
     parser::ast::{
-        BinaryOp, Block, Chunk, Expression, FunctionArguments, FunctionParameter, UnaryOp,
+        BinaryOp, Block, Chunk, Expression, FunctionArguments, FunctionExpression, UnaryOp,
     },
     runtime::Metamethod,
     types::{
@@ -14,6 +14,7 @@ use crate::{
     },
 };
 use ir::{ConstantIndex25, ConstantIndex8, IrAddress, IrInstruction, Label, ProtoIndex, RkIndex};
+use std::num::NonZeroU8;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
@@ -32,6 +33,9 @@ pub enum CodegenError {
     #[error("control structure too long")]
     ControlStructureTooLong,
 
+    #[error("cannot use '...' outside a vararg function")]
+    VarArgExpressionOutsideVarArgFunction,
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -43,6 +47,7 @@ pub fn codegen<'gc>(
 ) -> Result<LuaClosureProto<'gc>, CodegenError> {
     let mut generator = CodeGenerator::new(gc, source);
     generator.enter_frame();
+    generator.current_frame().is_vararg = true;
     generator.codegen_chunk(chunk)?;
     let proto = generator.finish_frame()?;
     assert!(generator.frames.is_empty());
@@ -142,6 +147,9 @@ enum LazyRValue<'gc> {
         lhs: Box<LazyRValue<'gc>>,
         rhs: Box<LazyRValue<'gc>>,
     },
+    VarArg {
+        may_have_multiple_values: bool,
+    },
 }
 
 impl From<LazyLValue> for LazyRValue<'_> {
@@ -173,6 +181,9 @@ impl LazyRValue<'_> {
                 may_return_multiple_values,
                 ..
             } => *may_return_multiple_values,
+            Self::VarArg {
+                may_have_multiple_values,
+            } => *may_have_multiple_values,
             _ => false,
         }
     }
@@ -180,14 +191,20 @@ impl LazyRValue<'_> {
 
 #[derive(Default)]
 struct Frame<'gc> {
+    register_top: RegisterIndex,
+    max_stack_size: u8,
+
     ir_code: Vec<IrInstruction>,
     label_ir_addresses: Vec<Option<IrAddress>>,
-    max_stack_size: u8,
+
     constants: Vec<Value<'gc>>,
     protos: Vec<LuaClosureProto<'gc>>,
     upvalues: Vec<UpvalueDescription>,
-    register_top: RegisterIndex,
+
     local_variable_stack: Vec<(Option<LuaString<'gc>>, RegisterIndex)>,
+
+    num_fixed_args: u8,
+    is_vararg: bool,
     needs_to_close_upvalues: bool,
 }
 
@@ -433,32 +450,38 @@ impl<'gc> CodeGenerator<'gc> {
         Ok(())
     }
 
-    fn emit_function(
-        &mut self,
-        params: Vec<FunctionParameter<'gc>>,
-        body: Block<'gc>,
-    ) -> Result<ProtoIndex, CodegenError> {
+    fn emit_function(&mut self, expr: FunctionExpression<'gc>) -> Result<ProtoIndex, CodegenError> {
         self.enter_frame();
 
-        for param in params {
-            match param {
-                FunctionParameter::Name(name) => {
-                    let register = self.allocate_register()?;
-                    self.current_frame()
-                        .local_variable_stack
-                        .push((Some(name), register));
-                }
-                FunctionParameter::VarArg => todo!("vararg"),
-            }
+        let num_fixed_args = expr.params.len().try_into().unwrap();
+        let current = self.current_frame();
+        current.num_fixed_args = num_fixed_args;
+        current.is_vararg = expr.is_vararg;
+        if expr.is_vararg {
+            self.emit(IrInstruction::PrepareVarArg { num_fixed_args });
         }
 
-        let has_return = body.return_statement.is_some();
-        self.codegen_block(body)?;
+        for param in expr.params {
+            let register = self.allocate_register()?;
+            self.current_frame()
+                .local_variable_stack
+                .push((Some(param), register));
+        }
+
+        let has_return = expr.body.return_statement.is_some();
+        self.codegen_block(expr.body)?;
         if !has_return {
-            let close_upvalues = self.current_frame().needs_to_close_upvalues;
+            let Frame {
+                num_fixed_args,
+                is_vararg,
+                needs_to_close_upvalues: close_upvalues,
+                ..
+            } = *self.current_frame();
             self.emit(IrInstruction::Return {
                 base: RegisterIndex(0),
                 count: Some(0),
+                num_fixed_args,
+                is_vararg,
                 close_upvalues,
             });
         }
@@ -893,6 +916,16 @@ impl<'gc> CodeGenerator<'gc> {
                     immediate: true,
                 });
             }
+            LazyRValue::VarArg {
+                may_have_multiple_values,
+            } => self.emit(IrInstruction::GetVarArg {
+                dest,
+                num_wanted: if may_have_multiple_values {
+                    None
+                } else {
+                    NonZeroU8::new(1)
+                },
+            }),
         };
         Ok(())
     }

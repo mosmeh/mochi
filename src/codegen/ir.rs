@@ -266,6 +266,8 @@ pub enum IrInstruction {
     Return {
         base: RegisterIndex,
         count: Option<u8>,
+        is_vararg: bool,
+        num_fixed_args: u8,
         close_upvalues: bool,
     },
     ForLoop {
@@ -289,6 +291,10 @@ pub enum IrInstruction {
     GetClosure {
         dest: RegisterIndex,
         proto: ProtoIndex,
+    },
+    GetVarArg {
+        dest: RegisterIndex,
+        num_wanted: Option<NonZeroU8>,
     },
     PrepareVarArg {
         num_fixed_args: u8,
@@ -677,10 +683,12 @@ pub(super) fn lower_ir<'gc>(
             IrInstruction::Return {
                 base,
                 count,
+                num_fixed_args,
+                is_vararg,
                 close_upvalues,
             } => {
                 let opcode = match count {
-                    _ if close_upvalues => OpCode::Return,
+                    _ if is_vararg || close_upvalues => OpCode::Return,
                     Some(0) => OpCode::Return0,
                     Some(1) => OpCode::Return1,
                     _ => OpCode::Return,
@@ -689,7 +697,7 @@ pub(super) fn lower_ir<'gc>(
                     opcode,
                     base.0,
                     count.map(|c| c + 1).unwrap_or_default(),
-                    0,
+                    if is_vararg { num_fixed_args + 1 } else { 0 },
                     close_upvalues,
                 ));
             }
@@ -735,8 +743,15 @@ pub(super) fn lower_ir<'gc>(
                 }
             }
             IrInstruction::GetClosure { dest, proto } => {
-                code.push(Instruction::from_a_bx(OpCode::Closure, dest.0, proto.0));
+                code.push(Instruction::from_a_bx(OpCode::Closure, dest.0, proto.0))
             }
+            IrInstruction::GetVarArg { dest, num_wanted } => code.push(Instruction::from_a_b_c_k(
+                OpCode::VarArg,
+                dest.0,
+                0,
+                num_wanted.map(|n| n.get() + 1).unwrap_or_default(),
+                false,
+            )),
             IrInstruction::PrepareVarArg { num_fixed_args } => {
                 code.push(Instruction::from_a_b_c_k(
                     OpCode::VarArgPrep,

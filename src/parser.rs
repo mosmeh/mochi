@@ -9,11 +9,10 @@ use crate::{
 };
 use ast::{
     AssignmentStatement, BinaryOp, BinaryOpExpression, Block, Chunk, Expression, ForStatement,
-    FunctionArguments, FunctionCallStatement, FunctionExpression, FunctionParameter,
-    FunctionStatement, IfStatement, LocalVariable, LocalVariableStatement, Primary,
-    RepeatStatement, ReturnStatement, Statement, Suffix, SuffixedExpression,
-    TableConstructorExpression, TableField, TableRecordKey, UnaryOp, UnaryOpExpression, Variable,
-    WhileStatement,
+    FunctionArguments, FunctionCallStatement, FunctionExpression, FunctionStatement, IfStatement,
+    LocalVariable, LocalVariableStatement, Primary, RepeatStatement, ReturnStatement, Statement,
+    Suffix, SuffixedExpression, TableConstructorExpression, TableField, TableRecordKey, UnaryOp,
+    UnaryOpExpression, Variable, WhileStatement,
 };
 use std::{borrow::Cow, io::Read};
 
@@ -230,7 +229,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
                 self.expect(Token::Comma)?;
                 let limit = self.parse_expr()?;
                 let step = if self.lexer.consume_if_eq(Token::Comma)? {
-                    Some(self.parse_expr()?)
+                    Some(self.parse_expr()?.into())
                 } else {
                     None
                 };
@@ -239,8 +238,8 @@ impl<'gc, R: Read> Parser<'gc, R> {
                 self.expect(Token::End)?;
                 Ok(ForStatement::Numerical {
                     control: first_variable,
-                    initial_value,
-                    limit,
+                    initial_value: initial_value.into(),
+                    limit: limit.into(),
                     step,
                     body,
                 })
@@ -288,12 +287,13 @@ impl<'gc, R: Read> Parser<'gc, R> {
         self.expect(Token::LeftParen)?;
 
         let mut params = Vec::new();
+        let mut is_vararg = false;
         if !self.lexer.consume_if_eq(Token::RightParen)? {
             loop {
                 match self.lexer.consume()? {
-                    Some(Token::Name(name)) => params.push(FunctionParameter::Name(name)),
+                    Some(Token::Name(name)) => params.push(name),
                     Some(Token::Dots) => {
-                        params.push(FunctionParameter::VarArg);
+                        is_vararg = true;
                         break;
                     }
                     _ => return Err(ErrorKind::unexpected_token("<name> or '...'")),
@@ -312,8 +312,11 @@ impl<'gc, R: Read> Parser<'gc, R> {
             name,
             fields,
             method,
-            params,
-            body,
+            expression: FunctionExpression {
+                params,
+                is_vararg,
+                body,
+            },
         })
     }
 
@@ -532,12 +535,13 @@ impl<'gc, R: Read> Parser<'gc, R> {
         self.expect(Token::LeftParen)?;
 
         let mut params = Vec::new();
+        let mut is_vararg = false;
         if !self.lexer.consume_if_eq(Token::RightParen)? {
             loop {
                 match self.lexer.consume()? {
-                    Some(Token::Name(name)) => params.push(FunctionParameter::Name(name)),
+                    Some(Token::Name(name)) => params.push(name),
                     Some(Token::Dots) => {
-                        params.push(FunctionParameter::VarArg);
+                        is_vararg = true;
                         break;
                     }
                     _ => return Err(ErrorKind::unexpected_token("<name> or '...'")),
@@ -552,7 +556,11 @@ impl<'gc, R: Read> Parser<'gc, R> {
         let body = self.parse_block()?;
         self.expect(Token::End)?;
 
-        Ok(FunctionExpression { params, body })
+        Ok(FunctionExpression {
+            params,
+            is_vararg,
+            body,
+        })
     }
 
     fn parse_func_args(&mut self) -> Result<FunctionArguments<'gc>, ErrorKind> {
