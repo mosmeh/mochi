@@ -8,6 +8,7 @@ use crate::{
     },
     types::{Integer, LuaClosureProto, LuaString, RegisterIndex, UpvalueIndex},
 };
+use std::num::NonZeroU8;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConstantIndex25(u32);
@@ -282,7 +283,7 @@ pub enum IrInstruction {
     },
     SetList {
         table: RegisterIndex,
-        count: u8,
+        count: Option<NonZeroU8>,
         index_offset: usize,
     },
     GetClosure {
@@ -706,11 +707,15 @@ pub(super) fn lower_ir<'gc>(
                 count,
                 index_offset,
             } => {
+                let b = match count {
+                    Some(count) => count.get(),
+                    None => 0,
+                };
                 if let Ok(index_offset) = index_offset.try_into() {
                     code.push(Instruction::from_a_b_c_k(
                         OpCode::SetList,
                         table.0,
-                        count,
+                        b,
                         index_offset,
                         false,
                     ));
@@ -719,7 +724,7 @@ pub(super) fn lower_ir<'gc>(
                     code.push(Instruction::from_a_b_c_k(
                         OpCode::SetList,
                         table.0,
-                        count,
+                        b,
                         (index_offset % FACTOR) as u8,
                         true,
                     ));

@@ -13,6 +13,7 @@ use crate::{
     types::{Integer, LuaString, RegisterIndex, Value},
 };
 use bstr::B;
+use std::num::NonZeroU8;
 
 impl<'gc> CodeGenerator<'gc> {
     pub fn codegen_chunk(&mut self, chunk: Chunk<'gc>) -> Result<(), CodegenError> {
@@ -80,7 +81,7 @@ impl<'gc> CodeGenerator<'gc> {
 
     pub fn evaluate_table_constructor_expr(
         &mut self,
-        expr: TableConstructorExpression<'gc>,
+        mut expr: TableConstructorExpression<'gc>,
     ) -> Result<LazyRValue<'gc>, CodegenError> {
         let table = self.allocate_register()?;
         self.emit(IrInstruction::CreateTable { dest: table });
@@ -89,23 +90,24 @@ impl<'gc> CodeGenerator<'gc> {
         let mut next_index_offset = 0;
         let mut num_pending_fields = 0;
 
-        for field in expr.0 {
+        let mut emit_field = |field| -> Result<(), CodegenError> {
             match field {
                 TableField::List(expr) => {
+                    num_pending_fields += 1;
+                    self.ensure_register_window(table, num_pending_fields as usize + 1)?;
+                    let value = self.evaluate_expr(expr)?;
+                    self.discharge_to_register(value, RegisterIndex(table.0 + num_pending_fields))?;
+
                     if num_pending_fields >= MAX_NUM_FIELDS_PER_FLUSH {
                         self.emit(IrInstruction::SetList {
                             table,
-                            count: num_pending_fields,
+                            count: NonZeroU8::new(num_pending_fields),
                             index_offset: next_index_offset,
                         });
                         next_index_offset += num_pending_fields as usize;
                         num_pending_fields = 0;
                         self.current_frame().register_top.0 = table.0 + 1;
                     }
-                    num_pending_fields += 1;
-                    self.ensure_register_window(table, num_pending_fields as usize + 1)?;
-                    let value = self.evaluate_expr(expr)?;
-                    self.discharge_to_register(value, RegisterIndex(table.0 + num_pending_fields))?;
                 }
                 TableField::Record { key, value } => {
                     let lhs = match key {
@@ -116,12 +118,39 @@ impl<'gc> CodeGenerator<'gc> {
                     self.emit_assignment(lhs, rhs)?;
                 }
             }
+            Ok(())
+        };
+
+        let last_field = expr.0.pop();
+        for field in expr.0 {
+            emit_field(field)?;
+        }
+
+        match last_field {
+            Some(TableField::List(expr)) => {
+                num_pending_fields += 1;
+                self.ensure_register_window(table, num_pending_fields as usize + 1)?;
+                let value = self.evaluate_expr(expr)?;
+                let is_multi = value.may_have_multiple_values();
+                self.discharge_to_register(value, RegisterIndex(table.0 + num_pending_fields))?;
+
+                if is_multi {
+                    self.emit(IrInstruction::SetList {
+                        table,
+                        count: None,
+                        index_offset: next_index_offset,
+                    });
+                    return Ok(LazyLValue::Register(table).into());
+                }
+            }
+            Some(field) => emit_field(field)?,
+            None => (),
         }
 
         if num_pending_fields > 0 {
             self.emit(IrInstruction::SetList {
                 table,
-                count: num_pending_fields,
+                count: NonZeroU8::new(num_pending_fields),
                 index_offset: next_index_offset,
             });
         }
