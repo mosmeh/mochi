@@ -203,6 +203,7 @@ pub enum IrInstruction {
         dest: RegisterIndex,
         lhs: RegisterIndex,
         rhs: ImmediateI8,
+        metamethod: Metamethod,
         flipped: bool,
     },
     BinaryOpConstant {
@@ -499,6 +500,7 @@ pub(super) fn lower_ir<'gc>(
                 dest,
                 lhs,
                 rhs,
+                metamethod,
                 flipped,
             } => {
                 let opcode = op.immdiate_opcode();
@@ -506,12 +508,11 @@ pub(super) fn lower_ir<'gc>(
                     opcode, dest.0, lhs.0, rhs.0, false,
                 ));
 
-                let c = op.metamethod() as u8;
                 code.push(Instruction::from_a_sb_c_k(
                     OpCode::MmBinI,
                     lhs.0,
                     rhs.0,
-                    c,
+                    metamethod as u8,
                     flipped,
                 ));
             }
@@ -867,24 +868,6 @@ impl BinaryOp {
             Self::BAnd => OpCode::BAndK,
             Self::BXor => OpCode::BXorK,
             Self::BOr => OpCode::BOrK,
-            _ => unreachable!(),
-        }
-    }
-
-    fn metamethod(&self) -> Metamethod {
-        match self {
-            Self::Add => Metamethod::Add,
-            Self::Sub => Metamethod::Sub,
-            Self::Mul => Metamethod::Mul,
-            Self::Div => Metamethod::Div,
-            Self::IDiv => Metamethod::IDiv,
-            Self::Pow => Metamethod::Pow,
-            Self::Mod => Metamethod::Mod,
-            Self::BAnd => Metamethod::BAnd,
-            Self::BXor => Metamethod::BXor,
-            Self::BOr => Metamethod::BOr,
-            Self::Shr => Metamethod::Shr,
-            Self::Shl => Metamethod::Shl,
             _ => unreachable!(),
         }
     }

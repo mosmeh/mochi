@@ -10,8 +10,7 @@ use std::ops::ControlFlow;
 
 macro_rules! metamethods {
     ($($variant:ident => $name:tt,)*) => {
-        #[allow(dead_code)]
-        #[derive(Clone, Copy)]
+        #[derive(Clone, Copy, Debug)]
         pub enum Metamethod {
             $($variant,)*
         }

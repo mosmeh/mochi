@@ -539,17 +539,20 @@ impl<'gc> CodeGenerator<'gc> {
 
         let mut rhs = self.evaluate_expr(*expr.rhs)?;
 
-        let op_is_commutative = matches!(
+        let op_can_be_flipped = matches!(
             op,
-            BinaryOp::Add | BinaryOp::Mul | BinaryOp::Eq | BinaryOp::Ne
-        );
-        let op_is_anticommutative = matches!(
-            op,
-            BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
+            BinaryOp::Add
+                | BinaryOp::Mul
+                | BinaryOp::Eq
+                | BinaryOp::Ne
+                | BinaryOp::Lt
+                | BinaryOp::Le
+                | BinaryOp::Gt
+                | BinaryOp::Ge
         );
 
         let mut flipped = false;
-        if op_is_commutative || op_is_anticommutative {
+        if op_can_be_flipped {
             flipped = match (&lhs, &rhs) {
                 (LazyRValue::Constant(lhs), LazyRValue::Constant(rhs))
                     if std::mem::discriminant(lhs) == std::mem::discriminant(rhs) =>

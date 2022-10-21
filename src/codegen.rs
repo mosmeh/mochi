@@ -8,6 +8,7 @@ use crate::{
     parser::ast::{
         BinaryOp, Block, Chunk, Expression, FunctionArguments, FunctionParameter, UnaryOp,
     },
+    runtime::Metamethod,
     types::{
         Integer, LuaClosureProto, LuaString, RegisterIndex, UpvalueDescription, UpvalueIndex, Value,
     },
@@ -768,30 +769,47 @@ impl<'gc> CodeGenerator<'gc> {
                 if let LazyRValue::Constant(constant) = rhs {
                     match constant {
                         Value::Integer(i) => {
-                            if op == BinaryOp::Sub {
-                                if let Ok(rhs) = (-i).try_into() {
-                                    self.emit(IrInstruction::BinaryOpImmediate {
-                                        op: BinaryOp::Add,
-                                        dest,
-                                        lhs,
-                                        rhs,
-                                        flipped,
-                                    });
-                                    return Ok(());
+                            match op {
+                                BinaryOp::Add | BinaryOp::Shr => {
+                                    if let Ok(rhs) = i.try_into() {
+                                        self.emit(IrInstruction::BinaryOpImmediate {
+                                            op,
+                                            dest,
+                                            lhs,
+                                            rhs,
+                                            metamethod: op.metamethod(),
+                                            flipped,
+                                        });
+                                        return Ok(());
+                                    }
                                 }
-                            }
-
-                            if matches!(op, BinaryOp::Add | BinaryOp::Shr | BinaryOp::Shl) {
-                                if let Ok(rhs) = i.try_into() {
-                                    self.emit(IrInstruction::BinaryOpImmediate {
-                                        op,
-                                        dest,
-                                        lhs,
-                                        rhs,
-                                        flipped,
-                                    });
-                                    return Ok(());
+                                BinaryOp::Sub => {
+                                    if let Ok(rhs) = (-i).try_into() {
+                                        self.emit(IrInstruction::BinaryOpImmediate {
+                                            op: BinaryOp::Add,
+                                            dest,
+                                            lhs,
+                                            rhs,
+                                            metamethod: Metamethod::Sub,
+                                            flipped,
+                                        });
+                                        return Ok(());
+                                    }
                                 }
+                                BinaryOp::Shl => {
+                                    if let Ok(rhs) = (-i).try_into() {
+                                        self.emit(IrInstruction::BinaryOpImmediate {
+                                            op: BinaryOp::Shr,
+                                            dest,
+                                            lhs,
+                                            rhs,
+                                            metamethod: Metamethod::Shl,
+                                            flipped,
+                                        });
+                                        return Ok(());
+                                    }
+                                }
+                                _ => (),
                             }
 
                             let op_has_constant_variant = matches!(
@@ -980,6 +998,26 @@ impl<'gc> CodeGenerator<'gc> {
             Ok(i)
         } else {
             Err(CodegenError::TooManyProtos)
+        }
+    }
+}
+
+impl BinaryOp {
+    fn metamethod(&self) -> Metamethod {
+        match self {
+            Self::Add => Metamethod::Add,
+            Self::Sub => Metamethod::Sub,
+            Self::Mul => Metamethod::Mul,
+            Self::Div => Metamethod::Div,
+            Self::IDiv => Metamethod::IDiv,
+            Self::Pow => Metamethod::Pow,
+            Self::Mod => Metamethod::Mod,
+            Self::BAnd => Metamethod::BAnd,
+            Self::BXor => Metamethod::BXor,
+            Self::BOr => Metamethod::BOr,
+            Self::Shr => Metamethod::Shr,
+            Self::Shl => Metamethod::Shl,
+            _ => unreachable!(),
         }
     }
 }
