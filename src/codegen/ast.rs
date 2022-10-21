@@ -570,10 +570,10 @@ impl<'gc> CodeGenerator<'gc> {
             };
             if flipped {
                 match op {
-                    BinaryOp::Lt => op = BinaryOp::Ge,
-                    BinaryOp::Le => op = BinaryOp::Gt,
-                    BinaryOp::Gt => op = BinaryOp::Le,
-                    BinaryOp::Ge => op = BinaryOp::Lt,
+                    BinaryOp::Lt => op = BinaryOp::Gt,
+                    BinaryOp::Le => op = BinaryOp::Ge,
+                    BinaryOp::Gt => op = BinaryOp::Lt,
+                    BinaryOp::Ge => op = BinaryOp::Le,
                     _ => (),
                 };
                 std::mem::swap(&mut lhs, &mut rhs);
