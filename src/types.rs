@@ -18,7 +18,7 @@ pub use user_data::UserData;
 use crate::{
     gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
     number_is_valid_integer,
-    string::trim_whitespaces,
+    string::{parse_positive_hex_float, trim_whitespaces},
 };
 use bstr::ByteSlice;
 use std::{
@@ -261,7 +261,7 @@ impl<'gc> Value<'gc> {
         match self {
             Self::Number(x) => Some(*x),
             Self::Integer(x) => Some(*x as Number),
-            Self::String(s) => parse_number(trim_whitespaces(s)),
+            Self::String(s) => trim_whitespaces(s).to_str().ok().and_then(parse_number),
             _ => None,
         }
     }
@@ -279,10 +279,16 @@ impl<'gc> Value<'gc> {
             Self::Number(x) if number_is_valid_integer(*x) => Some(*x as Integer),
             Self::Integer(x) => Some(*x),
             Self::String(s) => {
-                let s = trim_whitespaces(s);
-                s.to_str().ok().and_then(|s| s.parse().ok()).or_else(|| {
-                    parse_number(s).and_then(|x| number_is_valid_integer(x).then_some(x as Integer))
-                })
+                let s = trim_whitespaces(s).to_str().ok()?;
+                if let Some(i) = parse_integer(s) {
+                    return Some(i);
+                }
+                if let Some(x) = parse_number(s) {
+                    if number_is_valid_integer(x) {
+                        return Some(x as Integer);
+                    }
+                }
+                None
             }
             _ => None,
         }
@@ -425,19 +431,58 @@ impl<'gc> Value<'gc> {
     }
 }
 
-fn parse_number<S: AsRef<[u8]>>(s: S) -> Option<Number> {
-    let s = s.as_ref();
-    let sign_stripped = match s.first() {
-        Some(b'+' | b'-') => &s[1..],
-        _ => s,
+fn parse_integer<S: AsRef<str>>(s: S) -> Option<Integer> {
+    let mut s = s.as_ref();
+    let sign = match s.as_bytes() {
+        [b'+', ..] => {
+            s = &s[1..];
+            true
+        }
+        [b'-', ..] => {
+            s = &s[1..];
+            false
+        }
+        _ => true,
     };
-    if sign_stripped.eq_ignore_ascii_case(b"inf")
-        || sign_stripped.eq_ignore_ascii_case(b"infinity")
-        || sign_stripped.eq_ignore_ascii_case(b"nan")
-    {
-        return None;
+    let parsed = match s.as_bytes() {
+        [b'0', b'x' | b'X', ..] => Integer::from_str_radix(&s[2..], 16).ok(),
+        _ => s.parse().ok(),
+    };
+    match parsed {
+        Some(i) if sign => Some(i),
+        Some(i) => Some(i.wrapping_neg()),
+        None => None,
     }
-    s.to_str().ok().and_then(|s| s.parse().ok())
+}
+
+fn parse_number<S: AsRef<str>>(s: S) -> Option<Number> {
+    let mut s = s.as_ref();
+    let sign = match s.as_bytes() {
+        [b'+', ..] => {
+            s = &s[1..];
+            true
+        }
+        [b'-', ..] => {
+            s = &s[1..];
+            false
+        }
+        _ => true,
+    };
+    let parsed = match s.as_bytes() {
+        [b'0', b'x' | b'X', rest @ ..] => parse_positive_hex_float(rest),
+        s if s.eq_ignore_ascii_case(b"inf")
+            || s.eq_ignore_ascii_case(b"infinity")
+            || s.eq_ignore_ascii_case(b"nan") =>
+        {
+            return None
+        }
+        _ => s.parse().ok(),
+    };
+    match parsed {
+        Some(x) if sign => Some(x),
+        Some(x) => Some(-x),
+        None => None,
+    }
 }
 
 // sprintf("%.14g") except it does not remove suffix ".0" when x is an integer

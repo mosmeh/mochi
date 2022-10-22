@@ -1,3 +1,5 @@
+use crate::{math, types::Number};
+
 pub const MAX_UTF8: u32 = 0x7fffffff;
 
 pub fn is_utf8_continuation_byte(b: u8) -> bool {
@@ -78,4 +80,88 @@ pub fn trim_whitespaces(bytes: &[u8]) -> &[u8] {
         }
     }
     slice
+}
+
+pub fn parse_hex_digit(ch: u8) -> Option<u8> {
+    match ch {
+        b'0'..=b'9' => Some(ch - b'0'),
+        b'a'..=b'f' => Some(ch - b'a' + 10),
+        b'A'..=b'F' => Some(ch - b'A' + 10),
+        _ => None,
+    }
+}
+
+pub fn parse_positive_hex_float<S: AsRef<[u8]>>(s: S) -> Option<Number> {
+    const MAX_NUM_SIGNIFICANT_DIGITS: usize = 30;
+
+    let mut has_dot = false;
+    let mut num_significant_digits = 0;
+    let mut has_non_significant_digit = false;
+    let mut mantissa = 0.0;
+    let mut shift = 0;
+    let mut iter = s.as_ref().iter().peekable();
+
+    while let Some(&&ch) = iter.peek() {
+        match ch {
+            b'.' if has_dot => break,
+            b'.' => {
+                iter.next().unwrap();
+                has_dot = true
+            }
+            ch if ch.is_ascii_hexdigit() => {
+                iter.next().unwrap();
+                if ch == b'0' && num_significant_digits == 0 {
+                    has_non_significant_digit = true;
+                } else if num_significant_digits < MAX_NUM_SIGNIFICANT_DIGITS {
+                    num_significant_digits += 1;
+                    mantissa = mantissa * 16.0 + parse_hex_digit(ch).unwrap() as Number;
+                } else {
+                    shift += 1;
+                }
+                if has_dot {
+                    shift -= 1;
+                }
+            }
+            _ => break,
+        }
+    }
+    if num_significant_digits == 0 && !has_non_significant_digit {
+        // no mantissa
+        return None;
+    }
+
+    let mantissa_exp = shift * 4; // each hex digit contributes 2^4
+    match iter.next() {
+        Some(b'p' | b'P') => (),
+        Some(_) => return None,
+        None => return Some(math::ldexp(mantissa, mantissa_exp)),
+    }
+
+    let is_exp_negative = match iter.peek() {
+        Some(b'+') => {
+            iter.next().unwrap();
+            false
+        }
+        Some(b'-') => {
+            iter.next().unwrap();
+            true
+        }
+        _ => false,
+    };
+    match iter.peek() {
+        Some(ch) if ch.is_ascii_digit() => (),
+        _ => return None, // there should be at least one digit after "p"
+    }
+    let mut exp = 0;
+    for &ch in iter {
+        if !ch.is_ascii_digit() {
+            return None;
+        }
+        exp = exp * 10 + (ch - b'0') as i32;
+    }
+    if is_exp_negative {
+        exp = -exp;
+    }
+
+    Some(math::ldexp(mantissa, mantissa_exp + exp))
 }

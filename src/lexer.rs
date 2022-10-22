@@ -2,11 +2,7 @@ mod token;
 
 pub use token::Token;
 
-use crate::{
-    gc::GcContext,
-    math, string,
-    types::{Integer, Number},
-};
+use crate::{gc::GcContext, string, types::Integer};
 use std::{
     collections::VecDeque,
     io::{Bytes, Read},
@@ -299,7 +295,7 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
             if let Ok(i) = Integer::from_str_radix(&string, 16) {
                 return Ok(Token::Integer(i));
             }
-            if let Some(x) = parse_hex_float(&string) {
+            if let Some(x) = string::parse_positive_hex_float(&string) {
                 return Ok(Token::Float(x));
             }
         } else {
@@ -404,7 +400,9 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
         let a = self.consume_if(|ch| ch.is_ascii_hexdigit())?;
         let b = self.consume_if(|ch| ch.is_ascii_hexdigit())?;
         match (a, b) {
-            (Some(a), Some(b)) => Ok(parse_hex_digit(a) * 16 + parse_hex_digit(b)),
+            (Some(a), Some(b)) => {
+                Ok(string::parse_hex_digit(a).unwrap() * 16 + string::parse_hex_digit(b).unwrap())
+            }
             _ => Err(LexerError::HexadecimalDigitExpected),
         }
     }
@@ -415,14 +413,14 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
         }
 
         let mut code = match self.consume_if(|ch| ch.is_ascii_hexdigit())? {
-            Some(ch) => parse_hex_digit(ch) as u32,
+            Some(ch) => string::parse_hex_digit(ch).unwrap() as u32,
             None => return Err(LexerError::HexadecimalDigitExpected),
         };
         while let Some(ch) = self.consume_if(|ch| ch.is_ascii_hexdigit())? {
             if code > (string::MAX_UTF8 / 16) {
                 return Err(LexerError::Utf8ValueTooLarge);
             }
-            code = code * 16 + parse_hex_digit(ch) as u32;
+            code = code * 16 + string::parse_hex_digit(ch).unwrap() as u32;
         }
 
         if !self.consume_if_eq(b'}')? {
@@ -582,90 +580,4 @@ fn is_lua_alphabetic(ch: u8) -> bool {
 
 fn is_lua_alphanumeric(ch: u8) -> bool {
     ch.is_ascii_alphanumeric() || ch == b'_'
-}
-
-fn parse_hex_digit(ch: u8) -> u8 {
-    match ch {
-        b'0'..=b'9' => ch - b'0',
-        b'a'..=b'f' => ch - b'a' + 10,
-        b'A'..=b'F' => ch - b'A' + 10,
-        _ => unreachable!(),
-    }
-}
-
-fn parse_hex_float<S: AsRef<[u8]>>(s: S) -> Option<Number> {
-    const MAX_NUM_SIGNIFICANT_DIGITS: usize = 30;
-
-    let mut has_dot = false;
-    let mut num_significant_digits = 0;
-    let mut has_non_significant_digit = false;
-    let mut mantissa = 0.0;
-    let mut shift = 0;
-    let mut iter = s.as_ref().iter().peekable();
-
-    while let Some(&&ch) = iter.peek() {
-        match ch {
-            b'.' if has_dot => break,
-            b'.' => {
-                iter.next().unwrap();
-                has_dot = true
-            }
-            ch if ch.is_ascii_hexdigit() => {
-                iter.next().unwrap();
-                if ch == b'0' && num_significant_digits == 0 {
-                    has_non_significant_digit = true;
-                    continue;
-                }
-                num_significant_digits += 1;
-                if num_significant_digits <= MAX_NUM_SIGNIFICANT_DIGITS {
-                    mantissa = mantissa * 16.0 + parse_hex_digit(ch) as Number;
-                    if has_dot {
-                        shift -= 1;
-                    }
-                } else if !has_dot {
-                    shift += 1;
-                }
-            }
-            _ => break,
-        }
-    }
-    if num_significant_digits == 0 && !has_non_significant_digit {
-        // no mantissa
-        return None;
-    }
-
-    let mantissa_exp = shift * 4; // each hex digit contributes 2^4
-    match iter.next() {
-        Some(b'p' | b'P') => (),
-        Some(_) => return None,
-        None => return Some(math::ldexp(mantissa, mantissa_exp)),
-    }
-
-    let is_exp_negative = match iter.peek() {
-        Some(b'+') => {
-            iter.next().unwrap();
-            false
-        }
-        Some(b'-') => {
-            iter.next().unwrap();
-            true
-        }
-        _ => false,
-    };
-    match iter.peek() {
-        Some(ch) if ch.is_ascii_digit() => (),
-        _ => return None, // there should be at least one digit after "p"
-    }
-    let mut exp = 0;
-    for &ch in iter {
-        if !ch.is_ascii_digit() {
-            return None;
-        }
-        exp = exp * 10 + (ch - b'0') as i32;
-    }
-    if is_exp_negative {
-        exp = -exp;
-    }
-
-    Some(math::ldexp(mantissa, mantissa_exp + exp))
 }
