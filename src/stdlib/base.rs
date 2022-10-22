@@ -567,11 +567,23 @@ fn base_tonumber<'gc>(
                         message: "base out of range",
                     });
                 }
-                string::trim_whitespaces(&s)
-                    .to_str()
-                    .ok()
-                    .and_then(|s| Integer::from_str_radix(s, base as u32).ok())
-                    .map(|i| i.into())
+                let mut s = string::trim_whitespaces(&s);
+                let sign = match s.as_bytes() {
+                    [b'+', rest @ ..] => {
+                        s = rest;
+                        true
+                    }
+                    [b'-', rest @ ..] => {
+                        s = rest;
+                        false
+                    }
+                    _ => true,
+                };
+                match string::parse_positive_integer_with_base(s, base) {
+                    Some(i) if sign => Some(i.into()),
+                    Some(i) => Some(i.wrapping_neg().into()),
+                    None => None,
+                }
             } else {
                 value
                     .to_integer()

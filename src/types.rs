@@ -18,7 +18,7 @@ pub use user_data::UserData;
 use crate::{
     gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
     number_is_valid_integer,
-    string::{parse_positive_hex_float, trim_whitespaces},
+    string::{parse_positive_hex_float, parse_positive_integer_with_base, trim_whitespaces},
 };
 use bstr::ByteSlice;
 use std::{
@@ -445,7 +445,7 @@ fn parse_integer<S: AsRef<str>>(s: S) -> Option<Integer> {
         _ => true,
     };
     let parsed = match s.as_bytes() {
-        [b'0', b'x' | b'X', ..] => Integer::from_str_radix(&s[2..], 16).ok(),
+        [b'0', b'x' | b'X', ..] => parse_positive_integer_with_base(&s[2..], 16),
         _ => s.parse().ok(),
     };
     match parsed {

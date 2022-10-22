@@ -2,7 +2,7 @@ mod token;
 
 pub use token::Token;
 
-use crate::{gc::GcContext, string, types::Integer};
+use crate::{gc::GcContext, string};
 use std::{
     collections::VecDeque,
     io::{Bytes, Read},
@@ -290,15 +290,15 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
         if let Some(ch) = self.consume_if(is_lua_alphabetic)? {
             bytes.push(ch);
         }
-        let string = String::from_utf8(bytes).map_err(|_| LexerError::MalformedNumber)?;
         if is_hex {
-            if let Ok(i) = Integer::from_str_radix(&string, 16) {
+            if let Some(i) = string::parse_positive_integer_with_base(&bytes, 16) {
                 return Ok(Token::Integer(i));
             }
-            if let Some(x) = string::parse_positive_hex_float(&string) {
+            if let Some(x) = string::parse_positive_hex_float(&bytes) {
                 return Ok(Token::Float(x));
             }
         } else {
+            let string = String::from_utf8(bytes).map_err(|_| LexerError::MalformedNumber)?;
             if let Ok(i) = string.parse() {
                 return Ok(Token::Integer(i));
             }

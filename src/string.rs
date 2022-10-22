@@ -1,4 +1,7 @@
-use crate::{math, types::Number};
+use crate::{
+    math,
+    types::{Integer, Number},
+};
 
 pub const MAX_UTF8: u32 = 0x7fffffff;
 
@@ -89,6 +92,27 @@ pub fn parse_hex_digit(ch: u8) -> Option<u8> {
         b'A'..=b'F' => Some(ch - b'A' + 10),
         _ => None,
     }
+}
+
+pub fn parse_positive_integer_with_base<S: AsRef<[u8]>>(s: S, base: Integer) -> Option<Integer> {
+    let s = s.as_ref();
+    if s.is_empty() {
+        return None;
+    }
+    let mut i: Integer = 0;
+    for ch in s {
+        let digit = match ch {
+            b'0'..=b'9' => ch - b'0',
+            b'a'..=b'z' => ch - b'a' + 10,
+            b'A'..=b'Z' => ch - b'A' + 10,
+            _ => return None,
+        } as Integer;
+        if digit >= base {
+            return None;
+        }
+        i = i.wrapping_mul(base).wrapping_add(digit);
+    }
+    Some(i)
 }
 
 pub fn parse_positive_hex_float<S: AsRef<[u8]>>(s: S) -> Option<Number> {
