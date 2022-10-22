@@ -10,6 +10,7 @@ mod lexer;
 #[cfg(not(feature = "luac"))]
 pub mod parser;
 
+mod math;
 mod stdlib;
 mod string;
 

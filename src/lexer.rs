@@ -2,7 +2,11 @@ mod token;
 
 pub use token::Token;
 
-use crate::{gc::GcContext, string, types::Integer};
+use crate::{
+    gc::GcContext,
+    math, string,
+    types::{Integer, Number},
+};
 use std::{
     collections::VecDeque,
     io::{Bytes, Read},
@@ -291,18 +295,22 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
             bytes.push(ch);
         }
         let string = String::from_utf8(bytes).map_err(|_| LexerError::MalformedNumber)?;
-        let token = if is_hex {
+        if is_hex {
             if let Ok(i) = Integer::from_str_radix(&string, 16) {
-                Token::Integer(i)
-            } else {
-                todo!("hexadecimal float")
+                return Ok(Token::Integer(i));
             }
-        } else if let Ok(i) = string.parse() {
-            Token::Integer(i)
+            if let Some(x) = parse_hex_float(&string) {
+                return Ok(Token::Float(x));
+            }
         } else {
-            Token::Float(string.parse().map_err(|_| LexerError::MalformedNumber)?)
-        };
-        Ok(token)
+            if let Ok(i) = string.parse() {
+                return Ok(Token::Integer(i));
+            }
+            if let Ok(x) = string.parse() {
+                return Ok(Token::Float(x));
+            }
+        }
+        Err(LexerError::MalformedNumber)
     }
 
     fn consume_string(&mut self) -> Result<Token<'gc>, LexerError> {
@@ -583,4 +591,81 @@ fn parse_hex_digit(ch: u8) -> u8 {
         b'A'..=b'F' => ch - b'A' + 10,
         _ => unreachable!(),
     }
+}
+
+fn parse_hex_float<S: AsRef<[u8]>>(s: S) -> Option<Number> {
+    const MAX_NUM_SIGNIFICANT_DIGITS: usize = 30;
+
+    let mut has_dot = false;
+    let mut num_significant_digits = 0;
+    let mut has_non_significant_digit = false;
+    let mut mantissa = 0.0;
+    let mut shift = 0;
+    let mut iter = s.as_ref().iter().peekable();
+
+    while let Some(&&ch) = iter.peek() {
+        match ch {
+            b'.' if has_dot => break,
+            b'.' => {
+                iter.next().unwrap();
+                has_dot = true
+            }
+            ch if ch.is_ascii_hexdigit() => {
+                iter.next().unwrap();
+                if ch == b'0' && num_significant_digits == 0 {
+                    has_non_significant_digit = true;
+                    continue;
+                }
+                num_significant_digits += 1;
+                if num_significant_digits <= MAX_NUM_SIGNIFICANT_DIGITS {
+                    mantissa = mantissa * 16.0 + parse_hex_digit(ch) as Number;
+                    if has_dot {
+                        shift -= 1;
+                    }
+                } else if !has_dot {
+                    shift += 1;
+                }
+            }
+            _ => break,
+        }
+    }
+    if num_significant_digits == 0 && !has_non_significant_digit {
+        // no mantissa
+        return None;
+    }
+
+    let mantissa_exp = shift * 4; // each hex digit contributes 2^4
+    match iter.next() {
+        Some(b'p' | b'P') => (),
+        Some(_) => return None,
+        None => return Some(math::ldexp(mantissa, mantissa_exp)),
+    }
+
+    let is_exp_negative = match iter.peek() {
+        Some(b'+') => {
+            iter.next().unwrap();
+            false
+        }
+        Some(b'-') => {
+            iter.next().unwrap();
+            true
+        }
+        _ => false,
+    };
+    match iter.peek() {
+        Some(ch) if ch.is_ascii_digit() => (),
+        _ => return None, // there should be at least one digit after "p"
+    }
+    let mut exp = 0;
+    for &ch in iter {
+        if !ch.is_ascii_digit() {
+            return None;
+        }
+        exp = exp * 10 + (ch - b'0') as i32;
+    }
+    if is_exp_negative {
+        exp = -exp;
+    }
+
+    Some(math::ldexp(mantissa, mantissa_exp + exp))
 }
