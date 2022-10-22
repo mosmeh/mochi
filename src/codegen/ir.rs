@@ -777,7 +777,7 @@ pub(super) fn lower_ir<'gc>(
                 let target_addr = label_addresses[target.0].unwrap();
                 let sj = target_addr.0 as i32 - addr.0 as i32 - 1;
                 (-OFFSET_SJ <= sj && sj <= UINT25_MAX as i32 - OFFSET_SJ)
-                    .then_some(Instruction::from_sj(OpCode::Jmp, sj))
+                    .then(|| Instruction::from_sj(OpCode::Jmp, sj))
             }
             IrInstruction::ForLoop {
                 base,
@@ -791,7 +791,7 @@ pub(super) fn lower_ir<'gc>(
                 };
                 let target_addr = label_addresses[next_target.0].unwrap();
                 let bx = (addr.0 - target_addr.0) as u32 + 1;
-                (bx <= UINT17_MAX).then_some(Instruction::from_a_bx(opcode, base.0, bx))
+                (bx <= UINT17_MAX).then(|| Instruction::from_a_bx(opcode, base.0, bx))
             }
             IrInstruction::PrepareForLoop {
                 base,
@@ -805,7 +805,7 @@ pub(super) fn lower_ir<'gc>(
                 };
                 let target_addr = label_addresses[skip_target.0].unwrap();
                 let bx = (target_addr.0 - addr.0) as u32 - 1;
-                (bx <= UINT17_MAX).then_some(Instruction::from_a_bx(opcode, base.0, bx))
+                (bx <= UINT17_MAX).then(|| Instruction::from_a_bx(opcode, base.0, bx))
             }
             _ => unreachable!(),
         };
