@@ -14,7 +14,10 @@ use crate::{
     },
 };
 use ir::{ConstantIndex25, ConstantIndex8, IrAddress, IrInstruction, Label, ProtoIndex, RkIndex};
-use std::num::NonZeroU8;
+use std::{
+    collections::{hash_map, HashMap},
+    num::NonZeroU8,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodegenError {
@@ -206,9 +209,9 @@ struct Frame<'gc> {
     ir_code: Vec<IrInstruction>,
     label_ir_addresses: Vec<Option<IrAddress>>,
 
-    constants: Vec<Value<'gc>>,
+    constants: HashMap<Value<'gc>, usize>,
+    upvalues: HashMap<UpvalueDescription, UpvalueIndex>,
     protos: Vec<LuaClosureProto<'gc>>,
-    upvalues: Vec<UpvalueDescription>,
 
     local_variable_stack: Vec<(Option<LuaString<'gc>>, RegisterIndex)>,
 
@@ -222,17 +225,18 @@ impl Frame<'_> {
         &mut self,
         upvalue: UpvalueDescription,
     ) -> Result<UpvalueIndex, CodegenError> {
-        let upvalues = &mut self.upvalues;
-        if let Some(i) = upvalues.iter().position(|x| *x == upvalue) {
-            return Ok(UpvalueIndex(i as u8));
-        }
-
-        let i = upvalues.len();
-        if let Ok(i) = i.try_into() {
-            upvalues.push(upvalue);
-            Ok(UpvalueIndex(i))
-        } else {
-            Err(CodegenError::TooManyUpvalues)
+        let i = self.upvalues.len();
+        match self.upvalues.entry(upvalue) {
+            hash_map::Entry::Occupied(entry) => Ok(*entry.get()),
+            hash_map::Entry::Vacant(entry) => {
+                if let Ok(i) = i.try_into() {
+                    let i = UpvalueIndex(i);
+                    entry.insert(i);
+                    Ok(i)
+                } else {
+                    Err(CodegenError::TooManyUpvalues)
+                }
+            }
         }
     }
 }
@@ -996,27 +1000,33 @@ impl<'gc> CodeGenerator<'gc> {
         value: impl Into<Value<'gc>>,
     ) -> Result<ConstantIndex25, CodegenError> {
         let constants = &mut self.current_frame().constants;
-        let value = value.into();
-        if let Some(i) = constants.iter().position(|x| *x == value) {
-            Ok(i.try_into().unwrap())
-        } else if let Ok(i) = constants.len().try_into() {
-            constants.push(value);
-            Ok(i)
-        } else {
-            Err(CodegenError::TooManyConstants)
+        let i = constants.len();
+        match constants.entry(value.into()) {
+            hash_map::Entry::Occupied(entry) => Ok((*entry.get()).try_into().unwrap()),
+            hash_map::Entry::Vacant(entry) => {
+                if let Ok(constant) = i.try_into() {
+                    entry.insert(i);
+                    Ok(constant)
+                } else {
+                    Err(CodegenError::TooManyConstants)
+                }
+            }
         }
     }
 
     fn try_allocate_rk_constant(&mut self, value: impl Into<Value<'gc>>) -> Option<ConstantIndex8> {
         let constants = &mut self.current_frame().constants;
-        let value = value.into();
-        if let Some(i) = constants.iter().position(|x| *x == value) {
-            i.try_into().ok()
-        } else if let Ok(i) = constants.len().try_into() {
-            constants.push(value);
-            Some(i)
-        } else {
-            None
+        let i = constants.len();
+        match constants.entry(value.into()) {
+            hash_map::Entry::Occupied(entry) => (*entry.get()).try_into().ok(),
+            hash_map::Entry::Vacant(entry) => {
+                if let Ok(constant) = i.try_into() {
+                    entry.insert(i);
+                    Some(constant)
+                } else {
+                    None
+                }
+            }
         }
     }
 

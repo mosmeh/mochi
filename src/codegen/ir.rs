@@ -816,17 +816,26 @@ pub(super) fn lower_ir<'gc>(
         }
     }
 
+    let mut constants: Vec<_> = frame.constants.into_iter().collect();
+    constants.sort_unstable_by_key(|(_, i)| *i);
+    let constants: Vec<_> = constants.into_iter().map(|(c, _)| c).collect();
+
+    let mut upvalues: Vec<_> = frame.upvalues.into_iter().collect();
+    upvalues.sort_unstable_by_key(|(_, i)| *i);
+    let upvalues: Vec<_> = upvalues.into_iter().map(|(u, _)| u).collect();
+
+    let protos: Vec<_> = frame
+        .protos
+        .into_iter()
+        .map(|proto| gc.allocate(proto))
+        .collect();
+
     Ok(LuaClosureProto {
         max_stack_size: frame.max_stack_size,
         code: code.into(),
-        constants: frame.constants.into(),
-        protos: frame
-            .protos
-            .into_iter()
-            .map(|proto| gc.allocate(proto))
-            .collect::<Vec<_>>()
-            .into(),
-        upvalues: frame.upvalues.into(),
+        constants: constants.into(),
+        upvalues: upvalues.into(),
+        protos: protos.into(),
         lines_defined: crate::types::LineRange::File,
         source,
     })
