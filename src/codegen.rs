@@ -1011,7 +1011,7 @@ impl<'gc> CodeGenerator<'gc> {
         let constants = &mut self.current_frame().constants;
         let value = value.into();
         if let Some(i) = constants.iter().position(|x| *x == value) {
-            Some(i.try_into().unwrap())
+            i.try_into().ok()
         } else if let Ok(i) = constants.len().try_into() {
             constants.push(value);
             Some(i)
