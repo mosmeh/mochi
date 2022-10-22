@@ -91,6 +91,15 @@ impl From<UpvalueIndex> for LazyLValue {
     }
 }
 
+impl From<LValue> for LazyLValue {
+    fn from(lvalue: LValue) -> Self {
+        match lvalue {
+            LValue::Register(r) => Self::Register(r),
+            LValue::Upvalue(u) => Self::Upvalue(u),
+        }
+    }
+}
+
 #[must_use]
 #[derive(Debug)]
 enum LValue {
@@ -276,24 +285,11 @@ impl<'gc> CodeGenerator<'gc> {
             Some(LValue::Register(r)) => Ok(r.into()),
             Some(LValue::Upvalue(u)) => Ok(u.into()),
             None => {
-                let env = if let Some(LValue::Upvalue(upvalue)) =
-                    self.try_resolve_name(self.gc.allocate_string(LUA_ENV))?
-                {
-                    upvalue
-                } else {
-                    unreachable!()
+                let env = match self.try_resolve_name(self.gc.allocate_string(LUA_ENV))? {
+                    Some(env) => env,
+                    None => unreachable!(),
                 };
-                match self.discharge_to_rk(LazyRValue::Constant(name.into()))? {
-                    RkIndex::Register(key) => {
-                        let table = self.allocate_register()?;
-                        self.emit(IrInstruction::GetUpvalue {
-                            dest: table,
-                            upvalue: env,
-                        });
-                        Ok(LazyLValue::TableGenericKey { table, key })
-                    }
-                    RkIndex::Constant(field) => Ok(LazyLValue::UpvalueField { table: env, field }),
-                }
+                self.resolve_table_field(env, name)
             }
         }
     }

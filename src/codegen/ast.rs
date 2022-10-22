@@ -177,6 +177,36 @@ impl<'gc> CodeGenerator<'gc> {
         Ok(LazyLValue::Register(table).into())
     }
 
+    pub fn resolve_table_field(
+        &mut self,
+        table: impl Into<LazyLValue>,
+        field: LuaString<'gc>,
+    ) -> Result<LazyLValue, CodegenError> {
+        let field = LazyRValue::Constant(field.into());
+        let table = self.force_lvalue(table)?;
+        let result = match table {
+            LValue::Register(table) => match self.discharge_to_rk(field)? {
+                RkIndex::Register(key) => LazyLValue::TableGenericKey { table, key },
+                RkIndex::Constant(field) => LazyLValue::TableField { table, field },
+            },
+            LValue::Upvalue(upvalue) => match self.discharge_to_rk(field)? {
+                RkIndex::Register(key) => {
+                    let table = self.allocate_register()?;
+                    self.emit(IrInstruction::GetUpvalue {
+                        dest: table,
+                        upvalue,
+                    });
+                    LazyLValue::TableGenericKey { table, key }
+                }
+                RkIndex::Constant(field) => LazyLValue::UpvalueField {
+                    table: upvalue,
+                    field,
+                },
+            },
+        };
+        Ok(result)
+    }
+
     fn codegen_statement(&mut self, statement: Statement<'gc>) -> Result<(), CodegenError> {
         match statement {
             Statement::If(s) => self.codegen_if_statement(s)?,
@@ -763,35 +793,5 @@ impl<'gc> CodeGenerator<'gc> {
             }
         };
         Ok(indexed)
-    }
-
-    fn resolve_table_field(
-        &mut self,
-        table: impl Into<LazyLValue>,
-        field: LuaString<'gc>,
-    ) -> Result<LazyLValue, CodegenError> {
-        let field = LazyRValue::Constant(field.into());
-        let table = self.force_lvalue(table)?;
-        let result = match table {
-            LValue::Register(table) => match self.discharge_to_rk(field)? {
-                RkIndex::Register(key) => LazyLValue::TableGenericKey { table, key },
-                RkIndex::Constant(field) => LazyLValue::TableField { table, field },
-            },
-            LValue::Upvalue(upvalue) => match self.discharge_to_rk(field)? {
-                RkIndex::Register(key) => {
-                    let table = self.allocate_register()?;
-                    self.emit(IrInstruction::GetUpvalue {
-                        dest: table,
-                        upvalue,
-                    });
-                    LazyLValue::TableGenericKey { table, key }
-                }
-                RkIndex::Constant(field) => LazyLValue::UpvalueField {
-                    table: upvalue,
-                    field,
-                },
-            },
-        };
-        Ok(result)
     }
 }
