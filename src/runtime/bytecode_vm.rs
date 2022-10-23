@@ -1029,8 +1029,7 @@ impl<'gc> Vm<'gc> {
                             continue 'start;
                         }
                     }
-                    opcode::EXTRAARG => unreachable!(),
-                    _ => panic!("unknown opcode"),
+                    _ => unreachable!(),
                 }
             }
 

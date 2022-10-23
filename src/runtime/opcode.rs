@@ -21,7 +21,10 @@ macro_rules! opcodes {
             }
         }
 
-        $(pub const $name: u8 = OpCode::$variant as u8;)*
+        $(
+            #[allow(dead_code)]
+            pub const $name: u32 = OpCode::$variant as u32;
+        )*
     }
 }
 
