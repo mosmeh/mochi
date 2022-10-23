@@ -1,3 +1,4 @@
+use super::process::Process;
 use crate::{
     gc::GcContext,
     runtime::{Action, ErrorKind},
@@ -9,6 +10,7 @@ use std::{
         self, BufRead, BufReader, BufWriter, LineWriter, Read, Seek, SeekFrom, Stderr, Stdin,
         Stdout, Write,
     },
+    process::ExitStatus,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -58,7 +60,9 @@ impl FileHandle {
         F: FnOnce(File) -> LuaFile,
     {
         match &mut self.0 {
-            Some(inner) if inner.is_stdio() => Ok(()),
+            Some(
+                LuaFile::Stdin(_) | LuaFile::Stdout(_) | LuaFile::Stderr(_) | LuaFile::Process(_),
+            ) => Ok(()),
             None => Err(FileError::Closed),
             inner => match inner.take().unwrap().into_inner() {
                 Ok(file) => {
@@ -73,13 +77,19 @@ impl FileHandle {
         }
     }
 
-    pub fn close(&mut self) -> Result<(), FileError> {
+    pub fn close(&mut self) -> Result<Option<ExitStatus>, FileError> {
         match &mut self.0 {
-            Some(inner) if inner.is_stdio() => Err(FileError::CannotCloseStandardFile),
+            Some(LuaFile::Stdin(_) | LuaFile::Stdout(_) | LuaFile::Stderr(_)) => {
+                Err(FileError::CannotCloseStandardFile)
+            }
+            Some(LuaFile::Process(process)) => {
+                let status = process.close()?;
+                Ok(Some(status))
+            }
             None => Err(FileError::Closed),
             inner => {
                 inner.take();
-                Ok(())
+                Ok(None)
             }
         }
     }
@@ -92,11 +102,18 @@ pub enum LuaFile {
     Stdin(Stdin),
     Stdout(Stdout),
     Stderr(Stderr),
+    Process(Box<Process>),
 }
 
 impl From<FullyBufferedFile> for LuaFile {
     fn from(inner: FullyBufferedFile) -> Self {
         Self::FullyBuffered(Box::new(inner))
+    }
+}
+
+impl From<Process> for LuaFile {
+    fn from(inner: Process) -> Self {
+        Self::Process(Box::new(inner))
     }
 }
 
@@ -179,6 +196,7 @@ impl LuaFile {
             Self::FullyBuffered(inner) => inner.read_until(byte, buf),
             Self::LineBuffered(inner) => inner.read_until(byte, buf),
             Self::Stdin(inner) => inner.lock().read_until(byte, buf),
+            Self::Process(inner) => naive_read_until(inner, byte, buf),
             Self::Stdout(_) | Self::Stderr(_) => Err(io::Error::from(io::ErrorKind::Unsupported)),
         }
     }
@@ -189,6 +207,7 @@ impl LuaFile {
             Self::FullyBuffered(inner) => Some(inner),
             Self::LineBuffered(inner) => Some(inner),
             Self::Stdin(inner) => Some(inner),
+            Self::Process(inner) => Some(inner),
             Self::Stdout(_) | Self::Stderr(_) => None,
         }
     }
@@ -198,9 +217,10 @@ impl LuaFile {
             Self::NonBuffered(inner) => Some(inner),
             Self::FullyBuffered(inner) => Some(inner),
             Self::LineBuffered(inner) => Some(inner),
-            Self::Stdin(_) => None,
             Self::Stdout(inner) => Some(inner),
             Self::Stderr(inner) => Some(inner),
+            Self::Process(inner) => Some(inner),
+            Self::Stdin(_) => None,
         }
     }
 
@@ -209,12 +229,8 @@ impl LuaFile {
             Self::NonBuffered(inner) => Some(inner),
             Self::FullyBuffered(inner) => Some(inner),
             Self::LineBuffered(inner) => Some(inner),
-            Self::Stdin(_) | Self::Stdout(_) | Self::Stderr(_) => None,
+            Self::Stdin(_) | Self::Stdout(_) | Self::Stderr(_) | Self::Process(_) => None,
         }
-    }
-
-    fn is_stdio(&self) -> bool {
-        matches!(self, Self::Stdin(_) | Self::Stdout(_) | Self::Stderr(_))
     }
 
     fn into_inner(self) -> Result<File, (io::Error, Self)> {
@@ -234,7 +250,7 @@ impl LuaFile {
                     Err((err, Self::LineBuffered(LineBufferedFile(inner).into())))
                 }
             },
-            Self::Stdin(_) | Self::Stdout(_) | Self::Stderr(_) => {
+            Self::Stdin(_) | Self::Stdout(_) | Self::Stderr(_) | Self::Process(_) => {
                 Err((io::Error::from(io::ErrorKind::Unsupported), self))
             }
         }

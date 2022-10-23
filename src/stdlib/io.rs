@@ -1,6 +1,7 @@
 use super::{
     file::{self, FileError, FileHandle, FullyBufferedFile, LineBufferedFile, LuaFile},
     helpers::{set_functions_to_table, Argument, ArgumentsExt},
+    process::{self, Process},
 };
 use crate::{
     gc::{GcCell, GcContext},
@@ -11,6 +12,7 @@ use bstr::{ByteSlice, B};
 use std::{
     fs::OpenOptions,
     io::{Read, Seek, SeekFrom, Write},
+    process::Stdio,
 };
 
 const LUA_FILEHANDLE: &[u8] = b"FILE*";
@@ -28,6 +30,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
             (B("input"), io_input),
             (B("open"), io_open),
             (B("output"), io_output),
+            (B("popen"), io_popen),
             (B("read"), io_read),
             (B("type"), io_type),
             (B("write"), io_write),
@@ -79,18 +82,17 @@ fn io_close<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let file = args.nth(1);
-    file::translate_and_return_error(gc, || {
+    process::translate_and_return_error(gc, || {
         if file.is_none() {
             vm.registry()
                 .borrow()
                 .get_field(gc.allocate_string(IO_OUTPUT))
                 .borrow_as_userdata_mut::<FileHandle>(gc)
                 .unwrap()
-                .close()?;
+                .close()
         } else {
-            file.borrow_as_userdata_mut::<FileHandle>(gc)?.close()?;
+            file.borrow_as_userdata_mut::<FileHandle>(gc)?.close()
         }
-        Ok(vec![true.into()])
     })
 }
 
@@ -168,6 +170,46 @@ fn io_output<'gc>(
     )
 }
 
+fn io_popen<'gc>(
+    gc: &'gc GcContext,
+    vm: &mut Vm<'gc>,
+    args: Vec<Value<'gc>>,
+) -> Result<Action<'gc>, ErrorKind> {
+    let prog = args.nth(1);
+    let prog = prog.to_string()?;
+    let mode = args.nth(2);
+    let mode = mode.to_string_or(B("r"))?;
+
+    #[allow(unused_mut)]
+    let mut mode = mode.as_ref();
+    #[cfg(windows)]
+    if let [_, b'b' | b't'] = mode {
+        mode = &mode[..1];
+    }
+
+    file::translate_and_return_error(gc, || {
+        let mut command = process::system(prog.to_os_str()?);
+        match mode {
+            b"r" => command.stdout(Stdio::piped()),
+            b"w" => command.stdin(Stdio::piped()),
+            _ => {
+                return Err(ErrorKind::ArgumentError {
+                    nth: 2,
+                    message: "invalid mode",
+                }
+                .into())
+            }
+        };
+
+        std::io::stdout().flush()?;
+        let child = command.spawn()?;
+        let registry = vm.registry();
+        let registry = registry.borrow();
+        let handle = create_file_handle(gc, &registry, Process::from(child));
+        Ok(vec![gc.allocate_cell(handle).into()])
+    })
+}
+
 fn io_read<'gc>(
     gc: &'gc GcContext,
     vm: &mut Vm<'gc>,
@@ -237,10 +279,7 @@ fn file_close<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
-    file::translate_and_return_error(gc, || {
-        handle.close()?;
-        Ok(vec![true.into()])
-    })
+    process::translate_and_return_error(gc, || handle.close())
 }
 
 fn file_flush<'gc>(

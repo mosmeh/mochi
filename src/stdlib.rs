@@ -6,6 +6,7 @@ mod io;
 mod math;
 mod os;
 mod package;
+mod process;
 mod string;
 mod table;
 mod utf8;
