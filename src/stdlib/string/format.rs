@@ -1,5 +1,6 @@
 use crate::{
     gc::GcContext,
+    math,
     runtime::{Action, ErrorKind, Vm},
     stdlib::helpers::ArgumentsExt,
     types::{Integer, Number, Value},
@@ -124,8 +125,27 @@ pub fn string_format<'gc>(
                 f.make_ascii_uppercase();
                 output.append(&mut f);
             }
-            Some(b'a' | b'A') => {
-                todo!("hexadecimal float (%a / %A)")
+            Some(b'a') => {
+                if spec.has_modifier {
+                    return Err(ErrorKind::other(
+                        "modifiers for format '%a'/'%A' not implemented",
+                    ));
+                }
+                let mut f = Vec::new();
+                sprintf_a(&mut f, arg.to_number()?)?;
+                f.make_ascii_lowercase();
+                output.append(&mut f);
+            }
+            Some(b'A') => {
+                if spec.has_modifier {
+                    return Err(ErrorKind::other(
+                        "modifiers for format '%a'/'%A' not implemented",
+                    ));
+                }
+                let mut f = Vec::new();
+                sprintf_a(&mut f, arg.to_number()?)?;
+                f.make_ascii_uppercase();
+                output.append(&mut f);
             }
             Some(b'f') => {
                 let number = arg.to_number()?;
@@ -331,7 +351,7 @@ fn fmt_literal<W: std::io::Write>(f: &mut W, value: Value) -> Result<bool, Error
             x if x == Number::INFINITY => f.write_all(b"1e9999")?,
             x if x == Number::NEG_INFINITY => f.write_all(b"-1e9999")?,
             x if x.is_nan() => f.write_all(b"(0/0)")?,
-            _ => todo!("hexadecimal float (%q)"),
+            _ => sprintf_a(f, x)?,
         },
         Value::String(s) => {
             f.write_u8(b'"')?;
@@ -357,19 +377,15 @@ fn fmt_literal<W: std::io::Write>(f: &mut W, value: Value) -> Result<bool, Error
 }
 
 // sprintf("%.Pg") where P is precision
-fn sprintf_g<W: std::io::Write>(
-    writer: &mut W,
-    x: Number,
-    precision: usize,
-) -> std::io::Result<()> {
+fn sprintf_g<W: std::io::Write>(f: &mut W, x: Number, precision: usize) -> std::io::Result<()> {
     if x == 0.0 {
-        return writer.write_all(b"0");
+        return f.write_all(b"0");
     }
 
     let log_x = x.abs().log10();
     let mut precision = precision - 1;
     if log_x < -3.0 || (precision as Number) < log_x {
-        return write!(writer, "{x:.precision$e}");
+        return write!(f, "{x:.precision$e}");
     }
 
     precision = (precision as isize - log_x.trunc() as isize) as usize;
@@ -381,5 +397,57 @@ fn sprintf_g<W: std::io::Write>(
     if s.contains('.') {
         s = s.trim_end_matches('0').trim_end_matches('.');
     }
-    writer.write_all(s.as_bytes())
+    f.write_all(s.as_bytes())
+}
+
+// sprintf("%a")
+fn sprintf_a<W: std::io::Write>(f: &mut W, mut x: Number) -> std::io::Result<()> {
+    fn write_digit<W: std::io::Write>(f: &mut W, frac: &mut f64) -> std::io::Result<()> {
+        let digit = *frac as u8;
+        f.write_u8(if digit < 10 {
+            digit + b'0'
+        } else {
+            digit - 10 + b'a'
+        })?;
+        *frac -= digit as Number;
+        Ok(())
+    }
+
+    match x {
+        x if !x.is_finite() => return write!(f, "{x}"),
+        x if x == 0.0 => return write!(f, "{x}x0p+0"), // 0 or -0
+        _ if x < 0.0 => {
+            f.write_all(b"-")?;
+            x = -x;
+        }
+        _ => (),
+    }
+
+    f.write_all(b"0x")?;
+
+    let (mut frac, mut exp) = math::frexp(x);
+    if exp >= Number::MIN_EXP - 1 {
+        frac *= 2.0; // [0.5, 1) -> [1, 2)
+        exp -= 1;
+    } else {
+        // subnormal
+        while exp < Number::MIN_EXP - 1 {
+            frac /= 2.0;
+            exp += 1;
+        }
+    }
+    write_digit(f, &mut frac)?;
+
+    if frac > 0.0 {
+        f.write_u8(b'.')?;
+        loop {
+            frac *= 16.0;
+            write_digit(f, &mut frac)?;
+            if frac <= 0.0 {
+                break;
+            }
+        }
+    }
+
+    write!(f, "p{exp:+}")
 }
