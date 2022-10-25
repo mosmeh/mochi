@@ -194,9 +194,11 @@ impl<'gc> Vm<'gc> {
     }
 
     pub fn metatable_of_object(&self, object: Value<'gc>) -> Option<GcCell<'gc, Table<'gc>>> {
-        object
-            .metatable()
-            .or_else(|| self.metatables[object.ty() as usize])
+        match object {
+            Value::Table(table) => table.borrow().metatable(),
+            Value::UserData(ud) => ud.borrow().metatable(),
+            _ => self.metatables[object.ty() as usize],
+        }
     }
 
     pub fn metamethod_of_object(

@@ -409,14 +409,6 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
-        match self {
-            Self::Table(table) => table.borrow().metatable(),
-            Self::UserData(ud) => ud.borrow().metatable(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn as_ptr(&self) -> Option<*const ()> {
         match self {
             Self::Nil | Self::Boolean(_) | Self::Integer(_) | Self::Number(_) => None,
