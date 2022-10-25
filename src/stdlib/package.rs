@@ -176,7 +176,7 @@ fn package_require<'gc>(
             let next_i = i.get() + 1;
             i.set(next_i);
 
-            let searcher = searchers.borrow().get(next_i);
+            let searcher = searchers.borrow().get_integer_key(next_i);
             if searcher.is_nil() {
                 return Err(ErrorKind::Other(format!(
                     "module '{}' not found:{}",
@@ -227,7 +227,7 @@ fn package_require<'gc>(
                                     let mut loaded = loaded.borrow_mut(gc);
                                     let value = match results.first() {
                                         Some(Value::Nil) | None => {
-                                            let value = loaded.get(name);
+                                            let value = loaded.get_field(name);
                                             if value.is_nil() {
                                                 Value::Boolean(true)
                                             } else {
@@ -236,7 +236,7 @@ fn package_require<'gc>(
                                         }
                                         Some(value) => *value,
                                     };
-                                    loaded.set(name, value)?;
+                                    loaded.set_field(name, value);
                                     Ok(Action::Return(vec![value, loader_data]))
                                 },
                             ),

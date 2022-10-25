@@ -37,7 +37,7 @@ fn table_concat<'gc>(
 
     let mut strings = Vec::new();
     for index in i..=j {
-        let value = table.get(index);
+        let value = table.get_integer_key(index);
         if let Some(string) = value.to_string() {
             strings.push(string.to_vec());
         } else {
@@ -65,7 +65,7 @@ fn table_insert<'gc>(
     let end = table.lua_len().wrapping_add(1);
 
     match *args.without_callee() {
-        [_, value] => table.set(end, value)?,
+        [_, value] => table.set_integer_key(end, value),
         [_, _, value] => {
             let pos = args.nth(2).to_integer()?;
             if pos < 1 || end < pos {
@@ -75,10 +75,10 @@ fn table_insert<'gc>(
                 });
             }
             for i in (pos + 1..=end).rev() {
-                let v = table.get(i - 1);
-                table.set(i, v)?;
+                let v = table.get_integer_key(i - 1);
+                table.set_integer_key(i, v);
             }
-            table.set(pos, value)?;
+            table.set_integer_key(pos, value);
         }
         _ => return Err(ErrorKind::other("wrong number of arguments to 'insert'")),
     };
@@ -119,20 +119,20 @@ fn table_move<'gc>(
         let mut table = a1.borrow_mut(gc);
         if t <= f || e < t {
             for i in 0..n {
-                let value = table.get(f + i);
-                table.set(t + i, value)?;
+                let value = table.get_integer_key(f + i);
+                table.set_integer_key(t + i, value);
             }
         } else {
             for i in (0..n).rev() {
-                let value = table.get(f + i);
-                table.set(t + i, value)?;
+                let value = table.get_integer_key(f + i);
+                table.set_integer_key(t + i, value);
             }
         }
     } else {
         let a1 = a1.borrow();
         let mut a2 = a2.borrow_mut(gc);
         for i in 0..n {
-            a2.set(t + i, a1.get(f + i))?;
+            a2.set_integer_key(t + i, a1.get_integer_key(f + i));
         }
     }
     Ok(Action::Return(vec![a2.into()]))
@@ -168,10 +168,10 @@ fn table_remove<'gc>(
         });
     }
 
-    let removed = table.get(pos);
+    let removed = table.get_integer_key(pos);
     for i in pos..len {
-        let value = table.get(i + 1);
-        table.set(i, value)?;
+        let value = table.get_integer_key(i + 1);
+        table.set_integer_key(i, value);
     }
     table.set(pos.max(len), Value::Nil)?;
     Ok(Action::Return(vec![removed]))
@@ -197,6 +197,8 @@ fn table_unpack<'gc>(
     }
 
     Ok(Action::Return(
-        (start..=end).map(|key| table.get(key)).collect(),
+        (start..=end)
+            .map(|key| table.get_integer_key(key))
+            .collect(),
     ))
 }

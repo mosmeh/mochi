@@ -49,6 +49,14 @@ impl<'gc> Bucket<'gc> {
         unsafe { key.eq_parts(self.key_tag, self.key_payload) }
     }
 
+    pub fn matches_integer(&self, key: Integer) -> bool {
+        self.key_tag == Tag::Integer && unsafe { self.key_payload.integer } == key
+    }
+
+    pub fn matches_string(&self, key: LuaString<'gc>) -> bool {
+        self.key_tag == Tag::String && unsafe { self.key_payload.string } == key
+    }
+
     pub fn has_next(&self) -> bool {
         self.has_next
     }

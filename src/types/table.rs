@@ -92,11 +92,24 @@ impl<'gc> Table<'gc> {
                 return *value;
             }
         }
-        self.get_hashtable_key(key)
+        self.find_bucket(key)
+            .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
+            .unwrap_or_default()
+    }
+
+    pub fn get_integer_key(&self, i: Integer) -> Value<'gc> {
+        if let Some(value) = self.array.get((i as usize).wrapping_sub(1)) {
+            return *value;
+        }
+        self.find_integer_key_bucket(i)
+            .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
+            .unwrap_or_default()
     }
 
     pub fn get_field(&self, field: LuaString<'gc>) -> Value<'gc> {
-        self.get_hashtable_key(field.into())
+        self.find_string_key_bucket(field)
+            .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
+            .unwrap_or_default()
     }
 
     pub fn set<K, V>(&mut self, key: K, value: V) -> Result<(), TableError>
@@ -105,6 +118,7 @@ impl<'gc> Table<'gc> {
         V: Into<Value<'gc>>,
     {
         let mut key = key.into();
+        let value = value.into();
         match key {
             Value::Nil => return Err(TableError::IndexIsNil),
             Value::Number(x) if x.is_nan() => return Err(TableError::IndexIsNaN),
@@ -113,19 +127,50 @@ impl<'gc> Table<'gc> {
         }
         if let Value::Integer(i) = key {
             if let Some(slot) = self.array.get_mut((i as usize).wrapping_sub(1)) {
-                *slot = value.into();
+                *slot = value;
                 return Ok(());
             }
         }
-        self.set_hashtable_key(key, value.into());
+        if let Some(index) = self.find_bucket(key) {
+            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
+            return Ok(());
+        }
+        if !value.is_nil() {
+            unsafe { self.set_new_hashtable_key(key, value) }
+        }
         Ok(())
+    }
+
+    pub fn set_integer_key<V>(&mut self, i: Integer, value: V)
+    where
+        V: Into<Value<'gc>>,
+    {
+        let value = value.into();
+        if let Some(slot) = self.array.get_mut((i as usize).wrapping_sub(1)) {
+            *slot = value;
+            return;
+        }
+        if let Some(index) = self.find_integer_key_bucket(i) {
+            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
+            return;
+        }
+        if !value.is_nil() {
+            unsafe { self.set_new_hashtable_key(Value::Integer(i), value) }
+        }
     }
 
     pub fn set_field<V>(&mut self, field: LuaString<'gc>, value: V)
     where
         V: Into<Value<'gc>>,
     {
-        self.set_hashtable_key(Value::String(field), value.into());
+        let value = value.into();
+        if let Some(index) = self.find_string_key_bucket(field) {
+            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
+            return;
+        }
+        if !value.is_nil() {
+            unsafe { self.set_new_hashtable_key(Value::String(field), value) }
+        }
     }
 
     pub(crate) fn replace<K, V>(&mut self, key: K, value: V) -> Result<bool, TableError>
@@ -160,11 +205,33 @@ impl<'gc> Table<'gc> {
         Ok(false)
     }
 
+    pub(crate) fn replace_integer_key<V>(&mut self, i: Integer, value: V) -> bool
+    where
+        V: Into<Value<'gc>>,
+    {
+        match self.array.get_mut((i as usize).wrapping_sub(1)) {
+            Some(Value::Nil) => return false,
+            Some(slot) => {
+                *slot = value.into();
+                return true;
+            }
+            None => (),
+        }
+        if let Some(index) = self.find_integer_key_bucket(i) {
+            let bucket = unsafe { self.buckets.get_unchecked_mut(index) };
+            if bucket.has_value() {
+                bucket.update_or_remove_item(value.into());
+                return true;
+            }
+        }
+        false
+    }
+
     pub(crate) fn replace_field<V>(&mut self, field: LuaString<'gc>, value: V) -> bool
     where
         V: Into<Value<'gc>>,
     {
-        if let Some(index) = self.find_bucket(Value::String(field)) {
+        if let Some(index) = self.find_string_key_bucket(field) {
             let bucket = unsafe { self.buckets.get_unchecked_mut(index) };
             if bucket.has_value() {
                 bucket.update_or_remove_item(value.into());
@@ -259,22 +326,6 @@ impl<'gc> Table<'gc> {
         Ok(None)
     }
 
-    fn get_hashtable_key(&self, key: Value<'gc>) -> Value<'gc> {
-        self.find_bucket(key)
-            .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
-            .unwrap_or_default()
-    }
-
-    fn set_hashtable_key(&mut self, key: Value<'gc>, value: Value<'gc>) {
-        if let Some(index) = self.find_bucket(key) {
-            unsafe { self.buckets.get_unchecked_mut(index) }.update_or_remove_item(value);
-            return;
-        }
-        if !value.is_nil() {
-            unsafe { self.set_new_hashtable_key(key, value) }
-        }
-    }
-
     unsafe fn set_new_hashtable_key(&mut self, key: Value<'gc>, value: Value<'gc>) {
         if self.buckets.is_empty() {
             self.rehash(key);
@@ -354,6 +405,44 @@ impl<'gc> Table<'gc> {
         loop {
             let bucket = unsafe { self.buckets.get_unchecked(index) };
             if bucket.matches(key) {
+                return Some(index);
+            }
+            if let Some(next_index) = bucket.next_index() {
+                index = next_index;
+            } else {
+                return None;
+            }
+        }
+    }
+
+    fn find_integer_key_bucket(&self, key: Integer) -> Option<usize> {
+        if self.buckets.is_empty() {
+            return None;
+        }
+
+        let mut index = self.calc_main_bucket_index(Value::Integer(key));
+        loop {
+            let bucket = unsafe { self.buckets.get_unchecked(index) };
+            if bucket.matches_integer(key) {
+                return Some(index);
+            }
+            if let Some(next_index) = bucket.next_index() {
+                index = next_index;
+            } else {
+                return None;
+            }
+        }
+    }
+
+    fn find_string_key_bucket(&self, key: LuaString<'gc>) -> Option<usize> {
+        if self.buckets.is_empty() {
+            return None;
+        }
+
+        let mut index = self.calc_main_bucket_index(Value::String(key));
+        loop {
+            let bucket = unsafe { self.buckets.get_unchecked(index) };
+            if bucket.matches_string(key) {
                 return Some(index);
             }
             if let Some(next_index) = bucket.next_index() {

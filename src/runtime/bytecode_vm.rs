@@ -129,7 +129,7 @@ impl<'gc> Vm<'gc> {
                     opcode::GETI => {
                         let rb = stack[insn.b()];
                         let c = insn.c() as Integer;
-                        let value = rb.borrow_as_table().map(|table| table.get(c));
+                        let value = rb.borrow_as_table().map(|table| table.get_integer_key(c));
                         match value {
                             Some(Value::Nil) | None => {
                                 thread_ref.save_pc(pc);
@@ -217,8 +217,7 @@ impl<'gc> Vm<'gc> {
                         let rkc = if insn.k() { constants[c] } else { stack[c] };
                         let replaced = ra
                             .borrow_as_table_mut(gc)
-                            .map(|mut table| table.replace(b, rkc))
-                            .transpose()?
+                            .map(|mut table| table.replace_integer_key(b, rkc))
                             .unwrap_or_default();
                         if !replaced {
                             thread_ref.save_pc(pc);
@@ -944,7 +943,7 @@ impl<'gc> Vm<'gc> {
                                 table.resize_array(new_array_len);
                             }
                             for (i, x) in stack[a + 1..=a + n].iter().copied().enumerate() {
-                                table.set((offset + i + 1) as Integer, x)?;
+                                table.set_integer_key((offset + i + 1) as Integer, x);
                             }
                         }
                     }
