@@ -213,8 +213,8 @@ impl<'gc> Value<'gc> {
     pub fn fmt_bytes(&self, f: &mut impl std::io::Write) -> std::io::Result<()> {
         match self {
             Self::Nil => f.write_all(b"nil"),
-            Self::Boolean(x) => write!(f, "{}", x),
-            Self::Integer(x) => write!(f, "{}", x),
+            Self::Boolean(x) => write!(f, "{x}"),
+            Self::Integer(x) => write!(f, "{x}"),
             Self::Number(x) => fmt_number(f, *x),
             Self::NativeFunction(x) => write!(f, "function: {:p}", x.as_ptr()),
             Self::String(x) => f.write_all(x.as_bytes()),
@@ -301,7 +301,7 @@ impl<'gc> Value<'gc> {
             Self::String(x) => Some(Cow::Borrowed(x.as_bytes())),
             Self::Integer(x) => {
                 let mut bytes = Vec::new();
-                write!(&mut bytes, "{}", x).ok()?;
+                write!(&mut bytes, "{x}").ok()?;
                 Some(Cow::Owned(bytes))
             }
             Self::Number(x) => {

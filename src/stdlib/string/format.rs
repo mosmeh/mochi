@@ -326,7 +326,7 @@ fn fmt_literal<W: std::io::Write>(f: &mut W, value: Value) -> Result<bool, Error
     match value {
         Value::Nil | Value::Boolean(_) => value.fmt_bytes(f)?,
         Value::Integer(Integer::MIN) => f.write_all(b"0x8000000000000000")?,
-        Value::Integer(i) => write!(f, "{}", i)?,
+        Value::Integer(i) => write!(f, "{i}")?,
         Value::Number(x) => match x {
             x if x == Number::INFINITY => f.write_all(b"1e9999")?,
             x if x == Number::NEG_INFINITY => f.write_all(b"-1e9999")?,
@@ -343,8 +343,8 @@ fn fmt_literal<W: std::io::Write>(f: &mut W, value: Value) -> Result<bool, Error
                         f.write_u8(*ch)?
                     }
                     ch if ch.is_ascii_control() => match iter.peek() {
-                        Some(next_ch) if next_ch.is_ascii_digit() => write!(f, "\\{:03}", ch)?,
-                        _ => write!(f, "\\{}", ch)?,
+                        Some(next_ch) if next_ch.is_ascii_digit() => write!(f, "\\{ch:03}")?,
+                        _ => write!(f, "\\{ch}")?,
                     },
                     ch => f.write_u8(ch)?,
                 }

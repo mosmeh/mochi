@@ -32,7 +32,7 @@ impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}: {}", self.source, self.lineno, self.kind)?;
         if let Some(token) = &self.next_token {
-            write!(f, " near {}", token)?;
+            write!(f, " near {token}")?;
         }
         Ok(())
     }

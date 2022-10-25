@@ -102,9 +102,9 @@ impl Display for TracebackFrame {
             } => {
                 let source = crate::chunk_id_from_source(source);
                 match &lines_defined {
-                    LineRange::File => write!(f, "{}: in main chunk", source),
+                    LineRange::File => write!(f, "{source}: in main chunk"),
                     LineRange::Lines(range) => {
-                        write!(f, "{}: in function <{}:{}>", source, source, range.start())
+                        write!(f, "{source}: in function <{source}:{}>", range.start())
                     }
                 }
             }

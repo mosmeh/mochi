@@ -14,9 +14,9 @@ impl Display for RuntimeError {
         writeln!(f, "{}\nstack traceback:", self.kind,)?;
         if let Some((last, frames)) = self.traceback.split_last() {
             for frame in frames {
-                writeln!(f, "\t{}", frame)?;
+                writeln!(f, "\t{frame}")?;
             }
-            write!(f, "\t{}", last)?;
+            write!(f, "\t{last}")?;
         }
         Ok(())
     }

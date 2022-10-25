@@ -319,10 +319,10 @@ fn os_time<'gc>(
         if value.is_nil() {
             default
                 .into()
-                .ok_or_else(|| ErrorKind::Other(format!("field '{}' missing in date table", field)))
+                .ok_or_else(|| ErrorKind::Other(format!("field '{field}' missing in date table")))
         } else if let Some(i) = value.to_integer() {
             i.try_into()
-                .map_err(|_| ErrorKind::Other(format!("field '{}' is out-of-bound", field)))
+                .map_err(|_| ErrorKind::Other(format!("field '{field}' is out-of-bound")))
         } else {
             Err(ErrorKind::Other(format!(
                 "field '{}' is not an integer",

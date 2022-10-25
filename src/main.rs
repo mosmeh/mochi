@@ -144,7 +144,7 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
 
                 if is_first_line {
                     let result = runtime.execute(|gc, vm| {
-                        let closure = vm.borrow().load(gc, format!("print({})", line), SOURCE)?;
+                        let closure = vm.borrow().load(gc, format!("print({line})"), SOURCE)?;
                         Ok(gc.allocate(closure).into())
                     });
                     match result {
@@ -157,7 +157,7 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
                             ..
                         }) => (),
                         Err(err) => {
-                            eprintln!("{}", err);
+                            eprintln!("{err}");
                             rl.add_history_entry(line);
                             continue;
                         }
@@ -174,7 +174,7 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
                 match result {
                     Ok(()) => (),
                     Err(err) if is_incomplete_input_error(&err) => continue,
-                    Err(err) => eprintln!("{}", err),
+                    Err(err) => eprintln!("{err}"),
                 }
                 rl.add_history_entry(&buf);
                 buf.clear();
@@ -229,7 +229,7 @@ impl CompileCommand {
 
     fn dump_proto(&self, w: &mut impl std::io::Write, proto: &LuaClosureProto) -> Result<()> {
         fn format_counter(word: &str, n: usize) -> String {
-            format!("{} {}{}", n, word, if n == 1 { "" } else { "s" })
+            format!("{n} {word}{}", if n == 1 { "" } else { "s" })
         }
 
         let source = proto.source.as_bstr();
@@ -239,7 +239,7 @@ impl CompileCommand {
             source
         };
         match &proto.lines_defined {
-            LineRange::File => write!(w, "main <{}:0,0> ", source)?,
+            LineRange::File => write!(w, "main <{source}:0,0> ")?,
             LineRange::Lines(range) => write!(
                 w,
                 "function <{}:{},{}> ",
@@ -260,7 +260,7 @@ impl CompileCommand {
 
         for (i, insn) in proto.code.iter().enumerate() {
             let opcode = insn.opcode();
-            write!(w, "\t{}\t{:9}\t", i + 1, opcode)?;
+            write!(w, "\t{}\t{opcode:9}\t", i + 1)?;
             match opcode {
                 OpCode::Return0 => w.write_all(b"\n")?,
                 OpCode::LoadKX
@@ -366,7 +366,7 @@ impl CompileCommand {
         if self.list > 1 {
             writeln!(w, "constants ({}):", proto.constants.len())?;
             for (i, constant) in proto.constants.iter().enumerate() {
-                write!(w, "\t{}\t", i)?;
+                write!(w, "\t{i}\t")?;
                 w.write_all(match constant {
                     Value::Nil => b"N",
                     Value::Boolean(_) => b"B",
@@ -381,14 +381,14 @@ impl CompileCommand {
                         constant.fmt_bytes(w)?;
                         w.write_all(b"\n")?;
                     }
-                    Value::String(s) => writeln!(w, "\t{:?}", s)?,
+                    Value::String(s) => writeln!(w, "\t{s:?}")?,
                     _ => w.write_all(b"\t?\n")?,
                 };
             }
 
             writeln!(w, "upvalues ({}):", proto.upvalues.len())?;
             for (i, desc) in proto.upvalues.iter().enumerate() {
-                write!(w, "\t{}\t", i)?;
+                write!(w, "\t{i}\t")?;
                 match desc {
                     UpvalueDescription::Register(i) => writeln!(w, "1\t{}", i.0)?,
                     UpvalueDescription::Upvalue(i) => writeln!(w, "0\t{}", i.0)?,

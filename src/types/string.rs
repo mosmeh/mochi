@@ -19,7 +19,7 @@ impl std::fmt::Debug for LuaString<'_> {
                 b'\t' => f.write_str("\\t")?,
                 0xb => f.write_str("\\v")?,
                 ch if ch == b' ' || ch.is_ascii_graphic() => f.write_char(char::from(ch))?,
-                ch => write!(f, "\\{:03}", ch)?,
+                ch => write!(f, "\\{ch:03}")?,
             }
         }
         f.write_char('"')

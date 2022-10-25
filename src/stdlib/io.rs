@@ -524,7 +524,7 @@ fn open_file<'gc, P: AsRef<[u8]>>(
 
 fn write_arg<W: std::io::Write>(writer: &mut W, arg: &Argument) -> Result<(), FileError> {
     match arg.get() {
-        Some(Value::Integer(i)) => write!(writer, "{}", i)?,
+        Some(Value::Integer(i)) => write!(writer, "{i}")?,
         Some(Value::Number(x)) => write_number(writer, x)?,
         _ => writer.write_all(&arg.to_string()?)?,
     }

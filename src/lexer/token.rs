@@ -125,8 +125,8 @@ impl std::fmt::Display for Token<'_> {
             Self::Shl => f.write_str("<<"),
             Self::Shr => f.write_str(">>"),
             Self::DoubleColon => f.write_str("::"),
-            Self::Float(x) => write!(f, "{}", x),
-            Self::Integer(i) => write!(f, "{}", i),
+            Self::Float(x) => write!(f, "{x}"),
+            Self::Integer(i) => write!(f, "{i}"),
             Self::Name(name) => write!(f, "{}", name.as_bstr()),
             Self::String(s) => write!(f, "{}", s.as_bstr()),
         }
