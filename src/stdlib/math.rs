@@ -7,7 +7,7 @@ use crate::{
     types::{Integer, NativeClosure, Number, Table, Value},
 };
 use bstr::B;
-use rand::{Rng, RngCore, SeedableRng};
+use rand::{rngs::OsRng, Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use std::{cell::RefCell, ops::DerefMut, rc::Rc, time::SystemTime};
 
@@ -58,7 +58,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
             .unwrap_or_default()
             .as_secs() as i64
     }
-    let seed2 = rand::thread_rng().gen_range(1..=i64::MAX);
+    let seed2 = OsRng.gen_range(1..=i64::MAX);
 
     let rng = rng_from_seeds(seed1(), seed2);
     let rng = Rc::new(RefCell::new(rng));

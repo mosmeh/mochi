@@ -16,7 +16,7 @@ chrono = { version = "0.4.22", features = ["clock"], default-features = false }
 clap = { version = "4.0.8", features = ["std", "help", "usage", "error-context", "derive", "deprecated"], default-features = false, optional = true }
 cpu-time = "1.0.0"
 hashbrown = { version = "0.12.3", features = ["inline-more", "raw"], default-features = false }
-rand = "0.8.5"
+rand = { version = "0.8.5", features = ["getrandom"], default-features = false }
 rand_xoshiro = "0.6.0"
 rlua = { version = "0.19.4", features = ["builtin-lua54", "lua-no-oslib"], optional = true }
 rustc-hash = "1.1.0"
