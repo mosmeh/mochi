@@ -58,7 +58,7 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
             .unwrap_or_default()
             .as_secs() as i64
     }
-    let seed2 = OsRng.gen_range(1..=i64::MAX);
+    let seed2 = OsRng.gen();
 
     let rng = rng_from_seeds(seed1(), seed2);
     let rng = Rc::new(RefCell::new(rng));
