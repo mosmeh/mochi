@@ -113,8 +113,11 @@ impl<'gc> Argument<'gc> {
         self.to_type("thread", Value::as_thread)
     }
 
-    pub fn as_userdata<T: Any>(&self) -> Result<GcCell<'gc, UserData<'gc>>, ErrorKind> {
-        self.to_type("userdata", |value| value.as_userdata::<T>())
+    pub fn as_userdata<T: Any>(
+        &self,
+        gc: &'gc GcContext,
+    ) -> Result<GcCell<UserData<'gc>>, ErrorKind> {
+        self.to_type("userdata", |value| value.as_userdata::<T>(gc))
     }
 
     pub fn borrow_as_userdata_mut<'a, T: Any>(

@@ -27,9 +27,9 @@ impl<'gc> Vm<'gc> {
             } = frame;
 
             let bottom_value = thread_ref.stack[bottom];
-            let closure = bottom_value.as_lua_closure().unwrap();
+            let closure = bottom_value.as_lua_closure(gc).unwrap();
             let upvalues = closure.upvalues.as_slice();
-            let proto = closure.proto.as_ref();
+            let proto = closure.proto.get(gc);
             let code = proto.code.as_ref();
             let constants = proto.constants.as_ref();
 
@@ -65,8 +65,8 @@ impl<'gc> Vm<'gc> {
                     opcode::GETUPVAL => {
                         let value =
                             upvalues[insn.b()]
-                                .borrow()
-                                .get(thread, base, lower_stack, stack);
+                                .borrow(gc)
+                                .get(gc, thread, base, lower_stack, stack);
                         stack[insn.a()] = value;
                     }
                     opcode::SETUPVAL => {
@@ -83,17 +83,18 @@ impl<'gc> Vm<'gc> {
                     opcode::GETTABUP => {
                         let table =
                             upvalues[insn.b()]
-                                .borrow()
-                                .get(thread, base, lower_stack, stack);
+                                .borrow(gc)
+                                .get(gc, thread, base, lower_stack, stack);
                         let rc = match constants[insn.c() as usize] {
                             Value::String(s) => s,
                             _ => unreachable!(),
                         };
-                        let value = table.borrow_as_table().map(|table| table.get_field(rc));
+                        let value = table.borrow_as_table(gc).map(|table| table.get_field(rc));
                         match value {
                             Some(Value::Nil) | None => {
                                 thread_ref.save_pc(pc);
                                 match self.index_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     table,
                                     rc,
@@ -109,11 +110,12 @@ impl<'gc> Vm<'gc> {
                     opcode::GETTABLE => {
                         let rb = stack[insn.b()];
                         let rc = stack[insn.c() as usize];
-                        let value = rb.borrow_as_table().map(|table| table.get(rc));
+                        let value = rb.borrow_as_table(gc).map(|table| table.get(rc));
                         match value {
                             Some(Value::Nil) | None => {
                                 thread_ref.save_pc(pc);
                                 match self.index_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     rb,
                                     rc,
@@ -129,11 +131,12 @@ impl<'gc> Vm<'gc> {
                     opcode::GETI => {
                         let rb = stack[insn.b()];
                         let c = insn.c() as Integer;
-                        let value = rb.borrow_as_table().map(|table| table.get_integer_key(c));
+                        let value = rb.borrow_as_table(gc).map(|table| table.get_integer_key(c));
                         match value {
                             Some(Value::Nil) | None => {
                                 thread_ref.save_pc(pc);
                                 match self.index_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     rb,
                                     c,
@@ -152,11 +155,12 @@ impl<'gc> Vm<'gc> {
                             Value::String(s) => s,
                             _ => unreachable!(),
                         };
-                        let value = rb.borrow_as_table().map(|table| table.get_field(rc));
+                        let value = rb.borrow_as_table(gc).map(|table| table.get_field(rc));
                         match value {
                             Some(Value::Nil) | None => {
                                 thread_ref.save_pc(pc);
                                 match self.index_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     rb,
                                     rc,
@@ -176,8 +180,8 @@ impl<'gc> Vm<'gc> {
                         };
                         let table =
                             upvalues[insn.a()]
-                                .borrow()
-                                .get(thread, base, lower_stack, stack);
+                                .borrow(gc)
+                                .get(gc, thread, base, lower_stack, stack);
                         let c = insn.c() as usize;
                         let rkc = if insn.k() { constants[c] } else { stack[c] };
                         let replaced = table
@@ -275,11 +279,17 @@ impl<'gc> Vm<'gc> {
                             Value::String(s) => s,
                             _ => unreachable!(),
                         };
-                        let value = rb.borrow_as_table().map(|table| table.get_field(rkc));
+                        let value = rb.borrow_as_table(gc).map(|table| table.get_field(rkc));
                         match value {
                             Some(Value::Nil) | None => {
                                 thread_ref.save_pc(pc);
-                                match self.index_slow_path(&mut thread_ref, rb, rkc, base + a)? {
+                                match self.index_slow_path(
+                                    gc,
+                                    &mut thread_ref,
+                                    rb,
+                                    rkc,
+                                    base + a,
+                                )? {
                                     ControlFlow::Continue(()) => continue 'start,
                                     ControlFlow::Break(()) => return Ok(()),
                                 }
@@ -415,6 +425,7 @@ impl<'gc> Vm<'gc> {
 
                         thread_ref.save_pc(pc);
                         match self.arithmetic_slow_path(
+                            gc,
                             &mut thread_ref,
                             metamethod,
                             ra,
@@ -434,7 +445,14 @@ impl<'gc> Vm<'gc> {
                         let (a, b) = if insn.k() { (imm, ra) } else { (ra, imm) };
 
                         thread_ref.save_pc(pc);
-                        match self.arithmetic_slow_path(&mut thread_ref, metamethod, a, b, dest)? {
+                        match self.arithmetic_slow_path(
+                            gc,
+                            &mut thread_ref,
+                            metamethod,
+                            a,
+                            b,
+                            dest,
+                        )? {
                             ControlFlow::Continue(()) => continue 'start,
                             ControlFlow::Break(()) => return Ok(()),
                         }
@@ -448,7 +466,14 @@ impl<'gc> Vm<'gc> {
                         let (a, b) = if insn.k() { (imm, ra) } else { (ra, imm) };
 
                         thread_ref.save_pc(pc);
-                        match self.arithmetic_slow_path(&mut thread_ref, metamethod, a, b, dest)? {
+                        match self.arithmetic_slow_path(
+                            gc,
+                            &mut thread_ref,
+                            metamethod,
+                            a,
+                            b,
+                            dest,
+                        )? {
                             ControlFlow::Continue(()) => continue 'start,
                             ControlFlow::Break(()) => return Ok(()),
                         }
@@ -463,6 +488,7 @@ impl<'gc> Vm<'gc> {
                         } else {
                             thread_ref.save_pc(pc);
                             match self.arithmetic_slow_path(
+                                gc,
                                 &mut thread_ref,
                                 Metamethod::Unm,
                                 rb,
@@ -483,6 +509,7 @@ impl<'gc> Vm<'gc> {
                         } else {
                             thread_ref.save_pc(pc);
                             match self.arithmetic_slow_path(
+                                gc,
                                 &mut thread_ref,
                                 Metamethod::BNot,
                                 rb,
@@ -505,19 +532,19 @@ impl<'gc> Vm<'gc> {
                         let len = match rb {
                             Value::String(s) => s.len() as Integer,
                             Value::Table(table) => {
-                                if self.metamethod_of_object(Metamethod::Len, rb).is_some() {
+                                if self.metamethod_of_object(gc, Metamethod::Len, rb).is_some() {
                                     thread_ref.save_pc(pc);
-                                    match self.len_slow_path(&mut thread_ref, rb, base + a)? {
+                                    match self.len_slow_path(gc, &mut thread_ref, rb, base + a)? {
                                         ControlFlow::Continue(()) => continue 'start,
                                         ControlFlow::Break(()) => return Ok(()),
                                     }
                                 } else {
-                                    table.borrow().lua_len()
+                                    table.borrow(gc).lua_len()
                                 }
                             }
                             _ => {
                                 thread_ref.save_pc(pc);
-                                match self.len_slow_path(&mut thread_ref, rb, base + a)? {
+                                match self.len_slow_path(gc, &mut thread_ref, rb, base + a)? {
                                     ControlFlow::Continue(()) => continue 'start,
                                     ControlFlow::Break(()) => return Ok(()),
                                 }
@@ -545,6 +572,7 @@ impl<'gc> Vm<'gc> {
                                 };
                                 thread_ref.save_pc(pc);
                                 match self.concat_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     lhs_index,
                                     rhs,
@@ -574,11 +602,12 @@ impl<'gc> Vm<'gc> {
                         let rb = stack[insn.b()];
                         if ra == rb {
                             ops::do_conditional_jump(&mut pc, code, insn, true);
-                        } else if self.metamethod_of_object(Metamethod::Eq, ra).is_some()
-                            || self.metamethod_of_object(Metamethod::Eq, rb).is_some()
+                        } else if self.metamethod_of_object(gc, Metamethod::Eq, ra).is_some()
+                            || self.metamethod_of_object(gc, Metamethod::Eq, rb).is_some()
                         {
                             thread_ref.save_pc(pc);
                             match self.compare_slow_path(
+                                gc,
                                 &mut thread_ref,
                                 Metamethod::Eq,
                                 ra,
@@ -601,6 +630,7 @@ impl<'gc> Vm<'gc> {
                             None => {
                                 thread_ref.save_pc(pc);
                                 match self.compare_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     Metamethod::Lt,
                                     ra,
@@ -622,6 +652,7 @@ impl<'gc> Vm<'gc> {
                             None => {
                                 thread_ref.save_pc(pc);
                                 match self.compare_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     Metamethod::Le,
                                     ra,
@@ -664,6 +695,7 @@ impl<'gc> Vm<'gc> {
                                 };
                                 thread_ref.save_pc(pc);
                                 match self.compare_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     Metamethod::Lt,
                                     ra,
@@ -690,6 +722,7 @@ impl<'gc> Vm<'gc> {
                                 };
                                 thread_ref.save_pc(pc);
                                 match self.compare_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     Metamethod::Le,
                                     ra,
@@ -716,6 +749,7 @@ impl<'gc> Vm<'gc> {
                                 };
                                 thread_ref.save_pc(pc);
                                 match self.compare_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     Metamethod::Lt,
                                     imm,
@@ -742,6 +776,7 @@ impl<'gc> Vm<'gc> {
                                 };
                                 thread_ref.save_pc(pc);
                                 match self.compare_slow_path(
+                                    gc,
                                     &mut thread_ref,
                                     Metamethod::Le,
                                     imm,
@@ -780,7 +815,7 @@ impl<'gc> Vm<'gc> {
                         } else {
                             saved_stack_top
                         });
-                        match self.push_frame(&mut thread_ref, base + a)? {
+                        match self.push_frame(gc, &mut thread_ref, base + a)? {
                             ControlFlow::Continue(()) => continue 'start,
                             ControlFlow::Break(()) => return Ok(()),
                         }
@@ -804,7 +839,7 @@ impl<'gc> Vm<'gc> {
                             thread_ref.stack.truncate(bottom + b);
                         }
                         thread_ref.frames.pop().unwrap();
-                        match self.push_frame(&mut thread_ref, bottom)? {
+                        match self.push_frame(gc, &mut thread_ref, bottom)? {
                             ControlFlow::Continue(()) => continue 'start,
                             ControlFlow::Break(()) => return Ok(()),
                         }
@@ -903,7 +938,7 @@ impl<'gc> Vm<'gc> {
                         thread_ref
                             .stack
                             .copy_within(arg_base..arg_base + 3, new_bottom);
-                        match self.push_frame(&mut thread_ref, new_bottom)? {
+                        match self.push_frame(gc, &mut thread_ref, new_bottom)? {
                             ControlFlow::Continue(()) => continue 'start,
                             ControlFlow::Break(()) => return Ok(()),
                         }
@@ -949,7 +984,8 @@ impl<'gc> Vm<'gc> {
                     }
                     opcode::CLOSURE => {
                         let proto = proto.protos[insn.bx()];
-                        let upvalues = proto
+                        let proto_ref = proto.get(gc);
+                        let upvalues = proto_ref
                             .upvalues
                             .iter()
                             .map(|desc| match desc {

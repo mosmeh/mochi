@@ -1,5 +1,5 @@
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
+    gc::{GarbageCollect, Gc, GcCell, GcContext, GcLifetime, Tracer},
     runtime::{Action, ErrorKind, Instruction, Vm},
     types::{LuaString, LuaThread, Value},
 };
@@ -60,6 +60,10 @@ unsafe impl GarbageCollect for LuaClosureProto<'_> {
     }
 }
 
+unsafe impl<'a> GcLifetime<'a> for LuaClosureProto<'_> {
+    type Aged = LuaClosureProto<'a>;
+}
+
 #[derive(Debug, Clone)]
 pub enum LineRange {
     File,
@@ -77,6 +81,10 @@ unsafe impl GarbageCollect for LuaClosure<'_> {
         self.proto.trace(tracer);
         self.upvalues.trace(tracer);
     }
+}
+
+unsafe impl<'a> GcLifetime<'a> for LuaClosure<'_> {
+    type Aged = LuaClosure<'a>;
 }
 
 impl<'gc> From<Gc<'gc, LuaClosureProto<'gc>>> for LuaClosure<'gc> {
@@ -109,6 +117,10 @@ unsafe impl GarbageCollect for NativeClosure<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.0.trace(tracer);
     }
+}
+
+unsafe impl<'a> GcLifetime<'a> for NativeClosure<'_> {
+    type Aged = NativeClosure<'a>;
 }
 
 impl<'gc> NativeClosure<'gc> {
@@ -218,6 +230,10 @@ unsafe impl GarbageCollect for Upvalue<'_> {
             Self::Closed(value) => value.trace(tracer),
         }
     }
+}
+
+unsafe impl<'a> GcLifetime<'a> for Upvalue<'_> {
+    type Aged = Upvalue<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

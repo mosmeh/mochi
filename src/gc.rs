@@ -2,7 +2,7 @@ mod string;
 mod traits;
 
 pub(crate) use string::BoxedString;
-pub use traits::{Finalizer, GarbageCollect, Tracer};
+pub use traits::{Finalizer, GarbageCollect, GcLifetime, ToRooted, Tracer};
 
 use crate::{
     runtime::Vm,
@@ -16,18 +16,20 @@ use std::{
     hash::Hash,
     marker::PhantomData,
     ops::Deref,
+    pin::Pin,
     ptr::NonNull,
 };
 use string::StringPool;
 
 pub struct GcHeap {
     gc: GcContext,
+    roots: RootSet,
     vm: GcCell<'static, Vm<'static>>,
 }
 
 impl Default for GcHeap {
     fn default() -> Self {
-        let mut gc = GcContext {
+        let gc = GcContext {
             pause: Cell::new(200),
             step_multiplier: Cell::new(100),
             step_size: Cell::new(13),
@@ -39,8 +41,6 @@ impl Default for GcHeap {
             debt: Default::default(),
             estimate: Default::default(),
 
-            root: Default::default(),
-
             all: Default::default(),
             sweep: Default::default(),
             prev_sweep: Default::default(),
@@ -50,11 +50,12 @@ impl Default for GcHeap {
             string_pool: Default::default(),
         };
 
+        let roots = RootSet(Default::default());
         let vm = gc.allocate_cell(Vm::new(&gc));
         let vm: GcCell<Vm> = unsafe { std::mem::transmute(vm) };
-        gc.root = Some(vm);
+        roots.0.borrow_mut().push(Some(vm.0.ptr));
 
-        Self { gc, vm }
+        Self { gc, roots, vm }
     }
 }
 
@@ -65,37 +66,11 @@ impl GcHeap {
 
     pub fn with<F, R>(&mut self, f: F) -> R
     where
-        F: for<'gc> FnOnce(&'gc GcContext, GcCell<'gc, Vm<'gc>>) -> R,
+        F: for<'gc> FnOnce(&'gc mut GcContext, &'gc RootSet, GcCell<'gc, Vm<'gc>>) -> R,
     {
-        f(&mut self.gc, unsafe { std::mem::transmute(self.vm) })
-    }
-
-    pub fn step(&mut self) {
-        if self.gc.is_running() {
-            self.gc.step();
-        }
-    }
-
-    pub fn full_gc(&mut self) {
-        self.gc.full_gc();
-    }
-
-    pub fn force_step(&mut self, kbytes: isize) -> bool {
-        let did_step = if kbytes == 0 {
-            self.gc.set_debt(0);
-            self.gc.step();
-            true
-        } else {
-            let debt = kbytes * 1024 + self.gc.debt();
-            self.gc.set_debt(debt);
-            if debt > 0 {
-                self.gc.step();
-                true
-            } else {
-                false
-            }
-        };
-        did_step && self.gc.phase == Phase::Pause
+        f(&mut self.gc, &self.roots, unsafe {
+            std::mem::transmute(self.vm)
+        })
     }
 }
 
@@ -116,8 +91,6 @@ pub struct GcContext {
     allocated_bytes: Cell<usize>,
     debt: Cell<isize>,
     estimate: usize,
-
-    root: Option<GcCell<'static, Vm<'static>>>,
 
     all: Cell<Option<GcPtr<dyn GarbageCollect>>>,
     sweep: Option<GcPtr<dyn GarbageCollect>>,
@@ -234,24 +207,48 @@ impl GcContext {
         LuaString(Gc::new(interned))
     }
 
-    fn full_gc(&mut self) {
+    pub fn step(&mut self, roots: &RootSet) {
+        if self.is_running() && self.debt() > 0 {
+            self.step_inner(roots);
+        }
+    }
+
+    pub fn force_step(&mut self, roots: &RootSet, kbytes: isize) -> bool {
+        let did_step = if kbytes == 0 {
+            self.set_debt(0);
+            self.step(roots);
+            true
+        } else {
+            let debt = kbytes * 1024 + self.debt();
+            self.set_debt(debt);
+            if debt > 0 {
+                self.step(roots);
+                true
+            } else {
+                false
+            }
+        };
+        did_step && self.phase == Phase::Pause
+    }
+
+    pub fn full_gc(&mut self, roots: &RootSet) {
         if matches!(self.phase, Phase::Propagate | Phase::Atomic) {
             self.phase = Phase::Sweep;
             self.sweep = self.all.get();
             self.prev_sweep.take();
         }
         while self.phase != Phase::Pause {
-            self.do_single_step();
+            self.do_single_step(roots);
         }
         loop {
-            self.do_single_step();
+            self.do_single_step(roots);
             if self.phase == Phase::Pause {
                 break;
             }
         }
         debug_assert_eq!(self.estimate, self.total_bytes());
         loop {
-            self.do_single_step();
+            self.do_single_step(roots);
             if self.phase == Phase::Pause {
                 break;
             }
@@ -259,12 +256,12 @@ impl GcContext {
         self.set_debt_for_pause_phase();
     }
 
-    fn step(&mut self) {
+    fn step_inner(&mut self, roots: &RootSet) {
         let mut debt = self.debt.get();
         let step_size = 1 << self.step_size.get();
         let step_multiplier = self.step_multiplier.get() | 1; // avoid division by zero
         loop {
-            let work = self.do_single_step() / step_multiplier;
+            let work = self.do_single_step(roots) / step_multiplier;
             debt -= work as isize;
             if self.phase == Phase::Pause {
                 self.set_debt_for_pause_phase();
@@ -312,10 +309,10 @@ impl GcContext {
         std::mem::size_of_val(gc_box)
     }
 
-    fn do_single_step(&mut self) -> usize {
+    fn do_single_step(&mut self, roots: &RootSet) -> usize {
         match self.phase {
             Phase::Pause => {
-                self.do_pause();
+                self.do_pause(roots);
                 self.phase = Phase::Propagate;
                 WORK2MEM
             }
@@ -327,7 +324,7 @@ impl GcContext {
                 work
             }
             Phase::Atomic => {
-                let work = self.do_atomic();
+                let work = self.do_atomic(roots);
                 self.phase = Phase::Sweep;
                 self.sweep = self.all.get();
                 self.prev_sweep.take();
@@ -344,12 +341,18 @@ impl GcContext {
         }
     }
 
-    fn do_pause(&mut self) {
+    fn trace_roots(&mut self, roots: &RootSet) {
+        for ptr in roots.0.borrow().iter().flatten() {
+            let gc_box = unsafe { ptr.as_ref() };
+            gc_box.color.set(Color::Gray);
+            self.gray.push(into_ptr_to_static(*ptr));
+        }
+    }
+
+    fn do_pause(&mut self, roots: &RootSet) {
         debug_assert!(self.gray.is_empty());
         debug_assert!(self.gray_again.borrow().is_empty());
-        self.root.unwrap().trace(&mut Tracer {
-            gray: &mut self.gray,
-        });
+        self.trace_roots(roots);
     }
 
     fn do_propagate(&mut self) -> usize {
@@ -360,10 +363,8 @@ impl GcContext {
         }
     }
 
-    fn do_atomic(&mut self) -> usize {
-        self.root.unwrap().trace(&mut Tracer {
-            gray: &mut self.gray,
-        });
+    fn do_atomic(&mut self, roots: &RootSet) -> usize {
+        self.trace_roots(roots);
 
         let mut work = 0;
         while let Some(ptr) = self.gray.pop() {
@@ -387,10 +388,6 @@ impl GcContext {
         let current_white = Color::White(self.current_white);
         let other_white = Color::White(!self.current_white);
 
-        let mut finalizer = Finalizer {
-            string_pool: &mut self.string_pool.borrow_mut(),
-        };
-
         while let Some(ptr) = self.sweep {
             let gc_box = unsafe { ptr.as_ref() };
             work += std::mem::size_of_val(gc_box);
@@ -404,7 +401,6 @@ impl GcContext {
                 self.sweep = gc_box.next;
                 debt -= std::mem::size_of_val(gc_box) as isize;
 
-                gc_box.value.finalize(&mut finalizer);
                 unsafe { Box::from_raw(ptr.as_ptr()) };
             } else {
                 debug_assert_eq!(gc_box.color.get(), Color::Black);
@@ -423,6 +419,8 @@ impl GcContext {
         work
     }
 }
+
+pub struct RootSet(RefCell<Vec<Option<GcPtr<dyn GarbageCollect>>>>);
 
 fn into_ptr_to_static<'a>(ptr: GcPtr<dyn GarbageCollect + 'a>) -> GcPtr<dyn GarbageCollect> {
     unsafe { std::mem::transmute(ptr) }
@@ -462,43 +460,39 @@ impl<T: GarbageCollect> Clone for Gc<'_, T> {
 
 impl<T: GarbageCollect> Copy for Gc<'_, T> {}
 
-impl<T: GarbageCollect> Deref for Gc<'_, T> {
-    type Target = T;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        let gc_box = unsafe { &self.ptr.as_ref() };
-        &gc_box.value
-    }
-}
-
 impl<T: GarbageCollect + Debug> Debug for Gc<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_tuple("Gc").field(self.deref()).finish()
+        f.debug_tuple("Gc").field(self.raw_get()).finish()
     }
 }
 
-impl<T: GarbageCollect + PartialEq> PartialEq for Gc<'_, T> {
+impl<T: GarbageCollect + 'static> Deref for Gc<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.raw_get()
+    }
+}
+
+impl<T: GarbageCollect + PartialEq + 'static> PartialEq for Gc<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         **self == **other
     }
 }
 
-impl<T: GarbageCollect + Eq> Eq for Gc<'_, T> {}
-
-impl<T: GarbageCollect + PartialOrd> PartialOrd for Gc<'_, T> {
+impl<T: GarbageCollect + PartialOrd + 'static> PartialOrd for Gc<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.deref().partial_cmp(other.deref())
     }
 }
 
-impl<T: GarbageCollect + Hash> Hash for Gc<'_, T> {
+impl<T: GarbageCollect + Hash + 'static> Hash for Gc<'_, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.deref().hash(state);
     }
 }
 
-impl<T: GarbageCollect> AsRef<T> for Gc<'_, T> {
+impl<T: GarbageCollect + 'static> AsRef<T> for Gc<'_, T> {
     fn as_ref(&self) -> &T {
         self.deref()
     }
@@ -519,6 +513,22 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Gc<'_, T> {
     }
 }
 
+unsafe impl<'a, T: GcLifetime<'a>> GcLifetime<'a> for Gc<'_, T> {
+    type Aged = Gc<'a, T::Aged>;
+}
+
+impl<'a, T: GcLifetime<'a>> ToRooted<'a> for Gc<'_, T> {
+    fn to_rooted(self, root: Root<'_, 'a>) -> Self::Aged {
+        let inner = root.0.deref();
+        let slot = &mut inner.roots.0.borrow_mut()[inner.index];
+        match slot {
+            Some(_) => unreachable!(),
+            None => *slot = Some(into_ptr_to_static(self.ptr)),
+        }
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
 impl<T: GarbageCollect> Gc<'_, T> {
     fn new(ptr: GcPtr<T>) -> Self {
         Self {
@@ -535,6 +545,18 @@ impl<T: GarbageCollect> Gc<'_, T> {
         let gc_box = unsafe { self.ptr.as_ref() };
         &gc_box.value as *const T
     }
+
+    fn raw_get(&self) -> &T {
+        let gc_box = unsafe { &self.ptr.as_ref() };
+        &gc_box.value
+    }
+}
+
+impl<'a, T: GcLifetime<'a>> Gc<'_, T> {
+    #[allow(unused_variables)]
+    pub fn get(&self, gc: &'a GcContext) -> &'a T::Aged {
+        unsafe { std::mem::transmute(self.raw_get()) }
+    }
 }
 
 struct GcRefCell<T: GarbageCollect>(RefCell<T>);
@@ -547,6 +569,14 @@ unsafe impl<T: GarbageCollect> GarbageCollect for GcRefCell<T> {
     fn trace(&self, tracer: &mut Tracer) {
         self.0.borrow().trace(tracer);
     }
+}
+
+unsafe impl<'a, T> GcLifetime<'a> for GcRefCell<T>
+where
+    T: GcLifetime<'a>,
+    T::Aged: GcLifetime<'a> + 'a,
+{
+    type Aged = GcRefCell<T::Aged>;
 }
 
 impl<T: GarbageCollect> GcRefCell<T> {
@@ -567,7 +597,7 @@ impl<T: GarbageCollect> Copy for GcCell<'_, T> {}
 
 impl<T: GarbageCollect + Debug> Debug for GcCell<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_tuple("GcCell").field(&self.0 .0).finish()
+        f.debug_tuple("GcCell").field(&self.0.raw_get().0).finish()
     }
 }
 
@@ -586,14 +616,71 @@ impl<T: GarbageCollect> GcCell<'_, T> {
         let gc_box = unsafe { self.0.ptr.as_ref() };
         gc_box.value.0.as_ptr()
     }
+}
 
-    pub fn borrow(&self) -> Ref<T> {
-        self.0 .0.borrow()
+unsafe impl<'a, T: GcLifetime<'a>> GcLifetime<'a> for GcCell<'_, T> {
+    type Aged = GcCell<'a, T::Aged>;
+}
+
+impl<'a, T> ToRooted<'a> for GcCell<'_, T>
+where
+    T: GcLifetime<'a>,
+{
+    fn to_rooted(self, root: Root<'_, 'a>) -> Self::Aged {
+        GcCell(self.0.to_rooted(root))
+    }
+}
+
+impl<'a, T> GcCell<'_, T>
+where
+    T: GcLifetime<'a>,
+{
+    pub fn borrow(&self, gc: &'a GcContext) -> Ref<'a, T::Aged> {
+        self.0.get(gc).0.borrow()
     }
 
-    pub fn borrow_mut(&self, gc: &GcContext) -> RefMut<T> {
-        let b = self.0 .0.borrow_mut();
+    pub fn borrow_mut(&self, gc: &'a GcContext) -> RefMut<'a, T::Aged> {
+        let b = self.0.get(gc).0.borrow_mut();
         gc.write_barrier(self.0.ptr);
         b
+    }
+}
+
+#[macro_export]
+macro_rules! new_root {
+    ($($gc:expr, $root:ident)*) => {$(
+        let $root = $crate::RootInner::new($gc);
+        let $root = $crate::Root::new(&$root);
+    )*}
+}
+
+#[doc(hidden)]
+pub struct RootInner<'a> {
+    roots: &'a RootSet,
+    index: usize,
+}
+
+impl Drop for RootInner<'_> {
+    fn drop(&mut self) {
+        self.roots.0.borrow_mut().pop().unwrap();
+        debug_assert_eq!(self.roots.0.borrow().len(), self.index);
+    }
+}
+
+impl<'a> RootInner<'a> {
+    pub fn new(roots: &'a RootSet) -> Self {
+        let mut roots_ref = roots.0.borrow_mut();
+        let index = roots_ref.len();
+        roots_ref.push(None);
+        Self { roots, index }
+    }
+}
+
+pub struct Root<'gc, 'root>(Pin<&'root RootInner<'gc>>);
+
+impl<'gc, 'root> Root<'gc, 'root> {
+    #[doc(hidden)]
+    pub fn new(inner: &'root RootInner<'gc>) -> Self {
+        Self(Pin::new(inner))
     }
 }

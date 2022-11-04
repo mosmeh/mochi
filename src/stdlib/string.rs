@@ -88,7 +88,7 @@ fn string_dump<'gc>(
     match args.nth(1).get() {
         Some(Value::LuaClosure(closure)) => {
             let mut binary = Vec::new();
-            binary_chunk::dump(&mut binary, &closure.proto)?;
+            binary_chunk::dump(gc, &mut binary, closure.get(gc).proto.get(gc))?;
             Ok(Action::Return(vec![gc.allocate_string(binary).into()]))
         }
         Some(value) if value.ty() == Type::Function => {

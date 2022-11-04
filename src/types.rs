@@ -327,15 +327,15 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn borrow_as_table(&self) -> Option<Ref<Table<'gc>>> {
+    pub fn borrow_as_table<'a>(&self, gc: &'a GcContext) -> Option<Ref<Table<'a>>> {
         if let Self::Table(x) = self {
-            Some(x.borrow())
+            Some(x.borrow(gc))
         } else {
             None
         }
     }
 
-    pub fn borrow_as_table_mut(&self, gc: &'gc GcContext) -> Option<RefMut<Table<'gc>>> {
+    pub fn borrow_as_table_mut<'a>(&self, gc: &'a GcContext) -> Option<RefMut<Table<'a>>> {
         if let Self::Table(x) = self {
             Some(x.borrow_mut(gc))
         } else {
@@ -343,17 +343,17 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_lua_closure(&self) -> Option<&LuaClosure<'gc>> {
+    pub fn as_lua_closure<'a>(&self, gc: &'a GcContext) -> Option<&LuaClosure<'a>> {
         if let Self::LuaClosure(x) = self {
-            Some(x.as_ref())
+            Some(x.get(gc))
         } else {
             None
         }
     }
 
-    pub fn as_native_closure(&self) -> Option<&NativeClosure<'gc>> {
+    pub fn as_native_closure<'a>(&self, gc: &'a GcContext) -> Option<&NativeClosure<'a>> {
         if let Self::NativeClosure(x) = self {
-            Some(x.as_ref())
+            Some(x.get(gc))
         } else {
             None
         }
@@ -367,15 +367,15 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn borrow_as_thread(&self) -> Option<Ref<LuaThread<'gc>>> {
+    pub fn borrow_as_thread<'a>(&self, gc: &'a GcContext) -> Option<Ref<LuaThread<'a>>> {
         if let Self::Thread(x) = self {
-            Some(x.borrow())
+            Some(x.borrow(gc))
         } else {
             None
         }
     }
 
-    pub fn borrow_as_thread_mut(&self, gc: &'gc GcContext) -> Option<RefMut<LuaThread<'gc>>> {
+    pub fn borrow_as_thread_mut<'a>(&self, gc: &'a GcContext) -> Option<RefMut<LuaThread<'a>>> {
         if let Self::Thread(x) = self {
             Some(x.borrow_mut(gc))
         } else {
@@ -383,16 +383,16 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_userdata<T: Any>(&self) -> Option<GcCell<'gc, UserData<'gc>>> {
+    pub fn as_userdata<T: Any>(&self, gc: &GcContext) -> Option<GcCell<'gc, UserData<'gc>>> {
         match self {
-            Self::UserData(ud) if ud.borrow().is::<T>() => Some(*ud),
+            Self::UserData(ud) if ud.borrow(gc).is::<T>() => Some(*ud),
             _ => None,
         }
     }
 
-    pub fn borrow_as_userdata<T: Any>(&self) -> Option<Ref<T>> {
+    pub fn borrow_as_userdata<'a, T: Any>(&self, gc: &'a GcContext) -> Option<Ref<'a, T>> {
         if let Self::UserData(ud) = self {
-            Ref::filter_map(ud.borrow(), |ud| ud.get()).ok()
+            Ref::filter_map(ud.borrow(gc), |ud| ud.get()).ok()
         } else {
             None
         }

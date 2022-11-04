@@ -16,7 +16,7 @@ pub use metamethod::Metamethod;
 pub use opcode::OpCode;
 
 use crate::{
-    gc::{GarbageCollect, GcCell, GcContext, GcHeap, Tracer},
+    gc::{GarbageCollect, GcCell, GcContext, GcHeap, GcLifetime, Tracer},
     types::{LuaString, LuaThread, Table, ThreadStatus, Type, Upvalue, Value},
     Error, LuaClosure,
 };
@@ -50,7 +50,7 @@ impl Runtime {
             Box<dyn std::error::Error + Send + Sync + 'static>,
         >,
     {
-        let result = self.heap.with(|gc, vm| {
+        let result = self.heap.with(|gc, _, vm| {
             let value = match f(gc, vm) {
                 Ok(value) => value,
                 Err(err) => return Err(ErrorKind::External(err.into())),
@@ -67,7 +67,7 @@ impl Runtime {
             assert!(thread_ref.frames.is_empty());
             assert!(thread_ref.open_upvalues.is_empty());
             thread_ref.stack.push(value);
-            vm.push_frame(&mut thread_ref, 0)?;
+            vm.push_frame(gc, &mut thread_ref, 0)?;
 
             Ok(())
         });
@@ -84,9 +84,9 @@ impl Runtime {
         loop {
             let action = self
                 .heap
-                .with(|gc, vm| vm.borrow_mut(gc).execute_single_step(gc))?;
+                .with(|gc, _, vm| vm.borrow_mut(gc).execute_single_step(gc))?;
             match action {
-                RuntimeAction::StepGc => self.heap.step(),
+                RuntimeAction::StepGc => self.heap.with(|gc, roots, _| gc.step(roots)),
                 RuntimeAction::MutateGc(mutator) => mutator(&mut self.heap),
                 RuntimeAction::Exit => return Ok(()),
             }
@@ -118,6 +118,10 @@ unsafe impl GarbageCollect for Vm<'_> {
         self.metamethod_names.trace(tracer);
         self.metatables.trace(tracer);
     }
+}
+
+unsafe impl<'a> GcLifetime<'a> for Vm<'_> {
+    type Aged = Vm<'a>;
 }
 
 impl<'gc> Vm<'gc> {
@@ -193,22 +197,27 @@ impl<'gc> Vm<'gc> {
         self.metamethod_names[metamethod as usize]
     }
 
-    pub fn metatable_of_object(&self, object: Value<'gc>) -> Option<GcCell<'gc, Table<'gc>>> {
+    pub fn metatable_of_object(
+        &self,
+        gc: &'gc GcContext,
+        object: Value,
+    ) -> Option<GcCell<Table<'gc>>> {
         match object {
-            Value::Table(table) => table.borrow().metatable(),
-            Value::UserData(ud) => ud.borrow().metatable(),
+            Value::Table(table) => table.borrow(gc).metatable(),
+            Value::UserData(ud) => ud.borrow(gc).metatable(),
             _ => self.metatables[object.ty() as usize],
         }
     }
 
     pub fn metamethod_of_object(
         &self,
+        gc: &'gc GcContext,
         metamethod: Metamethod,
         object: Value<'gc>,
     ) -> Option<Value<'gc>> {
-        self.metatable_of_object(object).and_then(|metatable| {
+        self.metatable_of_object(gc, object).and_then(|metatable| {
             let metamethod = metatable
-                .borrow()
+                .borrow(gc)
                 .get_field(self.metamethod_name(metamethod));
             (!metamethod.is_nil()).then_some(metamethod)
         })
@@ -258,7 +267,7 @@ impl<'gc> Vm<'gc> {
                         thread_ref.status = ThreadStatus::Error(kind.clone());
 
                         if self.thread_stack.is_empty() {
-                            let traceback = thread_ref.traceback();
+                            let traceback = thread_ref.traceback(gc);
                             *thread_ref = LuaThread::new();
                             return Err(RuntimeError { kind, traceback });
                         }
@@ -288,6 +297,7 @@ impl<'gc> Vm<'gc> {
 
     pub(crate) fn push_frame(
         &self,
+        gc: &'gc GcContext,
         thread: &mut LuaThread<'gc>,
         bottom: usize,
     ) -> Result<ControlFlow<()>, ErrorKind> {
@@ -300,10 +310,10 @@ impl<'gc> Vm<'gc> {
                 thread.frames.push(Frame::Native { bottom });
                 Ok(ControlFlow::Break(()))
             }
-            value => match self.metamethod_of_object(Metamethod::Call, value) {
+            value => match self.metamethod_of_object(gc, Metamethod::Call, value) {
                 Some(metatable) => {
                     thread.stack.insert(bottom, metatable);
-                    self.push_frame(thread, bottom)
+                    self.push_frame(gc, thread, bottom)
                 }
                 None => Err(ErrorKind::TypeError {
                     operation: Operation::Call,
@@ -326,6 +336,7 @@ impl<'gc> LuaThread<'gc> {
 impl<'gc> Upvalue<'gc> {
     fn get(
         &self,
+        gc: &'gc GcContext,
         current_thread: GcCell<'gc, LuaThread<'gc>>,
         base: usize,
         lower_stack: &[Value<'gc>],
@@ -340,7 +351,7 @@ impl<'gc> Upvalue<'gc> {
                         stack[*index - base]
                     }
                 } else {
-                    thread.borrow().stack[*index]
+                    thread.borrow(gc).stack[*index]
                 }
             }
             Upvalue::Closed(value) => *value,

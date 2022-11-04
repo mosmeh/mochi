@@ -85,7 +85,7 @@ fn io_close<'gc>(
     process::translate_and_return_error(gc, || {
         if file.is_none() {
             vm.registry()
-                .borrow()
+                .borrow(gc)
                 .get_field(gc.allocate_string(IO_OUTPUT))
                 .borrow_as_userdata_mut::<FileHandle>(gc)
                 .unwrap()
@@ -103,7 +103,7 @@ fn io_flush<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let output = vm
         .registry()
-        .borrow()
+        .borrow(gc)
         .get_field(gc.allocate_string(IO_OUTPUT));
     let mut output = output.borrow_as_userdata_mut::<FileHandle>(gc).unwrap();
     file::translate_and_return_error(gc, || {
@@ -151,7 +151,7 @@ fn io_open<'gc>(
     };
 
     file::translate_and_return_error(gc, || {
-        let handle = open_file(gc, &vm.registry().borrow(), &options, filename)?;
+        let handle = open_file(gc, &vm.registry().borrow(gc), &options, filename)?;
         Ok(vec![gc.allocate_cell(handle).into()])
     })
 }
@@ -204,7 +204,7 @@ fn io_popen<'gc>(
         std::io::stdout().flush()?;
         let child = command.spawn()?;
         let registry = vm.registry();
-        let registry = registry.borrow();
+        let registry = registry.borrow(gc);
         let handle = create_file_handle(gc, &registry, Process::from(child));
         Ok(vec![gc.allocate_cell(handle).into()])
     })
@@ -217,7 +217,7 @@ fn io_read<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let input = vm
         .registry()
-        .borrow()
+        .borrow(gc)
         .get_field(gc.allocate_string(IO_INPUT));
     let mut input = input.borrow_as_userdata_mut::<FileHandle>(gc).unwrap();
 
@@ -236,7 +236,7 @@ fn io_type<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let handle = args.nth(1).as_value()?;
-    let result = if let Some(handle) = handle.borrow_as_userdata::<FileHandle>() {
+    let result = if let Some(handle) = handle.borrow_as_userdata::<FileHandle>(gc) {
         let s = if handle.is_open() {
             B("file")
         } else {
@@ -256,7 +256,7 @@ fn io_write<'gc>(
 ) -> Result<Action<'gc>, ErrorKind> {
     let output = vm
         .registry()
-        .borrow()
+        .borrow(gc)
         .get_field(gc.allocate_string(IO_OUTPUT));
     let mut output_ref = output.borrow_as_userdata_mut::<FileHandle>(gc).unwrap();
 
@@ -435,13 +435,13 @@ fn common_io_input_or_output<'gc, K: AsRef<[u8]>>(
     let key = gc.allocate_string(key.as_ref());
     file::translate_and_raise_error(|| {
         let handle = match file.get() {
-            None | Some(Value::Nil) => return Ok(vec![registry.borrow().get_field(key)]),
+            None | Some(Value::Nil) => return Ok(vec![registry.borrow(gc).get_field(key)]),
             Some(Value::String(filename)) => {
-                let handle = open_file(gc, &registry.borrow(), options, filename)?;
+                let handle = open_file(gc, &registry.borrow(gc), options, filename)?;
                 gc.allocate_cell(handle).into()
             }
             Some(value) => {
-                file.as_userdata::<FileHandle>()?;
+                file.as_userdata::<FileHandle>(gc)?;
                 value
             }
         };

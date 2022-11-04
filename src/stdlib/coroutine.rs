@@ -31,7 +31,7 @@ fn coroutine_close<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let co = args.nth(1).as_thread()?;
-    let status = get_coroutine_status(vm.current_thread(), co);
+    let status = get_coroutine_status(gc, vm.current_thread(), co);
     if !matches!(status, CoroutineStatus::Dead | CoroutineStatus::Suspended) {
         return Err(ErrorKind::Other(format!(
             "cannot close a {} coroutine",
@@ -59,7 +59,7 @@ fn coroutine_create<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let f = args.nth(1).ensure_function()?;
-    let co = create_coroutine(vm, f)?;
+    let co = create_coroutine(gc, vm, f)?;
 
     Ok(Action::Return(vec![gc.allocate_cell(co).into()]))
 }
@@ -124,7 +124,7 @@ fn coroutine_status<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let co = args.nth(1).as_thread()?;
-    let status = get_coroutine_status(vm.current_thread(), co);
+    let status = get_coroutine_status(gc, vm.current_thread(), co);
     Ok(Action::Return(vec![gc
         .allocate_string(status.name().as_bytes())
         .into()]))
@@ -136,7 +136,7 @@ fn coroutine_wrap<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let f = args.nth(1).ensure_function()?;
-    let co = create_coroutine(vm, f)?;
+    let co = create_coroutine(gc, vm, f)?;
     let coroutine = gc.allocate_cell(co);
 
     let wrapper = NativeClosure::with_upvalue(coroutine, |_, _, &coroutine, args| {
@@ -166,10 +166,14 @@ fn coroutine_yield<'gc>(
     Ok(Action::Yield(args.without_callee().to_vec()))
 }
 
-fn create_coroutine<'gc>(vm: &mut Vm<'gc>, body: Value<'gc>) -> Result<LuaThread<'gc>, ErrorKind> {
+fn create_coroutine<'gc>(
+    gc: &'gc GcContext,
+    vm: &mut Vm<'gc>,
+    body: Value<'gc>,
+) -> Result<LuaThread<'gc>, ErrorKind> {
     let mut co = LuaThread::new();
     co.stack.push(body);
-    vm.push_frame(&mut co, 0)?;
+    vm.push_frame(gc, &mut co, 0)?;
     Ok(co)
 }
 
@@ -198,13 +202,14 @@ impl CoroutineStatus {
 }
 
 fn get_coroutine_status<'gc>(
+    gc: &GcContext,
     thread: GcCell<'gc, LuaThread<'gc>>,
     coroutine: GcCell<'gc, LuaThread<'gc>>,
 ) -> CoroutineStatus {
     if GcCell::ptr_eq(&coroutine, &thread) {
         return CoroutineStatus::Running;
     }
-    let coroutine_ref = coroutine.borrow();
+    let coroutine_ref = coroutine.borrow(gc);
     match coroutine_ref.status {
         ThreadStatus::Resumable => CoroutineStatus::Suspended,
         ThreadStatus::Unresumable => {

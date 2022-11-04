@@ -104,12 +104,13 @@ fn base_collectgarbage<'gc>(
 
     let result = match opt.as_ref() {
         b"collect" => {
-            return Ok(Action::MutateGc {
+            /*return Ok(Action::MutateGc {
                 mutator: Box::new(|heap| {
                     heap.full_gc();
                 }),
                 continuation: Continuation::new(|_, _, _| Ok(Action::Return(vec![0.into()]))),
-            })
+            })*/
+            todo!()
         }
         b"stop" => {
             gc.stop();
@@ -121,7 +122,7 @@ fn base_collectgarbage<'gc>(
         }
         b"count" => ((gc.total_bytes() as Number) / 1024.0).into(),
         b"step" => {
-            let step = args.nth(2).to_integer_or(0)?;
+            /*let step = args.nth(2).to_integer_or(0)?;
             return Ok(Action::MutateGc {
                 mutator: Box::new(move |heap| {
                     let finished_cycle = heap.force_step(step as isize);
@@ -137,7 +138,8 @@ fn base_collectgarbage<'gc>(
                     let result = vm.current_thread().borrow_mut(gc).stack.pop().unwrap();
                     Ok(Action::Return(vec![result]))
                 }),
-            });
+            });*/
+            todo!()
         }
         b"isrunning" => gc.is_running().into(),
         b"incremental" => {
@@ -219,11 +221,11 @@ fn base_getmetatable<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let object = args.nth(1).as_value()?;
-    let metatable = vm
-        .metatable_of_object(object)
+    /*let metatable = vm
+        .metatable_of_object(gc, object)
         .map(|metatable| {
             let value = metatable
-                .borrow()
+                .borrow(gc)
                 .get_field(gc.allocate_string(B("__metatable")));
             if value.is_nil() {
                 metatable.into()
@@ -232,7 +234,8 @@ fn base_getmetatable<'gc>(
             }
         })
         .unwrap_or_default();
-    Ok(Action::Return(vec![metatable]))
+    Ok(Action::Return(vec![metatable]))*/
+    todo!()
 }
 
 fn base_ipairs<'gc>(
@@ -241,12 +244,12 @@ fn base_ipairs<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     fn iterate<'gc>(
-        _: &'gc GcContext,
+        gc: &'gc GcContext,
         _: &mut Vm<'gc>,
         args: Vec<Value<'gc>>,
     ) -> Result<Action<'gc>, ErrorKind> {
         let i = args.nth(2).to_integer()?.wrapping_add(1);
-        let value = args.nth(1).as_table()?.borrow().get_integer_key(i);
+        let value = args.nth(1).as_table()?.borrow(gc).get_integer_key(i);
 
         Ok(Action::Return(if value.is_nil() {
             vec![Value::Nil]
@@ -348,12 +351,12 @@ fn base_loadfile<'gc>(
 }
 
 fn base_next<'gc>(
-    _: &'gc GcContext,
+    gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let table = args.nth(1).as_table()?;
-    let table = table.borrow();
+    let table = table.borrow(gc);
     let index = args.nth(2).get().unwrap_or_default();
 
     Ok(Action::Return(
@@ -371,9 +374,9 @@ fn base_pairs<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let table = args.nth(1).as_value()?;
-    let metamethod = vm.metatable_of_object(table).and_then(|metatable| {
+    let metamethod = vm.metatable_of_object(gc, table).and_then(|metatable| {
         let value = metatable
-            .borrow()
+            .borrow(gc)
             .get_field(gc.allocate_string(B("__pairs")));
         (!value.is_nil()).then_some(value)
     });
@@ -444,22 +447,22 @@ fn base_rawequal<'gc>(
 }
 
 fn base_rawget<'gc>(
-    _: &'gc GcContext,
+    gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let index = args.nth(2).as_value()?;
-    let value = args.nth(1).as_table()?.borrow().get(index);
+    let value = args.nth(1).as_table()?.borrow(gc).get(index);
     Ok(Action::Return(vec![value]))
 }
 
 fn base_rawlen<'gc>(
-    _: &'gc GcContext,
+    gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let len = match args.nth(1).get() {
-        Some(Value::Table(t)) => t.borrow().lua_len(),
+        Some(Value::Table(t)) => t.borrow(gc).lua_len(),
         Some(Value::String(s)) => s.len() as Integer,
         value => {
             return Err(ErrorKind::ArgumentTypeError {
@@ -534,10 +537,10 @@ fn base_setmetatable<'gc>(
             })
         }
     };
-    match table.borrow().metatable() {
+    match table.borrow(gc).metatable() {
         Some(metatable)
             if !metatable
-                .borrow()
+                .borrow(gc)
                 .get_field(gc.allocate_string(B("__metatable")))
                 .is_nil() =>
         {

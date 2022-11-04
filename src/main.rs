@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 use bstr::{ByteSlice, ByteVec, B};
 use clap::{Parser, Subcommand};
 use mochi_lua::{
-    gc::GcHeap,
+    gc::{GcContext, GcHeap},
     runtime::{OpCode, Runtime, RuntimeError},
     types::{Integer, LineRange, LuaClosureProto, Table, UpvalueDescription, Value},
 };
@@ -65,7 +65,7 @@ fn main() -> Result<()> {
     }
 
     let mut runtime = Runtime::new();
-    runtime.heap().with(|gc, vm| -> Result<()> {
+    runtime.heap().with(|gc, _, vm| -> Result<()> {
         let mut vm = vm.borrow_mut(gc);
         vm.load_stdlib(gc);
 
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
     for stat in &cli.execute {
         runtime
             .execute(|gc, vm| {
-                let closure = vm.borrow().load(gc, stat, "=(command line)")?;
+                let closure = vm.borrow(gc).load(gc, stat, "=(command line)")?;
                 Ok(gc.allocate(closure).into())
             })
             .map_err(Error::msg)?;
@@ -102,7 +102,7 @@ fn main() -> Result<()> {
     if let Some(script) = &cli.script {
         runtime
             .execute(|gc, vm| {
-                let closure = vm.borrow().load_file(gc, script)?;
+                let closure = vm.borrow(gc).load_file(gc, script)?;
                 Ok(gc.allocate(closure).into())
             })
             .map_err(Error::msg)?;
@@ -120,23 +120,24 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
     let mut buf = String::new();
     loop {
         let is_first_line = buf.is_empty();
-        let prompt =
-            runtime.heap().with(|gc, vm| {
-                let prompt = vm.borrow().globals().borrow().get_field(gc.allocate_string(
-                    if is_first_line {
-                        B("_PROMPT")
-                    } else {
-                        B("_PROMPT2")
-                    },
-                ));
-                if !prompt.is_nil() {
-                    let mut bytes = Vec::new();
-                    if prompt.fmt_bytes(&mut bytes).is_ok() {
-                        return bytes.to_str_lossy().to_string();
-                    }
+        let prompt = runtime.heap().with(|gc, _, vm| {
+            let prompt = vm
+                .borrow(gc)
+                .globals()
+                .borrow(gc)
+                .get_field(gc.allocate_string(if is_first_line {
+                    B("_PROMPT")
+                } else {
+                    B("_PROMPT2")
+                }));
+            if !prompt.is_nil() {
+                let mut bytes = Vec::new();
+                if prompt.fmt_bytes(&mut bytes).is_ok() {
+                    return bytes.to_str_lossy().to_string();
                 }
-                if is_first_line { "> " } else { ">> " }.to_owned()
-            });
+            }
+            if is_first_line { "> " } else { ">> " }.to_owned()
+        });
 
         match rl.readline(&prompt) {
             Ok(line) => {
@@ -144,7 +145,7 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
 
                 if is_first_line {
                     let result = runtime.execute(|gc, vm| {
-                        let closure = vm.borrow().load(gc, format!("print({line})"), SOURCE)?;
+                        let closure = vm.borrow(gc).load(gc, format!("print({line})"), SOURCE)?;
                         Ok(gc.allocate(closure).into())
                     });
                     match result {
@@ -167,7 +168,7 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
                 }
                 buf.push_str(&line);
 
-                let result = runtime.execute(|gc, vm| match vm.borrow().load(gc, &buf, SOURCE) {
+                let result = runtime.execute(|gc, vm| match vm.borrow(gc).load(gc, &buf, SOURCE) {
                     Ok(closure) => Ok(gc.allocate(closure).into()),
                     Err(err) => Err(err.into()),
                 });
@@ -210,24 +211,29 @@ fn is_incomplete_input_error(err: &RuntimeError) -> bool {
 impl CompileCommand {
     fn run(self) -> Result<()> {
         let mut heap = GcHeap::new();
-        heap.with(|gc, _| -> Result<()> {
+        heap.with(|gc, _, _| -> Result<()> {
             let proto = mochi_lua::load_file(gc, &self.filename)?;
 
             if self.list > 0 {
                 let mut stdout = std::io::stdout().lock();
-                self.dump_proto(&mut stdout, &proto)?;
+                self.dump_proto(gc, &mut stdout, &proto)?;
             }
             if self.parse_only {
                 return Ok(());
             }
 
             let mut writer = BufWriter::new(File::create(self.output)?);
-            mochi_lua::binary_chunk::dump(&mut writer, &proto)?;
+            mochi_lua::binary_chunk::dump(gc, &mut writer, &proto)?;
             Ok(())
         })
     }
 
-    fn dump_proto(&self, w: &mut impl std::io::Write, proto: &LuaClosureProto) -> Result<()> {
+    fn dump_proto(
+        &self,
+        gc: &GcContext,
+        w: &mut impl std::io::Write,
+        proto: &LuaClosureProto,
+    ) -> Result<()> {
         fn format_counter(word: &str, n: usize) -> String {
             format!("{n} {word}{}", if n == 1 { "" } else { "s" })
         }
@@ -399,7 +405,7 @@ impl CompileCommand {
         writeln!(w)?;
 
         for proto in proto.protos.iter() {
-            self.dump_proto(w, proto)?;
+            self.dump_proto(gc, w, proto.get(gc))?;
         }
 
         Ok(())

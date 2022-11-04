@@ -29,7 +29,7 @@ fn table_concat<'gc>(
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let table = args.nth(1).as_table()?;
-    let table = table.borrow();
+    let table = table.borrow(gc);
     let sep = args.nth(2);
     let sep = sep.to_string_or(B(""))?;
     let i = args.nth(3).to_integer_or(1)?;
@@ -129,7 +129,7 @@ fn table_move<'gc>(
             }
         }
     } else {
-        let a1 = a1.borrow();
+        let a1 = a1.borrow(gc);
         let mut a2 = a2.borrow_mut(gc);
         for i in 0..n {
             a2.set_integer_key(t + i, a1.get_integer_key(f + i));
@@ -178,12 +178,12 @@ fn table_remove<'gc>(
 }
 
 fn table_unpack<'gc>(
-    _: &'gc GcContext,
+    gc: &'gc GcContext,
     _: &mut Vm<'gc>,
     args: Vec<Value<'gc>>,
 ) -> Result<Action<'gc>, ErrorKind> {
     let table = args.nth(1).as_table()?;
-    let table = table.borrow();
+    let table = table.borrow(gc);
     let start = args.nth(2).to_integer_or(1)?;
     let end = args.nth(3).to_integer_or_else(|| table.lua_len())?;
 

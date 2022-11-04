@@ -1,6 +1,6 @@
 use super::{LineRange, Upvalue, Value};
 use crate::{
-    gc::{GarbageCollect, GcCell, GcContext, Tracer},
+    gc::{GarbageCollect, GcCell, GcContext, GcLifetime, Tracer},
     runtime::{ErrorKind, Frame},
 };
 use std::{collections::BTreeMap, fmt::Display};
@@ -19,6 +19,10 @@ unsafe impl GarbageCollect for LuaThread<'_> {
         self.frames.trace(tracer);
         self.open_upvalues.trace(tracer);
     }
+}
+
+unsafe impl<'a> GcLifetime<'a> for LuaThread<'_> {
+    type Aged = LuaThread<'a>;
 }
 
 impl std::fmt::Debug for LuaThread<'_> {
@@ -43,14 +47,14 @@ impl<'gc> LuaThread<'gc> {
         };
     }
 
-    pub fn traceback(&self) -> Vec<TracebackFrame> {
+    pub fn traceback(&self, gc: &GcContext) -> Vec<TracebackFrame> {
         self.frames
             .iter()
             .rev()
             .map(|frame| match frame {
                 Frame::Lua(frame) => {
                     let value = self.stack[frame.bottom];
-                    let proto = value.as_lua_closure().unwrap().proto;
+                    let proto = value.as_lua_closure(gc).unwrap().proto.get(gc);
                     TracebackFrame::Lua {
                         source: String::from_utf8_lossy(&proto.source).to_string(),
                         lines_defined: proto.lines_defined.clone(),

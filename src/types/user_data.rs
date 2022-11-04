@@ -1,5 +1,5 @@
 use super::Table;
-use crate::gc::{GarbageCollect, GcCell, Tracer};
+use crate::gc::{GarbageCollect, GcCell, GcLifetime, Tracer};
 use std::any::Any;
 
 #[derive(Debug)]
@@ -12,6 +12,10 @@ unsafe impl GarbageCollect for UserData<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.metatable.trace(tracer);
     }
+}
+
+unsafe impl<'a> GcLifetime<'a> for UserData<'_> {
+    type Aged = UserData<'a>;
 }
 
 impl<'gc> UserData<'gc> {

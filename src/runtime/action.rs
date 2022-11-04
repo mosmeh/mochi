@@ -191,7 +191,7 @@ impl<'gc> Vm<'gc> {
                 };
                 thread_ref.stack.push(callee);
                 thread_ref.stack.append(&mut args);
-                self.push_frame(&mut thread_ref, bottom)?;
+                self.push_frame(gc, &mut thread_ref, bottom)?;
             }
             Action::ProtectedCall {
                 callee,
@@ -208,14 +208,14 @@ impl<'gc> Vm<'gc> {
                 };
                 thread_ref.stack.push(callee);
                 thread_ref.stack.append(&mut args);
-                self.push_frame(&mut thread_ref, bottom)?;
+                self.push_frame(gc, &mut thread_ref, bottom)?;
             }
             Action::TailCall { callee, mut args } => {
                 thread_ref.frames.pop().unwrap();
                 thread_ref.stack.truncate(bottom);
                 thread_ref.stack.push(callee);
                 thread_ref.stack.append(&mut args);
-                self.push_frame(&mut thread_ref, bottom)?;
+                self.push_frame(gc, &mut thread_ref, bottom)?;
             }
             Action::Return(mut results) => {
                 thread_ref.frames.pop().unwrap();

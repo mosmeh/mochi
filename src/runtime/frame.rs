@@ -97,7 +97,7 @@ impl<'gc> Vm<'gc> {
                 drop(thread_ref);
                 let result = match &callee {
                     Value::NativeFunction(func) => (func.0)(gc, self, args),
-                    Value::NativeClosure(closure) => closure.call(gc, self, args),
+                    Value::NativeClosure(closure) => closure.get(gc).call(gc, self, args),
                     Value::LuaClosure(_) => unreachable!(),
                     value => {
                         return Err(ErrorKind::TypeError {

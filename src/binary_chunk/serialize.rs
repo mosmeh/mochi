@@ -1,12 +1,16 @@
 use crate::{
-    gc::Gc,
+    gc::{Gc, GcContext},
     runtime::Instruction,
     types::{Integer, LineRange, LuaClosureProto, LuaString, Number, UpvalueDescription, Value},
 };
 use byteorder::{NativeEndian, WriteBytesExt};
 use std::io::Write;
 
-pub fn dump<W: Write>(writer: &mut W, proto: &LuaClosureProto) -> std::io::Result<()> {
+pub fn dump<W: Write>(
+    gc: &GcContext,
+    writer: &mut W,
+    proto: &LuaClosureProto,
+) -> std::io::Result<()> {
     writer.write_all(&super::LUA_SIGNATURE)?;
     writer.write_u8(super::LUAC_VERSION)?;
     writer.write_u8(super::LUAC_FORMAT)?;
@@ -21,12 +25,16 @@ pub fn dump<W: Write>(writer: &mut W, proto: &LuaClosureProto) -> std::io::Resul
     writer.write_f64::<NativeEndian>(super::LUAC_NUM)?;
 
     writer.write_u8(proto.upvalues.len() as u8)?;
-    dump_function(writer, proto)?;
+    dump_function(gc, writer, proto)?;
 
     Ok(())
 }
 
-fn dump_function<W: Write>(writer: &mut W, proto: &LuaClosureProto) -> std::io::Result<()> {
+fn dump_function<W: Write>(
+    gc: &GcContext,
+    writer: &mut W,
+    proto: &LuaClosureProto,
+) -> std::io::Result<()> {
     let (line_defined, last_line_defined) = match &proto.lines_defined {
         LineRange::File => (0, 0),
         LineRange::Lines(range) => (*range.start(), *range.end()),
@@ -42,7 +50,7 @@ fn dump_function<W: Write>(writer: &mut W, proto: &LuaClosureProto) -> std::io::
     dump_code(writer, &proto.code)?;
     dump_constants(writer, &proto.constants)?;
     dump_upvalues(writer, &proto.upvalues)?;
-    dump_protos(writer, &proto.protos)?;
+    dump_protos(gc, writer, &proto.protos)?;
 
     dump_int(writer, 0)?; // lineinfo
     dump_int(writer, 0)?; // abslineinfo
@@ -52,10 +60,14 @@ fn dump_function<W: Write>(writer: &mut W, proto: &LuaClosureProto) -> std::io::
     Ok(())
 }
 
-fn dump_protos<W: Write>(writer: &mut W, protos: &[Gc<LuaClosureProto>]) -> std::io::Result<()> {
+fn dump_protos<W: Write>(
+    gc: &GcContext,
+    writer: &mut W,
+    protos: &[Gc<LuaClosureProto>],
+) -> std::io::Result<()> {
     dump_size(writer, protos.len())?;
     for proto in protos {
-        dump_function(writer, proto)?;
+        dump_function(gc, writer, proto.get(gc))?;
     }
     Ok(())
 }

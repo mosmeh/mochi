@@ -2,7 +2,7 @@ mod bucket;
 
 use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Value};
 use crate::{
-    gc::{GarbageCollect, GcCell, Tracer},
+    gc::{GarbageCollect, GcCell, GcLifetime, Tracer},
     number_is_valid_integer,
 };
 use bucket::Bucket;
@@ -57,6 +57,10 @@ unsafe impl GarbageCollect for Table<'_> {
         self.buckets.trace(tracer);
         self.metatable.trace(tracer);
     }
+}
+
+unsafe impl<'a> GcLifetime<'a> for Table<'_> {
+    type Aged = Table<'a>;
 }
 
 impl<'gc> Table<'gc> {

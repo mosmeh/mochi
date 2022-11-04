@@ -151,24 +151,24 @@ fn package_require<'gc>(
 
     let loaded = vm
         .registry()
-        .borrow()
+        .borrow(gc)
         .get_field(gc.allocate_string(super::LUA_LOADED_TABLE))
         .as_table()
         .unwrap();
 
-    let value = loaded.borrow().get_field(name);
+    let value = loaded.borrow(gc).get_field(name);
     if value.to_boolean() {
         return Ok(Action::Return(vec![value]));
     }
 
     let searchers = package
-        .borrow()
+        .borrow(gc)
         .get_field(gc.allocate_string(B("searchers")));
     let searchers = searchers
         .as_table()
         .ok_or_else(|| ErrorKind::other("'package.searchers' must be a table"))?;
 
-    let i = Cell::new(0);
+    /*let i = Cell::new(0);
     let msg = Rc::new(RefCell::new(Vec::new()));
     let continuation = NativeClosure::with_upvalue(
         (name, searchers, loaded),
@@ -176,7 +176,7 @@ fn package_require<'gc>(
             let next_i = i.get() + 1;
             i.set(next_i);
 
-            let searcher = searchers.borrow().get_integer_key(next_i);
+            let searcher = searchers.borrow(gc).get_integer_key(next_i);
             if searcher.is_nil() {
                 return Err(ErrorKind::Other(format!(
                     "module '{}' not found:{}",
@@ -250,7 +250,8 @@ fn package_require<'gc>(
     Ok(Action::TailCall {
         callee: gc.allocate(continuation).into(),
         args: Vec::new(),
-    })
+    })*/
+    todo!()
 }
 
 fn package_searchpath<'gc>(
@@ -310,9 +311,9 @@ fn searcher_preload<'gc>(
 
     let preload = vm
         .registry()
-        .borrow()
+        .borrow(gc)
         .get_field(gc.allocate_string(super::LUA_PRELOAD_TABLE));
-    let preload = preload.borrow_as_table().unwrap();
+    let preload = preload.borrow_as_table(gc).unwrap();
 
     let value = preload.get_field(gc.allocate_string(name.clone()));
     Ok(Action::Return(if value.is_nil() {
@@ -332,7 +333,7 @@ fn searcher_lua<'gc>(
     let name = args.nth(1);
     let name = name.to_string()?;
 
-    let path = package.borrow().get_field(gc.allocate_string(B("path")));
+    let path = package.borrow(gc).get_field(gc.allocate_string(B("path")));
     let path = path
         .to_string()
         .ok_or_else(|| ErrorKind::other("'package.path' must be a string"))?;

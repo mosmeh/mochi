@@ -1,4 +1,4 @@
-use super::{GcPtr, StringPool};
+use super::{GcPtr, Root, StringPool};
 use std::{collections::BTreeMap, hash::BuildHasher, ops::Deref};
 
 pub struct Tracer<'a> {
@@ -217,4 +217,14 @@ unsafe impl<K: GarbageCollect, V: GarbageCollect> GarbageCollect for BTreeMap<K,
             v.trace(tracer);
         }
     }
+}
+
+/// # Safety
+/// `Aged` must be an identical type to `Self` but with a GC lifetime `'a`.
+pub unsafe trait GcLifetime<'a>: GarbageCollect {
+    type Aged: GcLifetime<'a> + 'a;
+}
+
+pub trait ToRooted<'a>: GcLifetime<'a> {
+    fn to_rooted(self, root: Root<'_, 'a>) -> Self::Aged;
 }
