@@ -9,13 +9,13 @@ path = "src/main.rs"
 required-features = ["bin"]
 
 [dependencies]
-anyhow = { version = "1.0.65", optional = true }
+anyhow = { version = "1.0.66", optional = true }
 bstr = { version = "1.0.1", features = ["std"], default-features = false }
 byteorder = "1.4.3"
-chrono = { version = "0.4.22", features = ["clock"], default-features = false }
-clap = { version = "4.0.8", features = ["std", "help", "usage", "error-context", "derive", "deprecated"], default-features = false, optional = true }
+chrono = { version = "0.4.23", features = ["clock"], default-features = false }
+clap = { version = "4.0.27", features = ["std", "help", "usage", "error-context", "derive", "deprecated"], default-features = false, optional = true }
 cpu-time = "1.0.0"
-hashbrown = { version = "0.12.3", features = ["inline-more", "raw"], default-features = false }
+hashbrown = { version = "0.13.1", features = ["inline-more", "raw"], default-features = false }
 rand = { version = "0.8.5", features = ["getrandom"], default-features = false }
 rand_xoshiro = "0.6.0"
 rlua = { version = "0.19.4", features = ["builtin-lua54", "lua-no-oslib"], optional = true }

@@ -68,11 +68,11 @@ fn os_date<'gc>(
     if format == b"*t" {
         let mut table = Table::new();
         if is_utc {
-            let datetime = Utc.timestamp(time, 0);
+            let datetime = datetime_from_timestamp(Utc, time)?;
             set_datetime_to_table(gc, &mut table, &datetime);
             table.set_field(gc.allocate_string(B("isdst")), false);
         } else {
-            let datetime = Local.timestamp(time, 0);
+            let datetime = datetime_from_timestamp(Local, time)?;
             set_datetime_to_table(gc, &mut table, &datetime);
         }
         return Ok(Action::Return(vec![gc.allocate_cell(table).into()]));
@@ -98,9 +98,9 @@ fn os_date<'gc>(
 
     let format = format.to_str_lossy();
     let formatted = if is_utc {
-        Utc.timestamp(time, 0).format(&format)
+        datetime_from_timestamp(Utc, time)?.format(&format)
     } else {
-        Local.timestamp(time, 0).format(&format)
+        datetime_from_timestamp(Local, time)?.format(&format)
     };
     Ok(Action::Return(vec![gc
         .allocate_string(formatted.to_string().into_bytes())
@@ -292,12 +292,10 @@ fn os_time<'gc>(
     let table = table.as_table()?;
     let mut table = table.borrow_mut(gc);
     let datetime = Local
-        .ymd_opt(
+        .with_ymd_and_hms(
             get_field(gc, &table, b"year", None)?,
             get_field(gc, &table, b"month", None)?,
             get_field(gc, &table, b"day", None)?,
-        )
-        .and_hms_opt(
             get_field(gc, &table, b"hour", 12)?,
             get_field(gc, &table, b"min", 0)?,
             get_field(gc, &table, b"sec", 0)?,
@@ -327,4 +325,16 @@ fn set_datetime_to_table<'gc, Tz: TimeZone>(
         gc.allocate_string(B("wday")),
         datetime.weekday().number_from_sunday() as Integer,
     );
+}
+
+fn datetime_from_timestamp<Tz: TimeZone>(
+    timezone: Tz,
+    time: Integer,
+) -> Result<DateTime<Tz>, ErrorKind> {
+    match timezone.timestamp_opt(time, 0).single() {
+        Some(datetime) => Ok(datetime),
+        None => Err(ErrorKind::other(
+            "date result cannot be represented in this installation",
+        )),
+    }
 }
