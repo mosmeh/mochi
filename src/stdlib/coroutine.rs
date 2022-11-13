@@ -1,7 +1,7 @@
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
-    gc::{GcCell, GcContext},
-    runtime::{Action, Continuation, ErrorKind, Vm},
+    gc::{GcCell, GcContext, RootSet},
+    runtime::{ErrorKind, Vm},
     types::{LuaThread, NativeClosure, Table, ThreadStatus, Value},
 };
 use bstr::B;
@@ -26,12 +26,13 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 }
 
 fn coroutine_close<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let co = args.nth(1).as_thread()?;
-    let status = get_coroutine_status(gc, vm.current_thread(), co);
+    let status = get_coroutine_status(gc, vm.borrow(gc).current_thread(), co);
     if !matches!(status, CoroutineStatus::Dead | CoroutineStatus::Suspended) {
         return Err(ErrorKind::Other(format!(
             "cannot close a {} coroutine",
@@ -40,7 +41,7 @@ fn coroutine_close<'gc>(
     }
 
     let mut co = co.borrow_mut(gc);
-    Ok(Action::Return(match &co.status {
+    Ok(match &co.status {
         ThreadStatus::Resumable | ThreadStatus::Unresumable => {
             co.close(gc);
             vec![true.into()]
@@ -50,45 +51,48 @@ fn coroutine_close<'gc>(
             co.close(gc);
             vec![false.into(), msg]
         }
-    }))
+    })
 }
 
 fn coroutine_create<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let f = args.nth(1).ensure_function()?;
     let co = create_coroutine(gc, vm, f)?;
 
-    Ok(Action::Return(vec![gc.allocate_cell(co).into()]))
+    Ok(vec![gc.allocate_cell(co).into()])
 }
 
 fn coroutine_isyieldable<'gc>(
-    _: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let co = args.nth(1);
     let co = if co.is_none() {
-        vm.current_thread()
+        vm.borrow(gc).current_thread()
     } else {
         co.as_thread()?
     };
-    let is_main_thread = GcCell::ptr_eq(&co, &vm.main_thread());
+    let is_main_thread = GcCell::ptr_eq(&co, &vm.borrow(gc).main_thread());
 
-    Ok(Action::Return(vec![(!is_main_thread).into()]))
+    Ok(vec![(!is_main_thread).into()])
 }
 
 fn coroutine_resume<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let coroutine = args.nth(1).as_thread()?;
     let args = args.without_callee()[1..].to_vec();
 
-    Ok(Action::Resume {
+    /*Ok(Action::Resume {
         coroutine,
         args,
         continuation: Continuation::new(|gc, _, result: Result<Vec<Value>, ErrorKind>| {
@@ -103,43 +107,45 @@ fn coroutine_resume<'gc>(
                 ],
             }))
         }),
-    })
+    })*/
+    todo!()
 }
 
 fn coroutine_running<'gc>(
-    _: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    _: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
-    let thread = vm.current_thread();
-    Ok(Action::Return(vec![
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    _: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
+    let thread = vm.borrow(gc).current_thread();
+    Ok(vec![
         thread.into(),
-        GcCell::ptr_eq(&thread, &vm.main_thread()).into(),
-    ]))
+        GcCell::ptr_eq(&thread, &vm.borrow(gc).main_thread()).into(),
+    ])
 }
 
 fn coroutine_status<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let co = args.nth(1).as_thread()?;
-    let status = get_coroutine_status(gc, vm.current_thread(), co);
-    Ok(Action::Return(vec![gc
-        .allocate_string(status.name().as_bytes())
-        .into()]))
+    let status = get_coroutine_status(gc, vm.borrow(gc).current_thread(), co);
+    Ok(vec![gc.allocate_string(status.name().as_bytes()).into()])
 }
 
 fn coroutine_wrap<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let f = args.nth(1).ensure_function()?;
     let co = create_coroutine(gc, vm, f)?;
     let coroutine = gc.allocate_cell(co);
 
-    let wrapper = NativeClosure::with_upvalue(coroutine, |_, _, &coroutine, args| {
+    /*let wrapper = NativeClosure::with_upvalue(coroutine, |_, _, &coroutine, args| {
         Ok(Action::Resume {
             coroutine,
             args: args.without_callee().to_vec(),
@@ -155,25 +161,29 @@ fn coroutine_wrap<'gc>(
         })
     });
 
-    Ok(Action::Return(vec![gc.allocate(wrapper).into()]))
+    Ok(vec![gc.allocate(wrapper).into()])*/
+    todo!()
 }
 
 fn coroutine_yield<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
-    Ok(Action::Yield(args.without_callee().to_vec()))
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
+    //Ok(Action::Yield(args.without_callee().to_vec()))
+    todo!()
 }
 
 fn create_coroutine<'gc>(
     gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
+    vm: GcCell<Vm>,
     body: Value<'gc>,
 ) -> Result<LuaThread<'gc>, ErrorKind> {
     let mut co = LuaThread::new();
     co.stack.push(body);
-    vm.push_frame(gc, &mut co, 0)?;
+    //vm.push_frame(gc, &mut co, 0)?;
+    todo!();
     Ok(co)
 }
 

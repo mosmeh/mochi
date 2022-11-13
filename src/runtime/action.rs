@@ -1,171 +1,4 @@
-use super::{frame::ContinuationFrame, ErrorKind, Frame, RuntimeAction, Vm};
-use crate::{
-    gc::{GarbageCollect, GcCell, GcContext, GcHeap, Tracer},
-    types::{LuaThread, ThreadStatus, Value},
-};
-
-pub enum Action<'gc> {
-    Call {
-        callee: Value<'gc>,
-        args: Vec<Value<'gc>>,
-        continuation: Continuation<'gc, Vec<Value<'gc>>>,
-    },
-    ProtectedCall {
-        callee: Value<'gc>,
-        args: Vec<Value<'gc>>,
-        continuation: Continuation<'gc, Result<Vec<Value<'gc>>, ErrorKind>>,
-    },
-    TailCall {
-        callee: Value<'gc>,
-        args: Vec<Value<'gc>>,
-    },
-    Return(Vec<Value<'gc>>),
-    ReturnArguments,
-    Resume {
-        coroutine: GcCell<'gc, LuaThread<'gc>>,
-        args: Vec<Value<'gc>>,
-        continuation: Continuation<'gc, Result<Vec<Value<'gc>>, ErrorKind>>,
-    },
-    Yield(Vec<Value<'gc>>),
-    MutateGc {
-        mutator: Box<dyn Fn(&mut GcHeap)>,
-        continuation: Continuation<'gc, ()>,
-    },
-}
-
-trait ContinuationFn<'gc, T>: GarbageCollect {
-    fn call(&mut self, gc: &'gc GcContext, vm: &mut Vm<'gc>) -> Result<Action<'gc>, ErrorKind>;
-    fn args(&self) -> Option<&T>;
-    fn set_args(&mut self, args: T);
-}
-
-pub struct Continuation<'gc, T>(Box<dyn ContinuationFn<'gc, T> + 'gc>);
-
-unsafe impl<R> GarbageCollect for Continuation<'_, R> {
-    fn trace(&self, tracer: &mut Tracer) {
-        self.0.trace(tracer);
-    }
-}
-
-impl<'gc, T: 'gc> Continuation<'gc, T> {
-    pub fn new<F>(f: F) -> Self
-    where
-        F: 'static + Fn(&'gc GcContext, &mut Vm<'gc>, T) -> Result<Action<'gc>, ErrorKind>,
-    {
-        struct SimpleContinuation<R, F> {
-            args: Option<R>,
-            f: F,
-        }
-
-        impl<'gc, T, F> ContinuationFn<'gc, T> for SimpleContinuation<T, F>
-        where
-            F: Fn(&'gc GcContext, &mut Vm<'gc>, T) -> Result<Action<'gc>, ErrorKind>,
-        {
-            fn call(
-                &mut self,
-                gc: &'gc GcContext,
-                vm: &mut Vm<'gc>,
-            ) -> Result<Action<'gc>, ErrorKind> {
-                (self.f)(gc, vm, self.args.take().unwrap())
-            }
-
-            fn args(&self) -> Option<&T> {
-                self.args.as_ref()
-            }
-
-            fn set_args(&mut self, args: T) {
-                self.args = Some(args);
-            }
-        }
-
-        unsafe impl<T, F> GarbageCollect for SimpleContinuation<T, F> {
-            fn needs_trace() -> bool {
-                false
-            }
-        }
-
-        Self(Box::new(SimpleContinuation {
-            f: Box::new(f),
-            args: None,
-        }))
-    }
-
-    pub fn with_context<C, F>(context: C, f: F) -> Self
-    where
-        C: 'gc + GarbageCollect,
-        F: 'static + Fn(&'gc GcContext, &mut Vm<'gc>, C, T) -> Result<Action<'gc>, ErrorKind>,
-    {
-        struct ContextContinuation<C, R, F> {
-            context: Option<C>,
-            args: Option<R>,
-            f: F,
-        }
-
-        impl<'gc, C, T, F> ContinuationFn<'gc, T> for ContextContinuation<C, T, F>
-        where
-            C: 'gc + GarbageCollect,
-            F: Fn(&'gc GcContext, &mut Vm<'gc>, C, T) -> Result<Action<'gc>, ErrorKind>,
-        {
-            fn call(
-                &mut self,
-                gc: &'gc GcContext,
-                vm: &mut Vm<'gc>,
-            ) -> Result<Action<'gc>, ErrorKind> {
-                (self.f)(
-                    gc,
-                    vm,
-                    self.context.take().unwrap(),
-                    self.args.take().unwrap(),
-                )
-            }
-
-            fn args(&self) -> Option<&T> {
-                self.args.as_ref()
-            }
-
-            fn set_args(&mut self, result: T) {
-                self.args = Some(result);
-            }
-        }
-
-        unsafe impl<C, T, F> GarbageCollect for ContextContinuation<C, T, F>
-        where
-            C: GarbageCollect,
-        {
-            fn needs_trace() -> bool {
-                C::needs_trace()
-            }
-
-            fn trace(&self, tracer: &mut Tracer) {
-                self.context.trace(tracer);
-            }
-        }
-
-        Self(Box::new(ContextContinuation {
-            context: Some(context),
-            args: None,
-            f,
-        }))
-    }
-
-    pub(crate) fn call(
-        mut self,
-        gc: &'gc GcContext,
-        vm: &mut Vm<'gc>,
-    ) -> Result<Action<'gc>, ErrorKind> {
-        self.0.call(gc, vm)
-    }
-
-    pub(crate) fn args(&self) -> Option<&T> {
-        self.0.args()
-    }
-
-    pub(crate) fn set_args(&mut self, args: T) {
-        self.0.set_args(args);
-    }
-}
-
-impl<'gc> Vm<'gc> {
+/*impl<'gc> Vm<'gc> {
     pub(super) fn handle_action(
         &mut self,
         gc: &'gc GcContext,
@@ -191,7 +24,7 @@ impl<'gc> Vm<'gc> {
                 };
                 thread_ref.stack.push(callee);
                 thread_ref.stack.append(&mut args);
-                self.push_frame(gc, &mut thread_ref, bottom)?;
+                self.call_value(gc, &mut thread_ref, bottom)?;
             }
             Action::ProtectedCall {
                 callee,
@@ -208,14 +41,14 @@ impl<'gc> Vm<'gc> {
                 };
                 thread_ref.stack.push(callee);
                 thread_ref.stack.append(&mut args);
-                self.push_frame(gc, &mut thread_ref, bottom)?;
+                self.call_value(gc, &mut thread_ref, bottom)?;
             }
             Action::TailCall { callee, mut args } => {
                 thread_ref.frames.pop().unwrap();
                 thread_ref.stack.truncate(bottom);
                 thread_ref.stack.push(callee);
                 thread_ref.stack.append(&mut args);
-                self.push_frame(gc, &mut thread_ref, bottom)?;
+                self.call_value(gc, &mut thread_ref, bottom)?;
             }
             Action::Return(mut results) => {
                 thread_ref.frames.pop().unwrap();
@@ -311,3 +144,4 @@ impl<'gc> Vm<'gc> {
         Ok(None)
     }
 }
+*/

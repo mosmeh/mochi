@@ -1,8 +1,10 @@
+mod root;
 mod string;
 mod traits;
 
+pub use root::{Root, RootSet, Rooted, ShadowedRoot};
 pub(crate) use string::BoxedString;
-pub use traits::{Finalizer, GarbageCollect, GcLifetime, ToRooted, Tracer};
+pub use traits::{Finalizer, GarbageCollect, GcLifetime, Tracer};
 
 use crate::{
     runtime::Vm,
@@ -16,7 +18,6 @@ use std::{
     hash::Hash,
     marker::PhantomData,
     ops::Deref,
-    pin::Pin,
     ptr::NonNull,
 };
 use string::StringPool;
@@ -50,10 +51,14 @@ impl Default for GcHeap {
             string_pool: Default::default(),
         };
 
+        fn to_static<T: GcLifetime<'static>>(ptr: GcCell<T>) -> GcCell<'static, T::Aged> {
+            unsafe { std::mem::transmute(ptr) }
+        }
+        let vm = to_static(gc.allocate_cell(Vm::new(&gc)));
+        let ptr = Box::into_raw(Box::new(vm));
+
         let roots = RootSet(Default::default());
-        let vm = gc.allocate_cell(Vm::new(&gc));
-        let vm: GcCell<Vm> = unsafe { std::mem::transmute(vm) };
-        roots.0.borrow_mut().push(Some(vm.0.ptr));
+        roots.0.borrow_mut().push(NonNull::new(ptr));
 
         Self { gc, roots, vm }
     }
@@ -68,9 +73,10 @@ impl GcHeap {
     where
         F: for<'gc> FnOnce(&'gc mut GcContext, &'gc RootSet, GcCell<'gc, Vm<'gc>>) -> R,
     {
-        f(&mut self.gc, &self.roots, unsafe {
-            std::mem::transmute(self.vm)
-        })
+        fn brand<'a, T: GcLifetime<'a>>(ptr: GcCell<T>) -> GcCell<'a, T::Aged> {
+            unsafe { std::mem::transmute(ptr) }
+        }
+        f(&mut self.gc, &self.roots, brand(self.vm))
     }
 }
 
@@ -162,7 +168,7 @@ impl GcContext {
         self.is_running() && self.debt() > 0
     }
 
-    pub fn allocate<T: GarbageCollect>(&self, value: T) -> Gc<T> {
+    pub fn allocate<'gc, T: GcLifetime<'gc>>(&'gc self, value: T) -> Gc<T::Aged> {
         let color = Color::White(self.current_white);
         let mut gc_box = Box::new(std::mem::MaybeUninit::uninit());
         gc_box.write(GcBox {
@@ -170,7 +176,7 @@ impl GcContext {
             next: self.all.get(),
             value,
         });
-        let ptr = Box::into_raw(gc_box) as *mut GcBox<T>;
+        let ptr = Box::into_raw(gc_box) as *mut GcBox<T::Aged>;
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
         self.all.set(Some(into_ptr_to_static(ptr)));
         self.debt
@@ -178,7 +184,7 @@ impl GcContext {
         Gc::new(ptr)
     }
 
-    pub fn allocate_cell<T: GarbageCollect>(&self, value: T) -> GcCell<T> {
+    pub fn allocate_cell<'gc, T: GcLifetime<'gc>>(&'gc self, value: T) -> GcCell<T::Aged> {
         GcCell(self.allocate(GcRefCell::new(value)))
     }
 
@@ -342,10 +348,11 @@ impl GcContext {
     }
 
     fn trace_roots(&mut self, roots: &RootSet) {
+        let mut tracer = Tracer {
+            gray: &mut self.gray,
+        };
         for ptr in roots.0.borrow().iter().flatten() {
-            let gc_box = unsafe { ptr.as_ref() };
-            gc_box.color.set(Color::Gray);
-            self.gray.push(into_ptr_to_static(*ptr));
+            unsafe { ptr.as_ref() }.trace(&mut tracer);
         }
     }
 
@@ -420,8 +427,6 @@ impl GcContext {
     }
 }
 
-pub struct RootSet(RefCell<Vec<Option<GcPtr<dyn GarbageCollect>>>>);
-
 fn into_ptr_to_static<'a>(ptr: GcPtr<dyn GarbageCollect + 'a>) -> GcPtr<dyn GarbageCollect> {
     unsafe { std::mem::transmute(ptr) }
 }
@@ -462,39 +467,40 @@ impl<T: GarbageCollect> Copy for Gc<'_, T> {}
 
 impl<T: GarbageCollect + Debug> Debug for Gc<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_tuple("Gc").field(self.raw_get()).finish()
+        f.debug_tuple("Gc").field(self.deref()).finish()
     }
 }
 
-impl<T: GarbageCollect + 'static> Deref for Gc<'_, T> {
+impl<T: GarbageCollect> Deref for Gc<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.raw_get()
+        let gc_box = unsafe { self.ptr.as_ref() };
+        &gc_box.value
     }
 }
 
-impl<T: GarbageCollect + PartialEq + 'static> PartialEq for Gc<'_, T> {
+impl<T: GarbageCollect> AsRef<T> for Gc<'_, T> {
+    fn as_ref(&self) -> &T {
+        self.deref()
+    }
+}
+
+impl<T: GarbageCollect + PartialEq> PartialEq for Gc<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         **self == **other
     }
 }
 
-impl<T: GarbageCollect + PartialOrd + 'static> PartialOrd for Gc<'_, T> {
+impl<T: GarbageCollect + PartialOrd> PartialOrd for Gc<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.deref().partial_cmp(other.deref())
     }
 }
 
-impl<T: GarbageCollect + Hash + 'static> Hash for Gc<'_, T> {
+impl<T: GarbageCollect + Hash> Hash for Gc<'_, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.deref().hash(state);
-    }
-}
-
-impl<T: GarbageCollect + 'static> AsRef<T> for Gc<'_, T> {
-    fn as_ref(&self) -> &T {
-        self.deref()
     }
 }
 
@@ -502,7 +508,7 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Gc<'_, T> {
     fn trace(&self, tracer: &mut Tracer) {
         let gc_box = unsafe { self.ptr.as_ref() };
         let color = &gc_box.color;
-        if matches!(color.get(), Color::White(_)) {
+        if let Color::White(_) = color.get() {
             if T::needs_trace() {
                 color.set(Color::Gray);
                 tracer.gray.push(into_ptr_to_static(self.ptr));
@@ -517,19 +523,7 @@ unsafe impl<'a, T: GcLifetime<'a>> GcLifetime<'a> for Gc<'_, T> {
     type Aged = Gc<'a, T::Aged>;
 }
 
-impl<'a, T: GcLifetime<'a>> ToRooted<'a> for Gc<'_, T> {
-    fn to_rooted(self, root: Root<'_, 'a>) -> Self::Aged {
-        let inner = root.0.deref();
-        let slot = &mut inner.roots.0.borrow_mut()[inner.index];
-        match slot {
-            Some(_) => unreachable!(),
-            None => *slot = Some(into_ptr_to_static(self.ptr)),
-        }
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
-impl<T: GarbageCollect> Gc<'_, T> {
+impl<'gc, T: GarbageCollect> Gc<'gc, T> {
     fn new(ptr: GcPtr<T>) -> Self {
         Self {
             ptr,
@@ -544,18 +538,6 @@ impl<T: GarbageCollect> Gc<'_, T> {
     pub fn as_ptr(&self) -> *const T {
         let gc_box = unsafe { self.ptr.as_ref() };
         &gc_box.value as *const T
-    }
-
-    fn raw_get(&self) -> &T {
-        let gc_box = unsafe { &self.ptr.as_ref() };
-        &gc_box.value
-    }
-}
-
-impl<'a, T: GcLifetime<'a>> Gc<'_, T> {
-    #[allow(unused_variables)]
-    pub fn get(&self, gc: &'a GcContext) -> &'a T::Aged {
-        unsafe { std::mem::transmute(self.raw_get()) }
     }
 }
 
@@ -597,7 +579,7 @@ impl<T: GarbageCollect> Copy for GcCell<'_, T> {}
 
 impl<T: GarbageCollect + Debug> Debug for GcCell<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_tuple("GcCell").field(&self.0.raw_get().0).finish()
+        f.debug_tuple("GcCell").field(&self.0.deref().0).finish()
     }
 }
 
@@ -622,65 +604,38 @@ unsafe impl<'a, T: GcLifetime<'a>> GcLifetime<'a> for GcCell<'_, T> {
     type Aged = GcCell<'a, T::Aged>;
 }
 
-impl<'a, T> ToRooted<'a> for GcCell<'_, T>
-where
-    T: GcLifetime<'a>,
-{
-    fn to_rooted(self, root: Root<'_, 'a>) -> Self::Aged {
-        GcCell(self.0.to_rooted(root))
-    }
-}
-
-impl<'a, T> GcCell<'_, T>
-where
-    T: GcLifetime<'a>,
-{
+impl<'a, T: GcLifetime<'a>> GcCell<'_, T> {
+    #[allow(unused_variables)]
     pub fn borrow(&self, gc: &'a GcContext) -> Ref<'a, T::Aged> {
-        self.0.get(gc).0.borrow()
+        let ptr = self.0.ptr.as_ptr() as *mut GcBox<GcRefCell<T::Aged>>;
+        unsafe { &*ptr }.value.0.borrow()
     }
 
     pub fn borrow_mut(&self, gc: &'a GcContext) -> RefMut<'a, T::Aged> {
-        let b = self.0.get(gc).0.borrow_mut();
+        let ptr = self.0.ptr.as_ptr() as *mut GcBox<GcRefCell<T::Aged>>;
+        let b = unsafe { &*ptr }.value.0.borrow_mut();
         gc.write_barrier(self.0.ptr);
         b
     }
 }
 
 #[macro_export]
-macro_rules! new_root {
-    ($($gc:expr, $root:ident)*) => {$(
-        let $root = $crate::RootInner::new($gc);
-        let $root = $crate::Root::new(&$root);
-    )*}
+macro_rules! rebind {
+    ($gc:expr, $value:expr) => {
+        unsafe {
+            let v = $crate::gc::unbind($value);
+            $crate::gc::bind($gc, v)
+        }
+    };
 }
 
 #[doc(hidden)]
-pub struct RootInner<'a> {
-    roots: &'a RootSet,
-    index: usize,
+pub unsafe fn unbind<T: GcLifetime<'static>>(x: T) -> *mut T::Aged {
+    Box::into_raw(Box::new(x)) as *mut T::Aged
 }
 
-impl Drop for RootInner<'_> {
-    fn drop(&mut self) {
-        self.roots.0.borrow_mut().pop().unwrap();
-        debug_assert_eq!(self.roots.0.borrow().len(), self.index);
-    }
-}
-
-impl<'a> RootInner<'a> {
-    pub fn new(roots: &'a RootSet) -> Self {
-        let mut roots_ref = roots.0.borrow_mut();
-        let index = roots_ref.len();
-        roots_ref.push(None);
-        Self { roots, index }
-    }
-}
-
-pub struct Root<'gc, 'root>(Pin<&'root RootInner<'gc>>);
-
-impl<'gc, 'root> Root<'gc, 'root> {
-    #[doc(hidden)]
-    pub fn new(inner: &'root RootInner<'gc>) -> Self {
-        Self(Pin::new(inner))
-    }
+#[doc(hidden)]
+#[allow(unused_variables)]
+pub unsafe fn bind<'a, T: GcLifetime<'a>>(gc: &'a GcContext, x: *mut T) -> T::Aged {
+    *Box::from_raw(x as *mut T::Aged)
 }

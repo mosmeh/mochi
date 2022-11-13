@@ -3,8 +3,8 @@ mod format;
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     binary_chunk,
-    gc::{GcCell, GcContext},
-    runtime::{Action, ErrorKind, Metamethod, Vm},
+    gc::{GcCell, GcContext, RootSet},
+    runtime::{ErrorKind, Metamethod, Vm},
     types::{Integer, Table, Type, Value},
 };
 use bstr::{ByteSlice, B};
@@ -40,10 +40,11 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
 }
 
 fn string_byte<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
 
@@ -51,18 +52,19 @@ fn string_byte<'gc>(
     let j = args.nth(3).to_integer_or(i)?;
     let range = indices_to_range(i, j, s.len() as Integer);
 
-    Ok(Action::Return(if range.is_empty() {
+    Ok(if range.is_empty() {
         Vec::new()
     } else {
         s[range].iter().map(|b| (*b as Integer).into()).collect()
-    }))
+    })
 }
 
 fn string_char<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let len = args.without_callee().len();
     let mut bytes = Vec::with_capacity(len);
     for nth in 1..=len {
@@ -77,19 +79,20 @@ fn string_char<'gc>(
         }
     }
 
-    Ok(Action::Return(vec![gc.allocate_string(bytes).into()]))
+    Ok(vec![gc.allocate_string(bytes).into()])
 }
 
 fn string_dump<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     match args.nth(1).get() {
         Some(Value::LuaClosure(closure)) => {
             let mut binary = Vec::new();
-            binary_chunk::dump(gc, &mut binary, closure.get(gc).proto.get(gc))?;
-            Ok(Action::Return(vec![gc.allocate_string(binary).into()]))
+            binary_chunk::dump(gc, &mut binary, &closure.proto)?;
+            Ok(vec![gc.allocate_string(binary).into()])
         }
         Some(value) if value.ty() == Type::Function => {
             Err(ErrorKind::other("unable to dump given function"))
@@ -103,10 +106,11 @@ fn string_dump<'gc>(
 }
 
 fn string_find<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
     let pattern = args.nth(2);
@@ -122,7 +126,7 @@ fn string_find<'gc>(
         _ => len as Integer + init,
     } as usize;
     if start >= len {
-        return Ok(Action::Return(vec![Value::Nil]));
+        return Ok(vec![Value::Nil]);
     }
 
     const SPECIALS: &[u8] = b"^$*+?.([%-";
@@ -130,42 +134,43 @@ fn string_find<'gc>(
         todo!("regex")
     }
 
-    Ok(Action::Return(
-        if let Some(pos) = &s[start..].find(&pattern) {
-            let i = *pos + start;
-            vec![
-                ((i + 1) as Integer).into(),
-                ((i + pattern.len()) as Integer).into(),
-            ]
-        } else {
-            vec![Value::Nil]
-        },
-    ))
+    Ok(if let Some(pos) = &s[start..].find(&pattern) {
+        let i = *pos + start;
+        vec![
+            ((i + 1) as Integer).into(),
+            ((i + pattern.len()) as Integer).into(),
+        ]
+    } else {
+        vec![Value::Nil]
+    })
 }
 
 fn string_len<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let len = args.nth(1).to_string()?.len() as Integer;
-    Ok(Action::Return(vec![len.into()]))
+    Ok(vec![len.into()])
 }
 
 fn string_lower<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let lower = args.nth(1).to_string()?.to_ascii_lowercase();
-    Ok(Action::Return(vec![gc.allocate_string(lower).into()]))
+    Ok(vec![gc.allocate_string(lower).into()])
 }
 
 fn string_sub<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
 
@@ -173,16 +178,17 @@ fn string_sub<'gc>(
     let j = args.nth(3).to_integer_or(-1)?;
     let range = indices_to_range(i, j, s.len() as Integer);
 
-    Ok(Action::Return(vec![gc
+    Ok(vec![gc
         .allocate_string(if range.is_empty() { b"" } else { &s[range] })
-        .into()]))
+        .into()])
 }
 
 fn string_rep<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
     let n = args.nth(2).to_integer()?;
@@ -211,26 +217,28 @@ fn string_rep<'gc>(
         Vec::new()
     };
 
-    Ok(Action::Return(vec![gc.allocate_string(string).into()]))
+    Ok(vec![gc.allocate_string(string).into()])
 }
 
 fn string_reverse<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let mut string = args.nth(1).to_string()?.to_vec();
     string.reverse();
-    Ok(Action::Return(vec![gc.allocate_string(string).into()]))
+    Ok(vec![gc.allocate_string(string).into()])
 }
 
 fn string_upper<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let upper = args.nth(1).to_string()?.to_ascii_uppercase();
-    Ok(Action::Return(vec![gc.allocate_string(upper).into()]))
+    Ok(vec![gc.allocate_string(upper).into()])
 }
 
 fn indices_to_range(i: Integer, j: Integer, len: Integer) -> Range<usize> {

@@ -1,7 +1,7 @@
 use super::helpers::ArgumentsExt;
 use crate::{
-    gc::{GcCell, GcContext},
-    runtime::{Action, Continuation, ErrorKind, Vm},
+    gc::{GcCell, GcContext, RootSet},
+    runtime::{ErrorKind, Vm},
     types::{NativeClosure, NativeFunction, Table, Value},
     LUA_VERSION,
 };
@@ -142,14 +142,16 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
 }
 
 fn package_require<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    package: &GcCell<'gc, Table<'gc>>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    package: &GcCell<Table>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let name = gc.allocate_string(args.nth(1).to_string()?);
 
     let loaded = vm
+        .borrow(gc)
         .registry()
         .borrow(gc)
         .get_field(gc.allocate_string(super::LUA_LOADED_TABLE))
@@ -158,7 +160,7 @@ fn package_require<'gc>(
 
     let value = loaded.borrow(gc).get_field(name);
     if value.to_boolean() {
-        return Ok(Action::Return(vec![value]));
+        return Ok(vec![value]);
     }
 
     let searchers = package
@@ -255,10 +257,11 @@ fn package_require<'gc>(
 }
 
 fn package_searchpath<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let name = args.nth(1);
     let name = name.to_string()?;
 
@@ -271,10 +274,10 @@ fn package_searchpath<'gc>(
     let rep = args.nth(4);
     let rep = rep.to_string_or(LUA_DIRSEP)?;
 
-    Ok(Action::Return(match search_path(name, path, sep, rep) {
+    Ok(match search_path(name, path, sep, rep) {
         Ok(filename) => vec![gc.allocate_string(filename).into()],
         Err(msg) => vec![Value::Nil, gc.allocate_string(msg).into()],
-    }))
+    })
 }
 
 fn search_path<N, P, S, D>(name: N, path: P, sep: S, dirsep: D) -> Result<Vec<u8>, Vec<u8>>
@@ -302,34 +305,37 @@ where
 }
 
 fn searcher_preload<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let name = args.nth(1);
     let name = name.to_string()?;
 
     let preload = vm
+        .borrow(gc)
         .registry()
         .borrow(gc)
         .get_field(gc.allocate_string(super::LUA_PRELOAD_TABLE));
     let preload = preload.borrow_as_table(gc).unwrap();
 
     let value = preload.get_field(gc.allocate_string(name.clone()));
-    Ok(Action::Return(if value.is_nil() {
+    Ok(if value.is_nil() {
         let msg = bstr::concat([b"no field package.preload[\'", name.as_ref(), b"\']"]);
         vec![gc.allocate_string(msg).into()]
     } else {
         vec![value, gc.allocate_string(B(":preload:")).into()]
-    }))
+    })
 }
 
 fn searcher_lua<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    package: &GcCell<'gc, Table<'gc>>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    package: &GcCell<Table>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let name = args.nth(1);
     let name = name.to_string()?;
 
@@ -340,13 +346,13 @@ fn searcher_lua<'gc>(
 
     let filename = match search_path(&name, path, b".", LUA_LSUBSEP) {
         Ok(filename) => filename,
-        Err(msg) => return Ok(Action::Return(vec![gc.allocate_string(msg).into()])),
+        Err(msg) => return Ok(vec![gc.allocate_string(msg).into()]),
     };
 
     let closure = filename
         .to_path()
         .map_err(|e| e.to_string())
-        .and_then(|path| vm.load_file(gc, path).map_err(|e| e.to_string()));
+        .and_then(|path| vm.borrow(gc).load_file(gc, path).map_err(|e| e.to_string()));
     let closure = match closure {
         Ok(closure) => closure,
         Err(err) => {
@@ -359,8 +365,8 @@ fn searcher_lua<'gc>(
         }
     };
 
-    Ok(Action::Return(vec![
+    Ok(vec![
         gc.allocate(closure).into(),
         gc.allocate_string(filename).into(),
-    ]))
+    ])
 }

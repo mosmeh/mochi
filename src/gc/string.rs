@@ -1,4 +1,4 @@
-use super::{Finalizer, GarbageCollect, GcPtr};
+use super::{Finalizer, GarbageCollect, GcLifetime, GcPtr};
 use hashbrown::HashMap;
 use rustc_hash::FxHasher;
 use std::{
@@ -41,6 +41,10 @@ unsafe impl GarbageCollect for BoxedString {
             .unwrap();
         unsafe { table.remove(bucket) };
     }
+}
+
+unsafe impl<'a> GcLifetime<'a> for BoxedString {
+    type Aged = Self;
 }
 
 impl BoxedString {

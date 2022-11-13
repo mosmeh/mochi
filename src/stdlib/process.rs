@@ -1,7 +1,7 @@
 use super::file::{self, FileError};
 use crate::{
     gc::GcContext,
-    runtime::{Action, ErrorKind},
+    runtime::ErrorKind,
     types::{Integer, Value},
 };
 use bstr::B;
@@ -80,7 +80,7 @@ impl Process {
     }
 }
 
-pub fn translate_and_return_error<F>(gc: &GcContext, f: F) -> Result<Action, ErrorKind>
+pub fn translate_and_return_error<F>(gc: &GcContext, f: F) -> Result<Vec<Value>, ErrorKind>
 where
     F: FnOnce() -> Result<Option<ExitStatus>, FileError>,
 {
@@ -90,14 +90,14 @@ where
             {
                 use std::os::unix::process::ExitStatusExt;
                 if let Some(signal) = status.signal() {
-                    return Ok(Action::Return(vec![
+                    return Ok(vec![
                         Value::Nil,
                         gc.allocate_string(B("signal")).into(),
                         (signal as Integer).into(),
-                    ]));
+                    ]);
                 }
             }
-            Ok(Action::Return(vec![
+            Ok(vec![
                 if status.success() {
                     true.into()
                 } else {
@@ -108,9 +108,9 @@ where
                     .code()
                     .map(|code| (code as Integer).into())
                     .unwrap_or_default(),
-            ]))
+            ])
         }
-        Ok(None) => Ok(Action::Return(vec![true.into()])),
+        Ok(None) => Ok(vec![true.into()]),
         Err(err) => file::translate_and_return_error(gc, || Err(err)),
     }
 }

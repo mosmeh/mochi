@@ -53,7 +53,7 @@ impl<'gc> Bucket<'gc> {
         self.key_tag == Tag::Integer && unsafe { self.key_payload.integer } == key
     }
 
-    pub fn matches_string(&self, key: LuaString<'gc>) -> bool {
+    pub fn matches_string(&self, key: LuaString) -> bool {
         self.key_tag == Tag::String && unsafe { self.key_payload.string } == key
     }
 

@@ -1,9 +1,9 @@
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
-    gc::{GcCell, GcContext},
-    runtime::{Action, Continuation, ErrorKind, Vm},
+    gc::{GcCell, GcContext, RootSet},
+    runtime::{ErrorKind, Vm},
     string,
-    types::{Integer, LuaClosure, NativeClosure, NativeFunction, Number, Table, Value},
+    types::{Integer, LuaClosure, NativeClosure, NativeFunction, Number, Table, Upvalue, Value},
     LUA_VERSION,
 };
 use bstr::{ByteSlice, B};
@@ -51,7 +51,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     let warning_is_on = Rc::new(Cell::new(false));
     globals.set_field(
         gc.allocate_string(B("warn")),
-        gc.allocate(NativeClosure::new(move |_, _, args| {
+        gc.allocate(NativeClosure::new(move |_, _, _, args| {
             let first_message = args.nth(1);
             let first_message = first_message.to_string()?;
             if args.without_callee().len() == 1 {
@@ -61,7 +61,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
                         b"off" => warning_is_on.set(false),
                         _ => (),
                     }
-                    return Ok(Action::Return(Vec::new()));
+                    return Ok(Vec::new());
                 }
             }
 
@@ -73,7 +73,7 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
             if warning_is_on.get() {
                 eprintln!("Lua warning: {}", concatenated.as_bstr());
             }
-            Ok(Action::Return(Vec::new()))
+            Ok(Vec::new())
         })),
     );
 
@@ -81,12 +81,13 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
 }
 
 fn base_assert<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     if args.nth(1).as_value()?.to_boolean() {
-        Ok(Action::Return(args.without_callee().to_vec()))
+        Ok(args.without_callee().to_vec())
     } else if let Some(error_obj) = args.nth(2).get() {
         Err(ErrorKind::from_error_object(error_obj))
     } else {
@@ -95,22 +96,18 @@ fn base_assert<'gc>(
 }
 
 fn base_collectgarbage<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    roots: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let opt = args.nth(1);
     let opt = opt.to_string_or(B("collect"))?;
 
     let result = match opt.as_ref() {
         b"collect" => {
-            /*return Ok(Action::MutateGc {
-                mutator: Box::new(|heap| {
-                    heap.full_gc();
-                }),
-                continuation: Continuation::new(|_, _, _| Ok(Action::Return(vec![0.into()]))),
-            })*/
-            todo!()
+            gc.full_gc(roots);
+            0.into()
         }
         b"stop" => {
             gc.stop();
@@ -122,24 +119,9 @@ fn base_collectgarbage<'gc>(
         }
         b"count" => ((gc.total_bytes() as Number) / 1024.0).into(),
         b"step" => {
-            /*let step = args.nth(2).to_integer_or(0)?;
-            return Ok(Action::MutateGc {
-                mutator: Box::new(move |heap| {
-                    let finished_cycle = heap.force_step(step as isize);
-                    heap.with(|gc, vm| {
-                        vm.borrow()
-                            .current_thread()
-                            .borrow_mut(gc)
-                            .stack
-                            .push(finished_cycle.into());
-                    });
-                }),
-                continuation: Continuation::new(|gc, vm, _| {
-                    let result = vm.current_thread().borrow_mut(gc).stack.pop().unwrap();
-                    Ok(Action::Return(vec![result]))
-                }),
-            });*/
-            todo!()
+            let step = args.nth(2).to_integer_or(0)?;
+            let finished_cycle = gc.force_step(roots, step as isize);
+            finished_cycle.into()
         }
         b"isrunning" => gc.is_running().into(),
         b"incremental" => {
@@ -177,51 +159,59 @@ fn base_collectgarbage<'gc>(
             })
         }
     };
-    Ok(Action::Return(vec![result]))
+    Ok(vec![result])
 }
 
 fn base_dofile<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let filename = args.nth(1);
     let closure = if filename.is_present() {
         let filename = filename.to_string()?;
         let path = filename
             .to_path()
             .map_err(|e| ErrorKind::Other(e.to_string()))?;
-        vm.load_file(gc, path)
+        vm.borrow(gc)
+            .load_file(gc, path)
             .map_err(|e| ErrorKind::Other(e.to_string()))?
     } else {
         let mut bytes = Vec::new();
         std::io::stdin().read_to_end(&mut bytes)?;
-        vm.load(gc, &bytes, B("=stdin"))
+        vm.borrow(gc)
+            .load(gc, &bytes, B("=stdin"))
             .map_err(|e| ErrorKind::Other(e.to_string()))?
     };
 
-    Ok(Action::TailCall {
+    /*Ok(Action::TailCall {
         callee: gc.allocate(closure).into(),
         args: Vec::new(),
-    })
+    })*/
+    todo!()
 }
 
 fn base_error<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let error_obj = args.nth(1).get().unwrap_or_default();
     Err(ErrorKind::from_error_object(error_obj))
 }
 
 fn base_getmetatable<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
-    let object = args.nth(1).as_value()?;
-    /*let metatable = vm
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
+    todo!()
+    /*let object = args.nth(1).as_value()?;
+    let metatable = vm
+        .borrow(gc)
         .metatable_of_object(gc, object)
         .map(|metatable| {
             let value = metatable
@@ -234,44 +224,42 @@ fn base_getmetatable<'gc>(
             }
         })
         .unwrap_or_default();
-    Ok(Action::Return(vec![metatable]))*/
-    todo!()
+    Ok(vec![metatable])*/
 }
 
 fn base_ipairs<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     fn iterate<'gc>(
-        gc: &'gc GcContext,
-        _: &mut Vm<'gc>,
-        args: Vec<Value<'gc>>,
-    ) -> Result<Action<'gc>, ErrorKind> {
+        gc: &'gc mut GcContext,
+        _: &RootSet,
+        _: GcCell<Vm>,
+        args: &[Value<'gc>],
+    ) -> Result<Vec<Value<'gc>>, ErrorKind> {
         let i = args.nth(2).to_integer()?.wrapping_add(1);
         let value = args.nth(1).as_table()?.borrow(gc).get_integer_key(i);
 
-        Ok(Action::Return(if value.is_nil() {
+        Ok(if value.is_nil() {
             vec![Value::Nil]
         } else {
             vec![i.into(), value]
-        }))
+        })
     }
 
     let table = args.nth(1).as_value()?;
 
-    Ok(Action::Return(vec![
-        NativeFunction::new(iterate).into(),
-        table,
-        0.into(),
-    ]))
+    Ok(vec![NativeFunction::new(iterate).into(), table, 0.into()])
 }
 
 fn base_load<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let mode = args.nth(3);
     let mode = mode.to_string_or(B("bt"))?;
     if !mode.contains(&b'b') || !mode.contains(&b't') {
@@ -284,10 +272,10 @@ fn base_load<'gc>(
         match crate::load(gc, bytes, chunk_name) {
             Ok(proto) => proto,
             Err(err) => {
-                return Ok(Action::Return(vec![
+                return Ok(vec![
                     Value::Nil,
                     gc.allocate_string(err.to_string().into_bytes()).into(),
-                ]))
+                ])
             }
         }
     } else {
@@ -295,21 +283,22 @@ fn base_load<'gc>(
     };
 
     let mut closure = LuaClosure::from(gc.allocate(proto));
-    let upvalue = if let Some(upvalue) = args.nth(4).get() {
+    let upvalue: Upvalue = if let Some(upvalue) = args.nth(4).get() {
         upvalue.into()
     } else {
-        Value::Table(vm.globals()).into()
+        Value::Table(vm.borrow(gc).globals()).into()
     };
     closure.upvalues.push(gc.allocate_cell(upvalue));
 
-    Ok(Action::Return(vec![gc.allocate(closure).into()]))
+    Ok(vec![gc.allocate(closure).into()])
 }
 
 fn base_loadfile<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let mode = args.nth(2);
     let mode = mode.to_string_or(B("bt"))?;
     if !mode.contains(&b'b') || !mode.contains(&b't') {
@@ -332,55 +321,58 @@ fn base_loadfile<'gc>(
     let proto = match proto {
         Ok(proto) => proto,
         Err(err) => {
-            return Ok(Action::Return(vec![
+            return Ok(vec![
                 Value::Nil,
                 gc.allocate_string(err.into_bytes()).into(),
-            ]))
+            ])
         }
     };
 
     let mut closure = LuaClosure::from(gc.allocate(proto));
-    let upvalue = if let Some(upvalue) = args.nth(3).get() {
+    let upvalue: Upvalue = if let Some(upvalue) = args.nth(3).get() {
         upvalue.into()
     } else {
-        Value::Table(vm.globals()).into()
+        Value::Table(vm.borrow(gc).globals()).into()
     };
     closure.upvalues.push(gc.allocate_cell(upvalue));
 
-    Ok(Action::Return(vec![gc.allocate(closure).into()]))
+    Ok(vec![gc.allocate(closure).into()])
 }
 
 fn base_next<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let table = table.borrow(gc);
     let index = args.nth(2).get().unwrap_or_default();
 
-    Ok(Action::Return(
-        if let Some((key, value)) = table.next(index)? {
-            vec![key, value]
-        } else {
-            vec![Value::Nil]
-        },
-    ))
+    Ok(if let Some((key, value)) = table.next(index)? {
+        vec![key, value]
+    } else {
+        vec![Value::Nil]
+    })
 }
 
 fn base_pairs<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let table = args.nth(1).as_value()?;
-    let metamethod = vm.metatable_of_object(gc, table).and_then(|metatable| {
-        let value = metatable
-            .borrow(gc)
-            .get_field(gc.allocate_string(B("__pairs")));
-        (!value.is_nil()).then_some(value)
-    });
-    match metamethod {
+    let metamethod = vm
+        .borrow(gc)
+        .metatable_of_object(gc, table)
+        .and_then(|metatable| {
+            let value = metatable
+                .borrow(gc)
+                .get_field(gc.allocate_string(B("__pairs")));
+            (!value.is_nil()).then_some(value)
+        });
+    /*match metamethod {
         Some(metamethod) => Ok(Action::TailCall {
             callee: metamethod,
             args: vec![table],
@@ -390,16 +382,18 @@ fn base_pairs<'gc>(
             table,
             Value::Nil,
         ])),
-    }
+    }*/
+    todo!()
 }
 
 fn base_pcall<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let f = args.nth(1).as_value()?;
-    Ok(Action::ProtectedCall {
+    /*Ok(Action::ProtectedCall {
         callee: f,
         args: args.without_callee()[1..].to_vec(),
         continuation: Continuation::new(|gc, _, result: Result<Vec<Value>, ErrorKind>| {
@@ -416,14 +410,16 @@ fn base_pcall<'gc>(
                 }
             }))
         }),
-    })
+    })*/
+    todo!()
 }
 
 fn base_print<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let mut stdout = std::io::stdout().lock();
     if let Some((last, xs)) = args.without_callee().split_last() {
         for x in xs {
@@ -433,34 +429,37 @@ fn base_print<'gc>(
         last.fmt_bytes(&mut stdout)?;
     }
     stdout.write_all(b"\n")?;
-    Ok(Action::Return(Vec::new()))
+    Ok(Vec::new())
 }
 
 fn base_rawequal<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let v1 = args.nth(1).as_value()?;
     let v2 = args.nth(2).as_value()?;
-    Ok(Action::Return(vec![(v1 == v2).into()]))
+    Ok(vec![(v1 == v2).into()])
 }
 
 fn base_rawget<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let index = args.nth(2).as_value()?;
     let value = args.nth(1).as_table()?.borrow(gc).get(index);
-    Ok(Action::Return(vec![value]))
+    Ok(vec![value])
 }
 
 fn base_rawlen<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let len = match args.nth(1).get() {
         Some(Value::Table(t)) => t.borrow(gc).lua_len(),
         Some(Value::String(s)) => s.len() as Integer,
@@ -472,35 +471,35 @@ fn base_rawlen<'gc>(
             })
         }
     };
-    Ok(Action::Return(vec![len.into()]))
+    Ok(vec![len.into()])
 }
 
 fn base_rawset<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let index = args.nth(2).as_value()?;
     let value = args.nth(3).as_value()?;
 
     table.borrow_mut(gc).set(index, value)?;
 
-    Ok(Action::Return(vec![table.into()]))
+    Ok(vec![table.into()])
 }
 
 fn base_select<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let num_args = args.without_callee().len() as Integer;
     let index = args.nth(1);
 
     match index.get() {
-        Some(Value::String(s)) if s.as_ref() == b"#" => {
-            return Ok(Action::Return(vec![(num_args - 1).into()]))
-        }
+        Some(Value::String(s)) if s.as_ref() == b"#" => return Ok(vec![(num_args - 1).into()]),
         _ => (),
     }
 
@@ -515,16 +514,15 @@ fn base_select<'gc>(
             message: "index out of range",
         });
     }
-    Ok(Action::Return(
-        args.without_callee()[index as usize..].to_vec(),
-    ))
+    Ok(args.without_callee()[index as usize..].to_vec())
 }
 
 fn base_setmetatable<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let new_metatable = match args.nth(2).get() {
         Some(Value::Nil) => None,
@@ -549,14 +547,15 @@ fn base_setmetatable<'gc>(
         _ => (),
     }
     table.borrow_mut(gc).set_metatable(new_metatable);
-    Ok(Action::Return(vec![table.into()]))
+    Ok(vec![table.into()])
 }
 
 fn base_tonumber<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let result = match args.nth(1).as_value()? {
         Value::Integer(x) => Value::Integer(x),
         Value::Number(x) => Value::Number(x),
@@ -597,24 +596,26 @@ fn base_tonumber<'gc>(
         }
         _ => Value::Nil,
     };
-    Ok(Action::Return(vec![result]))
+    Ok(vec![result])
 }
 
 fn base_tostring<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let mut string = Vec::new();
     args.nth(1).as_value()?.fmt_bytes(&mut string)?;
-    Ok(Action::Return(vec![gc.allocate_string(string).into()]))
+    Ok(vec![gc.allocate_string(string).into()])
 }
 
 fn base_type<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let string = args.nth(1).as_value()?.ty().name().as_bytes();
-    Ok(Action::Return(vec![gc.allocate_string(string).into()]))
+    Ok(vec![gc.allocate_string(string).into()])
 }

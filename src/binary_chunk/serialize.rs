@@ -67,7 +67,7 @@ fn dump_protos<W: Write>(
 ) -> std::io::Result<()> {
     dump_size(writer, protos.len())?;
     for proto in protos {
-        dump_function(gc, writer, proto.get(gc))?;
+        dump_function(gc, writer, proto)?;
     }
     Ok(())
 }

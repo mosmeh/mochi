@@ -8,19 +8,19 @@ mod metamethod;
 mod opcode;
 mod ops;
 
-pub use action::{Action, Continuation};
 pub use error::{ErrorKind, Operation, RuntimeError};
-pub(crate) use frame::{ContinuationFrame, Frame, LuaFrame};
+pub(crate) use frame::{Frame, LuaFrame};
 pub use instruction::Instruction;
 pub use metamethod::Metamethod;
 pub use opcode::OpCode;
 
 use crate::{
-    gc::{GarbageCollect, GcCell, GcContext, GcHeap, GcLifetime, Tracer},
+    gc::{GarbageCollect, GcCell, GcContext, GcHeap, GcLifetime, RootSet, Tracer},
+    new_root, rebind, to_rooted,
     types::{LuaString, LuaThread, Table, ThreadStatus, Type, Upvalue, Value},
     Error, LuaClosure,
 };
-use std::{ops::ControlFlow, path::Path};
+use std::path::Path;
 
 #[derive(Default)]
 pub struct Runtime {
@@ -44,60 +44,43 @@ impl Runtime {
     where
         F: for<'gc> FnOnce(
             &'gc GcContext,
-            GcCell<'gc, Vm<'gc>>,
+            GcCell<Vm>,
         ) -> Result<
             Value<'gc>,
             Box<dyn std::error::Error + Send + Sync + 'static>,
         >,
     {
-        let result = self.heap.with(|gc, _, vm| {
+        let result = self.heap.with(|gc, roots, vm| {
             let value = match f(gc, vm) {
                 Ok(value) => value,
                 Err(err) => return Err(ErrorKind::External(err.into())),
             };
-
-            let mut vm = vm.borrow_mut(gc);
-            let main_thread = vm.main_thread;
-            main_thread.borrow_mut(gc).status = ThreadStatus::Unresumable;
-            assert!(vm.thread_stack.is_empty());
-            vm.thread_stack.push(main_thread);
-
-            let mut thread_ref = main_thread.borrow_mut(gc);
-            assert!(thread_ref.stack.is_empty());
-            assert!(thread_ref.frames.is_empty());
-            assert!(thread_ref.open_upvalues.is_empty());
-            thread_ref.stack.push(value);
-            vm.push_frame(gc, &mut thread_ref, 0)?;
-
-            Ok(())
+            let main_thread = {
+                let mut vm = vm.borrow_mut(gc);
+                assert!(vm.thread_stack.is_empty());
+                let main_thread = vm.main_thread;
+                vm.thread_stack.push(main_thread);
+                main_thread
+            };
+            {
+                let mut thread = main_thread.borrow_mut(gc);
+                assert!(thread.stack.is_empty());
+                assert!(thread.frames.is_empty());
+                assert!(thread.open_upvalues.is_empty());
+                thread.status = ThreadStatus::Unresumable;
+                thread.stack.push(value);
+            }
+            to_rooted!(roots, main_thread);
+            call_value(gc, roots, vm, *main_thread, 0)
         });
         match result {
-            Ok(()) => (),
-            Err(kind) => {
-                return Err(RuntimeError {
-                    kind,
-                    traceback: Vec::new(),
-                })
-            }
-        }
-
-        loop {
-            let action = self
-                .heap
-                .with(|gc, _, vm| vm.borrow_mut(gc).execute_single_step(gc))?;
-            match action {
-                RuntimeAction::StepGc => self.heap.with(|gc, roots, _| gc.step(roots)),
-                RuntimeAction::MutateGc(mutator) => mutator(&mut self.heap),
-                RuntimeAction::Exit => return Ok(()),
-            }
+            Ok(()) => self.heap.with(execute),
+            Err(kind) => Err(RuntimeError {
+                kind,
+                traceback: Vec::new(),
+            }),
         }
     }
-}
-
-enum RuntimeAction {
-    StepGc,
-    MutateGc(Box<dyn Fn(&mut GcHeap)>),
-    Exit,
 }
 
 pub struct Vm<'gc> {
@@ -176,7 +159,7 @@ impl<'gc> Vm<'gc> {
         let mut closure = LuaClosure::from(gc.allocate(proto));
         closure
             .upvalues
-            .push(gc.allocate_cell(Value::Table(self.globals).into()));
+            .push(gc.allocate_cell(Upvalue::from(Value::Table(self.globals))));
         Ok(closure)
     }
 
@@ -189,7 +172,7 @@ impl<'gc> Vm<'gc> {
         let mut closure = LuaClosure::from(gc.allocate(proto));
         closure
             .upvalues
-            .push(gc.allocate_cell(Value::Table(self.globals).into()));
+            .push(gc.allocate_cell(Upvalue::from(Value::Table(self.globals))));
         Ok(closure)
     }
 
@@ -213,7 +196,7 @@ impl<'gc> Vm<'gc> {
         &self,
         gc: &'gc GcContext,
         metamethod: Metamethod,
-        object: Value<'gc>,
+        object: Value,
     ) -> Option<Value<'gc>> {
         self.metatable_of_object(gc, object).and_then(|metatable| {
             let metamethod = metatable
@@ -229,97 +212,119 @@ impl<'gc> Vm<'gc> {
     {
         self.metatables[ty as usize] = metatable.into();
     }
+}
 
-    fn execute_single_step(&mut self, gc: &'gc GcContext) -> Result<RuntimeAction, RuntimeError> {
-        while !self.thread_stack.is_empty() {
-            match self.execute_next_frame(gc) {
-                Ok(Some(action)) => return Ok(action),
-                Ok(None) => (),
-                Err(kind) => {
-                    let thread = self.current_thread();
-                    let mut thread_ref = thread.borrow_mut(gc);
+fn execute(gc: &mut GcContext, roots: &RootSet, vm: GcCell<Vm>) -> Result<(), RuntimeError> {
+    bytecode_vm::execute_lua_frame(gc, roots, vm).unwrap();
 
-                    let protection_boundary = thread_ref
-                        .frames
-                        .iter_mut()
-                        .enumerate()
-                        .rev()
-                        .find_map(|(i, frame)| match frame {
-                            Frame::ProtectedCallContinuation {
-                                inner,
-                                callee_bottom,
-                            } => {
-                                inner
-                                    .continuation
-                                    .as_mut()
-                                    .unwrap()
-                                    .set_args(Err(kind.clone()));
-                                Some((i, *callee_bottom))
-                            }
-                            _ => None,
-                        });
+    let mut vm = vm.borrow_mut(gc);
+    let thread = vm.current_thread();
+    let thread_ref = thread.borrow(gc);
+    debug_assert!(thread_ref.frames.is_empty());
+    let coroutine = vm.thread_stack.pop().unwrap();
+    debug_assert!(GcCell::ptr_eq(&coroutine, &thread));
+    Ok(())
 
-                    if let Some((frame_index, boundary)) = protection_boundary {
-                        thread_ref.close_upvalues(gc, boundary);
-                        thread_ref.frames.truncate(frame_index + 1);
-                    } else {
-                        self.thread_stack.pop().unwrap();
-                        thread_ref.status = ThreadStatus::Error(kind.clone());
+    /*let thread = vm.borrow(gc).current_thread();
+    let mut thread_ref = thread.borrow_mut(gc);
 
-                        if self.thread_stack.is_empty() {
-                            let traceback = thread_ref.traceback(gc);
-                            *thread_ref = LuaThread::new();
-                            return Err(RuntimeError { kind, traceback });
-                        }
-                        drop(thread_ref);
-
-                        let mut resumer_ref = self.thread_stack.last().unwrap().borrow_mut(gc);
-                        match resumer_ref.frames.as_mut_slice() {
-                            [.., Frame::ResumeContinuation(frame)] => {
-                                frame.continuation.as_mut().unwrap().set_args(Err(kind))
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
+    let protection_boundary =
+        thread_ref
+            .frames
+            .iter_mut()
+            .enumerate()
+            .rev()
+            .find_map(|(i, frame)| match frame {
+                Frame::ProtectedCallContinuation {
+                    inner,
+                    callee_bottom,
+                } => {
+                    inner
+                        .continuation
+                        .as_mut()
+                        .unwrap()
+                        .set_args(Err(kind.clone()));
+                    Some((i, *callee_bottom))
                 }
-            }
-            if gc.should_perform_gc() {
-                return Ok(RuntimeAction::StepGc);
-            }
+                _ => None,
+            });
+
+    if let Some((frame_index, boundary)) = protection_boundary {
+        thread_ref.close_upvalues(gc, boundary);
+        thread_ref.frames.truncate(frame_index + 1);
+    } else {
+        vm.borrow_mut(gc).thread_stack.pop().unwrap();
+        thread_ref.status = ThreadStatus::Error(kind.clone());
+
+        if vm.borrow(gc).thread_stack.is_empty() {
+            let traceback = thread_ref.traceback(gc);
+            *thread_ref = LuaThread::new();
+            return Err(RuntimeError { kind, traceback });
         }
+        drop(thread_ref);
 
-        Ok(if gc.should_perform_gc() {
-            RuntimeAction::StepGc
-        } else {
-            RuntimeAction::Exit
-        })
-    }
+        let mut resumer_ref = vm.borrow(gc).thread_stack.last().unwrap().borrow_mut(gc);
+        match resumer_ref.frames.as_mut_slice() {
+            [.., Frame::ResumeContinuation(frame)] => {
+                frame.continuation.as_mut().unwrap().set_args(Err(kind))
+            }
+            _ => unreachable!(),
+        }
+    }*/
+}
 
-    pub(crate) fn push_frame(
-        &self,
-        gc: &'gc GcContext,
-        thread: &mut LuaThread<'gc>,
-        bottom: usize,
-    ) -> Result<ControlFlow<()>, ErrorKind> {
-        match thread.stack[bottom] {
-            Value::LuaClosure(_) => {
-                thread.frames.push(Frame::Lua(LuaFrame::new(bottom)));
-                Ok(ControlFlow::Continue(()))
-            }
-            Value::NativeFunction(_) | Value::NativeClosure(_) => {
-                thread.frames.push(Frame::Native { bottom });
-                Ok(ControlFlow::Break(()))
-            }
-            value => match self.metamethod_of_object(gc, Metamethod::Call, value) {
-                Some(metatable) => {
-                    thread.stack.insert(bottom, metatable);
-                    self.push_frame(gc, thread, bottom)
+pub(crate) fn call_value(
+    gc: &mut GcContext,
+    roots: &RootSet,
+    vm: GcCell<Vm>,
+    thread: GcCell<LuaThread>,
+    bottom: usize,
+) -> Result<(), ErrorKind> {
+    let mut thread_ref = thread.borrow_mut(gc);
+    match thread_ref.stack[bottom] {
+        Value::LuaClosure(_) => {
+            thread_ref.frames.push(Frame::Lua(LuaFrame::new(bottom)));
+            Ok(())
+        }
+        Value::NativeFunction(f) => {
+            thread_ref.frames.push(Frame::Native { bottom });
+            let args = thread_ref.stack.split_off(bottom);
+            drop(thread_ref);
+            to_rooted!(roots, args);
+            let results = (f.0)(gc, roots, vm, &args)?;
+            let mut results = rebind!(gc, results);
+            let mut thread_ref = thread.borrow_mut(gc);
+            thread_ref.stack.append(&mut results);
+            thread_ref.frames.pop().unwrap();
+            Ok(())
+        }
+        Value::NativeClosure(f) => {
+            thread_ref.frames.push(Frame::Native { bottom });
+            let args = thread_ref.stack.split_off(bottom);
+            drop(thread_ref);
+            to_rooted!(roots, args, f);
+            let results = f.call(gc, roots, vm, &args)?;
+            let mut results = rebind!(gc, results);
+            let mut thread_ref = thread.borrow_mut(gc);
+            thread_ref.stack.append(&mut results);
+            thread_ref.frames.pop().unwrap();
+            Ok(())
+        }
+        value => {
+            match vm
+                .borrow(gc)
+                .metamethod_of_object(gc, Metamethod::Call, value)
+            {
+                Some(metatable) => thread_ref.stack.insert(bottom, metatable),
+                None => {
+                    return Err(ErrorKind::TypeError {
+                        operation: Operation::Call,
+                        ty: value.ty(),
+                    })
                 }
-                None => Err(ErrorKind::TypeError {
-                    operation: Operation::Call,
-                    ty: value.ty(),
-                }),
-            },
+            };
+            drop(thread_ref);
+            call_value(gc, roots, vm, thread, bottom)
         }
     }
 }

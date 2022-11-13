@@ -4,8 +4,8 @@ use super::{
     process::{self, Process},
 };
 use crate::{
-    gc::{GcCell, GcContext},
-    runtime::{Action, ErrorKind, Metamethod, Vm},
+    gc::{GcCell, GcContext, RootSet},
+    runtime::{ErrorKind, Metamethod, Vm},
     types::{Integer, Number, Table, Type, UserData, Value},
 };
 use bstr::{ByteSlice, B};
@@ -77,14 +77,16 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
 }
 
 fn io_close<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let file = args.nth(1);
     process::translate_and_return_error(gc, || {
         if file.is_none() {
-            vm.registry()
+            vm.borrow(gc)
+                .registry()
                 .borrow(gc)
                 .get_field(gc.allocate_string(IO_OUTPUT))
                 .borrow_as_userdata_mut::<FileHandle>(gc)
@@ -97,11 +99,13 @@ fn io_close<'gc>(
 }
 
 fn io_flush<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    _: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    _: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let output = vm
+        .borrow(gc)
         .registry()
         .borrow(gc)
         .get_field(gc.allocate_string(IO_OUTPUT));
@@ -117,18 +121,20 @@ fn io_flush<'gc>(
 }
 
 fn io_input<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     common_io_input_or_output(gc, vm, args, IO_INPUT, OpenOptions::new().read(true))
 }
 
 fn io_open<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let filename = args.nth(1);
     let filename = filename.to_string()?;
     let mode = args.nth(2);
@@ -151,16 +157,17 @@ fn io_open<'gc>(
     };
 
     file::translate_and_return_error(gc, || {
-        let handle = open_file(gc, &vm.registry().borrow(gc), &options, filename)?;
+        let handle = open_file(gc, &vm.borrow(gc).registry().borrow(gc), &options, filename)?;
         Ok(vec![gc.allocate_cell(handle).into()])
     })
 }
 
 fn io_output<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     common_io_input_or_output(
         gc,
         vm,
@@ -171,10 +178,11 @@ fn io_output<'gc>(
 }
 
 fn io_popen<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let prog = args.nth(1);
     let prog = prog.to_string()?;
     let mode = args.nth(2);
@@ -203,7 +211,7 @@ fn io_popen<'gc>(
 
         std::io::stdout().flush()?;
         let child = command.spawn()?;
-        let registry = vm.registry();
+        let registry = vm.borrow(gc).registry();
         let registry = registry.borrow(gc);
         let handle = create_file_handle(gc, &registry, Process::from(child));
         Ok(vec![gc.allocate_cell(handle).into()])
@@ -211,11 +219,13 @@ fn io_popen<'gc>(
 }
 
 fn io_read<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let input = vm
+        .borrow(gc)
         .registry()
         .borrow(gc)
         .get_field(gc.allocate_string(IO_INPUT));
@@ -231,10 +241,11 @@ fn io_read<'gc>(
 }
 
 fn io_type<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let handle = args.nth(1).as_value()?;
     let result = if let Some(handle) = handle.borrow_as_userdata::<FileHandle>(gc) {
         let s = if handle.is_open() {
@@ -246,15 +257,17 @@ fn io_type<'gc>(
     } else {
         Value::Nil
     };
-    Ok(Action::Return(vec![result]))
+    Ok(vec![result])
 }
 
 fn io_write<'gc>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let output = vm
+        .borrow(gc)
         .registry()
         .borrow(gc)
         .get_field(gc.allocate_string(IO_OUTPUT));
@@ -273,20 +286,22 @@ fn io_write<'gc>(
 }
 
 fn file_close<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
     process::translate_and_return_error(gc, || handle.close())
 }
 
 fn file_flush<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
     file::translate_and_return_error(gc, || {
@@ -300,10 +315,11 @@ fn file_flush<'gc>(
 }
 
 fn file_read<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
@@ -318,10 +334,11 @@ fn file_read<'gc>(
 }
 
 fn file_seek<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
@@ -359,10 +376,11 @@ fn file_seek<'gc>(
 }
 
 fn file_setvbuf<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
@@ -404,10 +422,11 @@ fn file_setvbuf<'gc>(
 }
 
 fn file_write<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle_ref = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
@@ -424,14 +443,14 @@ fn file_write<'gc>(
 }
 
 fn common_io_input_or_output<'gc, K: AsRef<[u8]>>(
-    gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
+    gc: &'gc mut GcContext,
+    vm: GcCell<Vm>,
+    args: &[Value<'gc>],
     key: K,
     options: &OpenOptions,
-) -> Result<Action<'gc>, ErrorKind> {
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let file = args.nth(1);
-    let registry = vm.registry();
+    let registry = vm.borrow(gc).registry();
     let key = gc.allocate_string(key.as_ref());
     file::translate_and_raise_error(|| {
         let handle = match file.get() {

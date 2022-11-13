@@ -9,14 +9,13 @@ use std::{collections::BTreeMap, fmt::Display};
 pub struct LuaThread<'gc> {
     pub(crate) status: ThreadStatus,
     pub(crate) stack: Vec<Value<'gc>>,
-    pub(crate) frames: Vec<Frame<'gc>>,
+    pub(crate) frames: Vec<Frame>,
     pub(crate) open_upvalues: BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
 }
 
 unsafe impl GarbageCollect for LuaThread<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.stack.trace(tracer);
-        self.frames.trace(tracer);
         self.open_upvalues.trace(tracer);
     }
 }
@@ -47,14 +46,14 @@ impl<'gc> LuaThread<'gc> {
         };
     }
 
-    pub fn traceback(&self, gc: &GcContext) -> Vec<TracebackFrame> {
+    pub fn traceback(&self) -> Vec<TracebackFrame> {
         self.frames
             .iter()
             .rev()
             .map(|frame| match frame {
                 Frame::Lua(frame) => {
                     let value = self.stack[frame.bottom];
-                    let proto = value.as_lua_closure(gc).unwrap().proto.get(gc);
+                    let proto = value.as_lua_closure().unwrap().proto;
                     TracebackFrame::Lua {
                         source: String::from_utf8_lossy(&proto.source).to_string(),
                         lines_defined: proto.lines_defined.clone(),

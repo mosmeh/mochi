@@ -1,12 +1,9 @@
-use super::{
-    Action, Continuation, ContinuationFrame, ErrorKind, Frame, Instruction, Operation, Vm,
-};
+use super::{ErrorKind, Operation, Vm};
 use crate::{
-    gc::GcContext,
+    gc::{GcCell, GcContext, Rooted},
     types::{LuaString, LuaThread, Value},
 };
 use bstr::B;
-use std::ops::ControlFlow;
 
 macro_rules! metamethods {
     ($($variant:ident => $name:tt,)*) => {
@@ -62,140 +59,140 @@ metamethods!(
     Close => "__close",
 );
 
-impl<'gc> Vm<'gc> {
-    pub(super) fn index_slow_path<K>(
-        &self,
-        gc: &'gc GcContext,
-        thread: &mut LuaThread<'gc>,
-        mut table_like: Value<'gc>,
-        key: K,
-        dest: usize,
-    ) -> Result<ControlFlow<()>, ErrorKind>
-    where
-        K: Into<Value<'gc>>,
-    {
-        let key = key.into();
-        let index_key = self.metamethod_name(Metamethod::Index);
-        for _ in 0..2000 {
-            let metamethod = if let Value::Table(table) = table_like {
-                let metamethod = table
-                    .borrow(gc)
-                    .metatable()
-                    .map(|metatable| metatable.borrow(gc).get_field(index_key))
-                    .unwrap_or_default();
-                if metamethod.is_nil() {
-                    thread.stack[dest] = Value::Nil;
-                    return Ok(ControlFlow::Continue(()));
-                }
-                metamethod
-            } else {
-                let metamethod = self
-                    .metatable_of_object(gc, table_like)
-                    .map(|metatable| metatable.borrow(gc).get_field(index_key))
-                    .unwrap_or_default();
-                if metamethod.is_nil() {
-                    return Err(ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: table_like.ty(),
-                    });
-                }
-                metamethod
-            };
-            match metamethod {
-                Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
-                    return Ok(self.push_metamethod_frame_with_continuation(
-                        gc,
-                        thread,
-                        metamethod,
-                        &[table_like, key],
-                        move |gc, vm, results| {
-                            vm.current_thread().borrow_mut(gc).stack[dest] =
-                                results.first().copied().unwrap_or_default();
-                            Ok(Action::ReturnArguments)
-                        },
-                    ));
-                }
-                Value::Table(table) => {
-                    let value = table.borrow(gc).get(key);
-                    if !value.is_nil() {
-                        thread.stack[dest] = value;
-                        return Ok(ControlFlow::Continue(()));
-                    }
-                }
-                Value::Nil => unreachable!(),
-                _ => (),
+pub(super) fn index_slow_path<'gc, K>(
+    gc: &'gc GcContext,
+    vm: GcCell<Vm>,
+    thread: &mut LuaThread<'gc>,
+    mut table_like: Value<'gc>,
+    key: K,
+    dest: usize,
+) -> Result<(), ErrorKind>
+where
+    K: Into<Value<'gc>>,
+{
+    let key = key.into();
+    let index_key = vm.borrow(gc).metamethod_name(Metamethod::Index);
+    for _ in 0..2000 {
+        let metamethod = if let Value::Table(table) = table_like {
+            let metamethod = table
+                .borrow(gc)
+                .metatable()
+                .map(|metatable| metatable.borrow(gc).get_field(index_key))
+                .unwrap_or_default();
+            if metamethod.is_nil() {
+                thread.stack[dest] = Value::Nil;
+                return Ok(());
             }
-            table_like = metamethod;
+            metamethod
+        } else {
+            let metamethod = vm
+                .borrow(gc)
+                .metatable_of_object(gc, table_like)
+                .map(|metatable| metatable.borrow(gc).get_field(index_key))
+                .unwrap_or_default();
+            if metamethod.is_nil() {
+                return Err(ErrorKind::TypeError {
+                    operation: Operation::Index,
+                    ty: table_like.ty(),
+                });
+            }
+            metamethod
+        };
+        match metamethod {
+            Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
+                /*return Ok(self.push_metamethod_frame_with_continuation(
+                    gc,
+                    thread,
+                    metamethod,
+                    &[table_like, key],
+                    move |gc, vm, results| {
+                        vm.borrow(gc).current_thread().borrow_mut(gc).stack[dest] =
+                            results.first().copied().unwrap_or_default();
+                        Ok(Action::ReturnArguments)
+                    },
+                ));*/
+                todo!()
+            }
+            Value::Table(table) => {
+                let value = table.borrow(gc).get(key);
+                if !value.is_nil() {
+                    thread.stack[dest] = value;
+                    return Ok(());
+                }
+            }
+            Value::Nil => unreachable!(),
+            _ => (),
         }
-        Err(ErrorKind::other("'__index' chain too long; possible loop"))
+        table_like = metamethod;
     }
+    Err(ErrorKind::other("'__index' chain too long; possible loop"))
+}
 
-    pub(super) fn new_index_slow_path<K, V>(
-        &self,
-        gc: &'gc GcContext,
-        thread: &mut LuaThread<'gc>,
-        mut table_like: Value<'gc>,
-        key: K,
-        value: V,
-    ) -> Result<ControlFlow<()>, ErrorKind>
-    where
-        K: Into<Value<'gc>>,
-        V: Into<Value<'gc>>,
-    {
-        let key = key.into();
-        let new_index_key = self.metamethod_name(Metamethod::NewIndex);
-        for _ in 0..2000 {
-            let metamethod = if let Value::Table(table) = table_like {
-                let metamethod = table
-                    .borrow(gc)
-                    .metatable()
-                    .map(|metatable| metatable.borrow(gc).get_field(new_index_key))
-                    .unwrap_or_default();
-                if metamethod.is_nil() {
+pub(super) fn new_index_slow_path<'gc, K, V>(
+    gc: &'gc mut GcContext,
+    vm: GcCell<Vm>,
+    thread: Rooted<GcCell<LuaThread>>,
+    mut table_like: Value<'gc>,
+    key: K,
+    value: V,
+) -> Result<(), ErrorKind>
+where
+    K: Into<Value<'gc>>,
+    V: Into<Value<'gc>>,
+{
+    let key = key.into();
+    let new_index_key = vm.borrow(gc).metamethod_name(Metamethod::NewIndex);
+    for _ in 0..2000 {
+        let metamethod = if let Value::Table(table) = table_like {
+            let metamethod = table
+                .borrow(gc)
+                .metatable()
+                .map(|metatable| metatable.borrow(gc).get_field(new_index_key))
+                .unwrap_or_default();
+            if metamethod.is_nil() {
+                table.borrow_mut(gc).set(key, value)?;
+                return Ok(());
+            }
+            metamethod
+        } else {
+            let metamethod = vm
+                .borrow(gc)
+                .metatable_of_object(gc, table_like)
+                .map(|metatable| metatable.borrow(gc).get_field(new_index_key))
+                .unwrap_or_default();
+            if metamethod.is_nil() {
+                return Err(ErrorKind::TypeError {
+                    operation: Operation::Index,
+                    ty: table_like.ty(),
+                });
+            }
+            metamethod
+        };
+        match metamethod {
+            Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
+                //call_metamethod(gc, vm, thread, metamethod, &[table_like, key, value.into()]);
+                todo!();
+                return Ok(());
+            }
+            Value::Table(table) => {
+                let value = table.borrow(gc).get(key);
+                if !value.is_nil() {
                     table.borrow_mut(gc).set(key, value)?;
-                    return Ok(ControlFlow::Continue(()));
+                    return Ok(());
                 }
-                metamethod
-            } else {
-                let metamethod = self
-                    .metatable_of_object(gc, table_like)
-                    .map(|metatable| metatable.borrow(gc).get_field(new_index_key))
-                    .unwrap_or_default();
-                if metamethod.is_nil() {
-                    return Err(ErrorKind::TypeError {
-                        operation: Operation::Index,
-                        ty: table_like.ty(),
-                    });
-                }
-                metamethod
-            };
-            match metamethod {
-                Value::NativeFunction(_) | Value::LuaClosure(_) | Value::NativeClosure(_) => {
-                    return Ok(self.push_metamethod_frame(
-                        gc,
-                        thread,
-                        metamethod,
-                        &[table_like, key, value.into()],
-                    ));
-                }
-                Value::Table(table) => {
-                    let value = table.borrow(gc).get(key);
-                    if !value.is_nil() {
-                        table.borrow_mut(gc).set(key, value)?;
-                        return Ok(ControlFlow::Continue(()));
-                    }
-                }
-                Value::Nil => unreachable!(),
-                _ => (),
             }
-            table_like = metamethod;
+            Value::Nil => unreachable!(),
+            _ => (),
         }
-        Err(ErrorKind::other(
-            "'__newindex' chain too long; possible loop",
-        ))
+        table_like = metamethod;
     }
+    Err(ErrorKind::other(
+        "'__newindex' chain too long; possible loop",
+    ))
+}
 
-    pub(super) fn arithmetic_slow_path(
+impl<'gc> Vm<'gc> {
+    /*pub(super) fn arithmetic_slow_path(
         &self,
         gc: &'gc GcContext,
         thread: &mut LuaThread<'gc>,
@@ -232,7 +229,7 @@ impl<'gc> Vm<'gc> {
             metamethod_value,
             &[a, b],
             move |gc, vm, results| {
-                vm.current_thread().borrow_mut(gc).stack[dest] =
+                vm.borrow(gc).current_thread().borrow_mut(gc).stack[dest] =
                     results.first().copied().unwrap_or_default();
                 Ok(Action::ReturnArguments)
             },
@@ -272,7 +269,10 @@ impl<'gc> Vm<'gc> {
                 } else {
                     pc + 1
                 };
-                vm.current_thread().borrow_mut(gc).save_pc(new_pc);
+                vm.borrow(gc)
+                    .current_thread()
+                    .borrow_mut(gc)
+                    .save_pc(new_pc);
                 Ok(Action::ReturnArguments)
             },
         ))
@@ -298,7 +298,7 @@ impl<'gc> Vm<'gc> {
             metamethod,
             &[value, value],
             move |gc, vm, results| {
-                vm.current_thread().borrow_mut(gc).stack[dest] =
+                vm.borrow(gc).current_thread().borrow_mut(gc).stack[dest] =
                     results.first().copied().unwrap_or_default();
                 Ok(Action::ReturnArguments)
             },
@@ -332,7 +332,7 @@ impl<'gc> Vm<'gc> {
             metamethod,
             &[lhs, rhs],
             move |gc, vm, results| {
-                let thread = vm.current_thread();
+                let thread = vm.borrow(gc).current_thread();
                 let mut thread = thread.borrow_mut(gc);
                 let stack = thread.stack.as_mut_slice();
 
@@ -345,7 +345,13 @@ impl<'gc> Vm<'gc> {
                 let s = match concatenated.to_string() {
                     Some(s) => s,
                     None => {
-                        vm.concat_slow_path(gc, &mut thread, lhs_index - 1, concatenated, dest)?;
+                        vm.borrow(gc).concat_slow_path(
+                            gc,
+                            &mut thread,
+                            lhs_index - 1,
+                            concatenated,
+                            dest,
+                        )?;
                         return Ok(Action::ReturnArguments);
                     }
                 };
@@ -364,7 +370,8 @@ impl<'gc> Vm<'gc> {
                             (i, gc.allocate_string(strings.concat()).into())
                         }
                     };
-                    vm.concat_slow_path(gc, &mut thread, lhs_index, rhs, dest)?;
+                    vm.borrow(gc)
+                        .concat_slow_path(gc, &mut thread, lhs_index, rhs, dest)?;
                     return Ok(Action::ReturnArguments);
                 }
                 strings.reverse();
@@ -372,23 +379,9 @@ impl<'gc> Vm<'gc> {
                 Ok(Action::ReturnArguments)
             },
         ))
-    }
+    }*/
 
-    #[must_use]
-    pub(super) fn push_metamethod_frame(
-        &self,
-        gc: &'gc GcContext,
-        thread: &mut LuaThread<'gc>,
-        metamethod: Value<'gc>,
-        args: &[Value<'gc>],
-    ) -> ControlFlow<()> {
-        let metamethod_bottom = thread.stack.len();
-        thread.stack.push(metamethod);
-        thread.stack.extend_from_slice(args);
-        self.push_frame(gc, thread, metamethod_bottom).unwrap()
-    }
-
-    #[must_use]
+    /*#[must_use]
     pub(super) fn push_metamethod_frame_with_continuation<F>(
         &self,
         gc: &'gc GcContext,
@@ -399,7 +392,7 @@ impl<'gc> Vm<'gc> {
     ) -> ControlFlow<()>
     where
         F: 'static
-            + Fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
+            + Fn(&'gc GcContext, GcCell<Vm<'gc>>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
     {
         let current_bottom = match thread.frames.as_slice() {
             [.., Frame::Lua(frame)] => frame.bottom,
@@ -416,5 +409,23 @@ impl<'gc> Vm<'gc> {
             callee_bottom: metamethod_bottom,
         });
         self.push_frame(gc, thread, metamethod_bottom).unwrap()
-    }
+    }*/
+}
+
+pub(super) fn call_metamethod(
+    gc: &mut GcContext,
+    vm: GcCell<Vm>,
+    thread: GcCell<LuaThread>,
+    metamethod: Value,
+    args: &[Value],
+) {
+    /*let metamethod_bottom = {
+        let mut thread_ref = thread.borrow_mut(gc);
+        let metamethod_bottom = thread_ref.stack.len();
+        thread_ref.stack.push(metamethod);
+        thread_ref.stack.extend_from_slice(args);
+        metamethod_bottom
+    };
+    super::call_value(gc, vm, thread, metamethod_bottom).unwrap()*/
+    todo!()
 }

@@ -1,7 +1,7 @@
 use super::process::Process;
 use crate::{
     gc::GcContext,
-    runtime::{Action, ErrorKind},
+    runtime::ErrorKind,
     types::{Integer, Value},
 };
 use std::{
@@ -383,12 +383,12 @@ impl Seek for InnerReader {
     }
 }
 
-pub fn translate_and_raise_error<'gc, F>(f: F) -> Result<Action<'gc>, ErrorKind>
+pub fn translate_and_raise_error<'gc, F>(f: F) -> Result<Vec<Value<'gc>>, ErrorKind>
 where
     F: FnOnce() -> Result<Vec<Value<'gc>>, FileError>,
 {
     match f() {
-        Ok(values) => Ok(Action::Return(values)),
+        Ok(values) => Ok(values),
         Err(FileError::Runtime(kind)) => Err(kind),
         Err(err) => Err(ErrorKind::Other(err.to_string())),
     }
@@ -397,26 +397,26 @@ where
 pub fn translate_and_return_error<'gc, F>(
     gc: &'gc GcContext,
     f: F,
-) -> Result<Action<'gc>, ErrorKind>
+) -> Result<Vec<Value<'gc>>, ErrorKind>
 where
     F: FnOnce() -> Result<Vec<Value<'gc>>, FileError>,
 {
     match f() {
-        Ok(values) => Ok(Action::Return(values)),
+        Ok(values) => Ok(values),
         Err(FileError::Runtime(kind)) => Err(kind),
-        Err(FileError::Io(err)) => Ok(Action::Return(vec![
+        Err(FileError::Io(err)) => Ok(vec![
             Value::Nil,
             gc.allocate_string(err.to_string().into_bytes()).into(),
             err.raw_os_error()
                 .map(|errno| (errno as Integer).into())
                 .unwrap_or_default(),
-        ])),
+        ]),
         Err(err @ (FileError::Closed | FileError::DefaultFileClosed { .. })) => {
             Err(ErrorKind::Other(err.to_string()))
         }
-        Err(err) => Ok(Action::Return(vec![
+        Err(err) => Ok(vec![
             Value::Nil,
             gc.allocate_string(err.to_string().into_bytes()).into(),
-        ])),
+        ]),
     }
 }

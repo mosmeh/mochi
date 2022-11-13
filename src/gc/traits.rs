@@ -1,4 +1,4 @@
-use super::{GcPtr, Root, StringPool};
+use super::{GcPtr, StringPool};
 use std::{collections::BTreeMap, hash::BuildHasher, ops::Deref};
 
 pub struct Tracer<'a> {
@@ -225,6 +225,6 @@ pub unsafe trait GcLifetime<'a>: GarbageCollect {
     type Aged: GcLifetime<'a> + 'a;
 }
 
-pub trait ToRooted<'a>: GcLifetime<'a> {
-    fn to_rooted(self, root: Root<'_, 'a>) -> Self::Aged;
+unsafe impl<'a, T: GcLifetime<'a>> GcLifetime<'a> for Vec<T> {
+    type Aged = Vec<T::Aged>;
 }

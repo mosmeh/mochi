@@ -1,4 +1,4 @@
-use crate::gc::{BoxedString, GarbageCollect, Gc, Tracer};
+use crate::gc::{BoxedString, GarbageCollect, Gc, GcLifetime, Tracer};
 use std::{cmp::Ordering, fmt::Write, hash::Hash, ops::Deref, str::Utf8Error};
 
 #[derive(Clone, Copy)]
@@ -68,6 +68,10 @@ unsafe impl GarbageCollect for LuaString<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.0.trace(tracer);
     }
+}
+
+unsafe impl<'a> GcLifetime<'a> for LuaString<'_> {
+    type Aged = LuaString<'a>;
 }
 
 impl LuaString<'_> {

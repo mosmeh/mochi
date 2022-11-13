@@ -4,8 +4,8 @@ use super::{
     process,
 };
 use crate::{
-    gc::{GcCell, GcContext},
-    runtime::{Action, ErrorKind, Vm},
+    gc::{GcCell, GcContext, RootSet},
+    runtime::{ErrorKind, Vm},
     types::{Integer, Table, Value},
 };
 use bstr::{ByteSlice, ByteVec, B};
@@ -33,22 +33,24 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 }
 
 fn os_clock<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    _: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    _: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let clock = cpu_time::ProcessTime::now()
         .as_duration()
         .as_secs_f64()
         .into();
-    Ok(Action::Return(vec![clock]))
+    Ok(vec![clock])
 }
 
 fn os_date<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let format = args.nth(1);
     let format = format.to_string_or(B("%c"))?;
 
@@ -75,7 +77,7 @@ fn os_date<'gc>(
             let datetime = datetime_from_timestamp(Local, time)?;
             set_datetime_to_table(gc, &mut table, &datetime);
         }
-        return Ok(Action::Return(vec![gc.allocate_cell(table).into()]));
+        return Ok(vec![gc.allocate_cell(table).into()]);
     }
 
     const L_STRFTIME: &[u8] = b"aAbBcCdDeFgGhHIjmMnprRStTuUVwWxXyYzZ%";
@@ -102,26 +104,28 @@ fn os_date<'gc>(
     } else {
         datetime_from_timestamp(Local, time)?.format(&format)
     };
-    Ok(Action::Return(vec![gc
+    Ok(vec![gc
         .allocate_string(formatted.to_string().into_bytes())
-        .into()]))
+        .into()])
 }
 
 fn os_difftime<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let t2 = args.nth(1).to_number()?;
     let t1 = args.nth(2).to_number()?;
-    Ok(Action::Return(vec![(t2 - t1).into()]))
+    Ok(vec![(t2 - t1).into()])
 }
 
 fn os_execute<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let command = args.nth(1);
     match command.get() {
         None | Some(Value::Nil) => {
@@ -129,7 +133,7 @@ fn os_execute<'gc>(
                 .status()
                 .map(|status| status.success())
                 .unwrap_or_default();
-            Ok(Action::Return(vec![shell_exists.into()]))
+            Ok(vec![shell_exists.into()])
         }
         Some(_) => {
             let command = command.to_string()?;
@@ -142,10 +146,11 @@ fn os_execute<'gc>(
 }
 
 fn os_exit<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     // TODO: use std::process::ExitCode::exit_process once stabilized
     const EXIT_SUCCESS: i32 = 0;
     const EXIT_FAILURE: i32 = 1;
@@ -167,10 +172,11 @@ fn os_exit<'gc>(
 }
 
 fn os_getenv<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let env = args
         .nth(1)
         .to_string()?
@@ -180,14 +186,15 @@ fn os_getenv<'gc>(
         .and_then(|s| Vec::from_os_string(s).ok())
         .map(|s| gc.allocate_string(s).into())
         .unwrap_or_default();
-    Ok(Action::Return(vec![env]))
+    Ok(vec![env])
 }
 
 fn os_remove<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let filename = args.nth(1);
     let filename = filename.to_string()?;
     file::translate_and_return_error(gc, || {
@@ -207,10 +214,11 @@ fn os_remove<'gc>(
 }
 
 fn os_rename<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let old_name = args.nth(1);
     let old_name = old_name.to_string()?;
     let new_name = args.nth(2);
@@ -225,10 +233,11 @@ fn os_rename<'gc>(
 }
 
 fn os_setlocale<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let locale = args.nth(1);
     let locale = locale.to_string_or(B("C"))?;
     let category = args.nth(2);
@@ -243,20 +252,19 @@ fn os_setlocale<'gc>(
         });
     }
 
-    Ok(Action::Return(vec![
-        if matches!(locale.as_ref(), b"C" | b"") {
-            gc.allocate_string(B("C")).into()
-        } else {
-            Value::Nil
-        },
-    ]))
+    Ok(vec![if matches!(locale.as_ref(), b"C" | b"") {
+        gc.allocate_string(B("C")).into()
+    } else {
+        Value::Nil
+    }])
 }
 
 fn os_time<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     fn get_field<'gc, T, D>(
         gc: &'gc GcContext,
         table: &Table<'gc>,
@@ -286,7 +294,7 @@ fn os_time<'gc>(
 
     let table = args.nth(1);
     if !table.is_present() {
-        return Ok(Action::Return(vec![Utc::now().timestamp().into()]));
+        return Ok(vec![Utc::now().timestamp().into()]);
     }
 
     let table = table.as_table()?;
@@ -306,7 +314,7 @@ fn os_time<'gc>(
         })?;
     set_datetime_to_table(gc, &mut table, &datetime);
 
-    Ok(Action::Return(vec![datetime.timestamp().into()]))
+    Ok(vec![datetime.timestamp().into()])
 }
 
 fn set_datetime_to_table<'gc, Tz: TimeZone>(

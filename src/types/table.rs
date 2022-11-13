@@ -110,7 +110,7 @@ impl<'gc> Table<'gc> {
             .unwrap_or_default()
     }
 
-    pub fn get_field(&self, field: LuaString<'gc>) -> Value<'gc> {
+    pub fn get_field(&self, field: LuaString) -> Value<'gc> {
         self.find_string_key_bucket(field)
             .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
             .unwrap_or_default()
@@ -438,7 +438,7 @@ impl<'gc> Table<'gc> {
         }
     }
 
-    fn find_string_key_bucket(&self, key: LuaString<'gc>) -> Option<usize> {
+    fn find_string_key_bucket(&self, key: LuaString) -> Option<usize> {
         if self.buckets.is_empty() {
             return None;
         }

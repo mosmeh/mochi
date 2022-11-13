@@ -1,7 +1,7 @@
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
-    gc::{GcCell, GcContext},
-    runtime::{Action, ErrorKind, Vm},
+    gc::{GcCell, GcContext, RootSet},
+    runtime::{ErrorKind, Vm},
     string,
     types::{Integer, NativeFunction, Table, Value},
 };
@@ -28,10 +28,11 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 }
 
 fn utf8_char<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let mut string = Vec::new();
     for i in 1..args.len() {
         let code = args.nth(i).to_integer()? as u32;
@@ -42,15 +43,16 @@ fn utf8_char<'gc>(
             });
         }
     }
-    Ok(Action::Return(vec![gc.allocate_string(string).into()]))
+    Ok(vec![gc.allocate_string(string).into()])
 }
 
 fn utf8_codes<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
-    fn iterate<'gc>(args: &[Value<'gc>], lax: bool) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
+    fn iterate<'gc>(args: &[Value<'gc>], lax: bool) -> Result<Vec<Value<'gc>>, ErrorKind> {
         let s = args.nth(1);
         let s = s.to_string()?;
         let n = args.nth(2).to_integer()?;
@@ -60,7 +62,7 @@ fn utf8_codes<'gc>(
             match s.get(i) {
                 Some(ch) if !string::is_utf8_continuation_byte(*ch) => break,
                 Some(_) => i += 1,
-                None => return Ok(Action::Return(Vec::new())),
+                None => return Ok(Vec::new()),
             }
         }
         match string::decode_utf8(&s[i..]) {
@@ -72,29 +74,28 @@ fn utf8_codes<'gc>(
                         .map(string::is_utf8_continuation_byte)
                         .unwrap_or_default() =>
             {
-                Ok(Action::Return(vec![
-                    ((i + 1) as Integer).into(),
-                    (ch as Integer).into(),
-                ]))
+                Ok(vec![((i + 1) as Integer).into(), (ch as Integer).into()])
             }
             _ => Err(ErrorKind::other("invalid UTF-8 code")),
         }
     }
 
     fn iterate_lax<'gc>(
-        _: &'gc GcContext,
-        _: &mut Vm<'gc>,
-        args: Vec<Value<'gc>>,
-    ) -> Result<Action<'gc>, ErrorKind> {
-        iterate(&args, true)
+        _: &'gc mut GcContext,
+        _: &RootSet,
+        _: GcCell<Vm>,
+        args: &[Value<'gc>],
+    ) -> Result<Vec<Value<'gc>>, ErrorKind> {
+        iterate(args, true)
     }
 
     fn iterate_strict<'gc>(
-        _: &'gc GcContext,
-        _: &mut Vm<'gc>,
-        args: Vec<Value<'gc>>,
-    ) -> Result<Action<'gc>, ErrorKind> {
-        iterate(&args, false)
+        _: &'gc mut GcContext,
+        _: &RootSet,
+        _: GcCell<Vm>,
+        args: &[Value<'gc>],
+    ) -> Result<Vec<Value<'gc>>, ErrorKind> {
+        iterate(args, false)
     }
 
     let s = args.nth(1);
@@ -112,18 +113,19 @@ fn utf8_codes<'gc>(
 
     let lax = args.nth(2).to_boolean().unwrap_or_default();
 
-    Ok(Action::Return(vec![
+    Ok(vec![
         NativeFunction::new(if lax { iterate_lax } else { iterate_strict }).into(),
         s.as_value()?,
         0.into(),
-    ]))
+    ])
 }
 
 fn utf8_codepoint<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
     let i = args.nth(2).to_integer_or(1)?;
@@ -158,14 +160,15 @@ fn utf8_codepoint<'gc>(
         }
     }
 
-    Ok(Action::Return(values))
+    Ok(values)
 }
 
 fn utf8_len<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
     let i = args.nth(2).to_integer_or(1)?;
@@ -196,23 +199,19 @@ fn utf8_len<'gc>(
                 pos += len;
                 n += 1;
             }
-            _ => {
-                return Ok(Action::Return(vec![
-                    Value::Nil,
-                    ((pos + 1) as Integer).into(),
-                ]))
-            }
+            _ => return Ok(vec![Value::Nil, ((pos + 1) as Integer).into()]),
         }
     }
 
-    Ok(Action::Return(vec![n.into()]))
+    Ok(vec![n.into()])
 }
 
 fn utf8_offset<'gc>(
-    _: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    _: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
     let mut n = args.nth(2).to_integer()?;
@@ -234,7 +233,7 @@ fn utf8_offset<'gc>(
             }
             pos -= 1;
         }
-        return Ok(Action::Return(vec![((pos + 1) as Integer).into()]));
+        return Ok(vec![((pos + 1) as Integer).into()]);
     }
 
     match s.get(pos) {
@@ -277,7 +276,7 @@ fn utf8_offset<'gc>(
     } else {
         Value::Nil
     };
-    Ok(Action::Return(vec![result]))
+    Ok(vec![result])
 }
 
 fn is_valid_unicode_char(i: u32) -> bool {

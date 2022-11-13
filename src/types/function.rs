@@ -1,12 +1,16 @@
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell, GcContext, GcLifetime, Tracer},
-    runtime::{Action, ErrorKind, Instruction, Vm},
+    gc::{GarbageCollect, Gc, GcCell, GcContext, GcLifetime, RootSet, Tracer},
+    runtime::{ErrorKind, Instruction, Vm},
     types::{LuaString, LuaThread, Value},
 };
 use std::{fmt::Debug, hash::Hash, ops::RangeInclusive};
 
-pub type NativeFunctionPtr =
-    for<'gc> fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>;
+pub type NativeFunctionPtr = for<'gc> fn(
+    &'gc mut GcContext,
+    &RootSet,
+    GcCell<Vm>,
+    &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind>;
 
 #[derive(Clone, Copy)]
 pub struct NativeFunction(pub(crate) NativeFunctionPtr);
@@ -96,16 +100,17 @@ impl<'gc> From<Gc<'gc, LuaClosureProto<'gc>>> for LuaClosure<'gc> {
     }
 }
 
-trait NativeClosureFn<'gc>: GarbageCollect {
-    fn call(
+trait NativeClosureFn: GarbageCollect {
+    fn call<'gc>(
         &self,
-        gc: &'gc GcContext,
-        vm: &mut Vm<'gc>,
-        args: Vec<Value<'gc>>,
-    ) -> Result<Action<'gc>, ErrorKind>;
+        gc: &'gc mut GcContext,
+        roots: &RootSet,
+        vm: GcCell<Vm>,
+        args: &[Value<'gc>],
+    ) -> Result<Vec<Value<'gc>>, ErrorKind>;
 }
 
-pub struct NativeClosure<'gc>(Box<dyn NativeClosureFn<'gc> + 'gc>);
+pub struct NativeClosure<'gc>(Box<dyn NativeClosureFn + 'gc>);
 
 impl std::fmt::Debug for NativeClosure<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -127,21 +132,32 @@ impl<'gc> NativeClosure<'gc> {
     pub fn new<F>(f: F) -> Self
     where
         F: 'static
-            + Fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
+            + for<'a> Fn(
+                &'a mut GcContext,
+                &RootSet,
+                GcCell<Vm>,
+                &[Value<'a>],
+            ) -> Result<Vec<Value<'a>>, ErrorKind>,
     {
         struct SimpleNativeClosure<F>(F);
 
-        impl<'gc, F> NativeClosureFn<'gc> for SimpleNativeClosure<F>
+        impl<F> NativeClosureFn for SimpleNativeClosure<F>
         where
-            F: Fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
+            F: for<'a> Fn(
+                &'a mut GcContext,
+                &RootSet,
+                GcCell<Vm>,
+                &[Value<'a>],
+            ) -> Result<Vec<Value<'a>>, ErrorKind>,
         {
-            fn call(
+            fn call<'a>(
                 &self,
-                gc: &'gc GcContext,
-                vm: &mut Vm<'gc>,
-                args: Vec<Value<'gc>>,
-            ) -> Result<Action<'gc>, ErrorKind> {
-                (self.0)(gc, vm, args)
+                gc: &'a mut GcContext,
+                roots: &RootSet,
+                vm: GcCell<Vm>,
+                args: &[Value<'a>],
+            ) -> Result<Vec<Value<'a>>, ErrorKind> {
+                (self.0)(gc, roots, vm, args)
             }
         }
 
@@ -157,7 +173,13 @@ impl<'gc> NativeClosure<'gc> {
     pub fn with_upvalue<F, U>(upvalue: U, f: F) -> Self
     where
         F: 'static
-            + Fn(&'gc GcContext, &mut Vm<'gc>, &U, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>,
+            + for<'a> Fn(
+                &'a mut GcContext,
+                &RootSet,
+                GcCell<Vm>,
+                &U,
+                &[Value<'a>],
+            ) -> Result<Vec<Value<'a>>, ErrorKind>,
         U: 'gc + GarbageCollect,
     {
         struct UpvalueNativeClosure<F, U> {
@@ -165,23 +187,25 @@ impl<'gc> NativeClosure<'gc> {
             upvalue: U,
         }
 
-        impl<'gc, F, U> NativeClosureFn<'gc> for UpvalueNativeClosure<F, U>
+        impl<F, U> NativeClosureFn for UpvalueNativeClosure<F, U>
         where
-            F: Fn(
-                &'gc GcContext,
-                &mut Vm<'gc>,
+            F: for<'a> Fn(
+                &'a mut GcContext,
+                &RootSet,
+                GcCell<Vm>,
                 &U,
-                Vec<Value<'gc>>,
-            ) -> Result<Action<'gc>, ErrorKind>,
-            U: 'gc + GarbageCollect,
+                &[Value<'a>],
+            ) -> Result<Vec<Value<'a>>, ErrorKind>,
+            U: GarbageCollect,
         {
-            fn call(
+            fn call<'a>(
                 &self,
-                gc: &'gc GcContext,
-                vm: &mut Vm<'gc>,
-                args: Vec<Value<'gc>>,
-            ) -> Result<Action<'gc>, ErrorKind> {
-                (self.f)(gc, vm, &self.upvalue, args)
+                gc: &'a mut GcContext,
+                roots: &RootSet,
+                vm: GcCell<Vm>,
+                args: &[Value<'a>],
+            ) -> Result<Vec<Value<'a>>, ErrorKind> {
+                (self.f)(gc, roots, vm, &self.upvalue, args)
             }
         }
 
@@ -198,13 +222,14 @@ impl<'gc> NativeClosure<'gc> {
         Self(Box::new(UpvalueNativeClosure { f, upvalue }))
     }
 
-    pub fn call(
+    pub fn call<'a>(
         &self,
-        gc: &'gc GcContext,
-        vm: &mut Vm<'gc>,
-        args: Vec<Value<'gc>>,
-    ) -> Result<Action<'gc>, ErrorKind> {
-        (self.0).call(gc, vm, args)
+        gc: &'a mut GcContext,
+        roots: &RootSet,
+        vm: GcCell<Vm>,
+        args: &[Value<'a>],
+    ) -> Result<Vec<Value<'a>>, ErrorKind> {
+        (self.0).call(gc, roots, vm, args)
     }
 }
 

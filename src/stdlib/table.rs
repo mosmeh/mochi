@@ -1,7 +1,7 @@
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
-    gc::{GcCell, GcContext},
-    runtime::{Action, ErrorKind, Vm},
+    gc::{GcCell, GcContext, RootSet},
+    runtime::{ErrorKind, Vm},
     types::{Integer, Table, Value},
 };
 use bstr::B;
@@ -24,10 +24,11 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
 }
 
 fn table_concat<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let table = table.borrow(gc);
     let sep = args.nth(2);
@@ -50,16 +51,15 @@ fn table_concat<'gc>(
     }
 
     let concatenated = strings.join(sep.as_ref());
-    Ok(Action::Return(vec![gc
-        .allocate_string(concatenated)
-        .into()]))
+    Ok(vec![gc.allocate_string(concatenated).into()])
 }
 
 fn table_insert<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let mut table = table.borrow_mut(gc);
     let end = table.lua_len().wrapping_add(1);
@@ -82,14 +82,15 @@ fn table_insert<'gc>(
         }
         _ => return Err(ErrorKind::other("wrong number of arguments to 'insert'")),
     };
-    Ok(Action::Return(Vec::new()))
+    Ok(Vec::new())
 }
 
 fn table_move<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let f = args.nth(2).to_integer()?;
     let e = args.nth(3).to_integer()?;
     let t = args.nth(4).to_integer()?;
@@ -98,7 +99,7 @@ fn table_move<'gc>(
     let a2 = if a2.is_present() { a2.as_table()? } else { a1 };
 
     if f > e {
-        return Ok(Action::Return(vec![a2.into()]));
+        return Ok(vec![a2.into()]);
     }
 
     let n = e
@@ -135,27 +136,29 @@ fn table_move<'gc>(
             a2.set_integer_key(t + i, a1.get_integer_key(f + i));
         }
     }
-    Ok(Action::Return(vec![a2.into()]))
+    Ok(vec![a2.into()])
 }
 
 fn table_pack<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let mut table = Table::from(args.without_callee().to_vec());
     table.set_field(
         gc.allocate_string(B("n")),
         args.without_callee().len() as Integer,
     );
-    Ok(Action::Return(vec![gc.allocate_cell(table).into()]))
+    Ok(vec![gc.allocate_cell(table).into()])
 }
 
 fn table_remove<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let mut table = table.borrow_mut(gc);
     let len = table.lua_len();
@@ -174,21 +177,22 @@ fn table_remove<'gc>(
         table.set_integer_key(i, value);
     }
     table.set(pos.max(len), Value::Nil)?;
-    Ok(Action::Return(vec![removed]))
+    Ok(vec![removed])
 }
 
 fn table_unpack<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let table = table.borrow(gc);
     let start = args.nth(2).to_integer_or(1)?;
     let end = args.nth(3).to_integer_or_else(|| table.lua_len())?;
 
     if start > end {
-        return Ok(Action::Return(Vec::new()));
+        return Ok(Vec::new());
     }
 
     match end.checked_sub(start) {
@@ -196,9 +200,7 @@ fn table_unpack<'gc>(
         _ => return Err(ErrorKind::other("too many results to unpack")),
     }
 
-    Ok(Action::Return(
-        (start..=end)
-            .map(|key| table.get_integer_key(key))
-            .collect(),
-    ))
+    Ok((start..=end)
+        .map(|key| table.get_integer_key(key))
+        .collect())
 }

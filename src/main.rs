@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 use bstr::{ByteSlice, ByteVec, B};
 use clap::{Parser, Subcommand};
 use mochi_lua::{
-    gc::{GcContext, GcHeap},
+    gc::GcHeap,
     runtime::{OpCode, Runtime, RuntimeError},
     types::{Integer, LineRange, LuaClosureProto, Table, UpvalueDescription, Value},
 };
@@ -216,7 +216,7 @@ impl CompileCommand {
 
             if self.list > 0 {
                 let mut stdout = std::io::stdout().lock();
-                self.dump_proto(gc, &mut stdout, &proto)?;
+                self.dump_proto(&mut stdout, &proto)?;
             }
             if self.parse_only {
                 return Ok(());
@@ -228,12 +228,7 @@ impl CompileCommand {
         })
     }
 
-    fn dump_proto(
-        &self,
-        gc: &GcContext,
-        w: &mut impl std::io::Write,
-        proto: &LuaClosureProto,
-    ) -> Result<()> {
+    fn dump_proto(&self, w: &mut impl std::io::Write, proto: &LuaClosureProto) -> Result<()> {
         fn format_counter(word: &str, n: usize) -> String {
             format!("{n} {word}{}", if n == 1 { "" } else { "s" })
         }
@@ -405,7 +400,7 @@ impl CompileCommand {
         writeln!(w)?;
 
         for proto in proto.protos.iter() {
-            self.dump_proto(gc, w, proto.get(gc))?;
+            self.dump_proto(w, proto)?;
         }
 
         Ok(())

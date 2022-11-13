@@ -1,7 +1,7 @@
 use crate::{
-    gc::GcContext,
+    gc::{GcCell, GcContext, RootSet},
     math,
-    runtime::{Action, ErrorKind, Vm},
+    runtime::{ErrorKind, Vm},
     stdlib::helpers::ArgumentsExt,
     types::{Integer, Number, Value},
 };
@@ -9,10 +9,11 @@ use bstr::{ByteSlice, ByteVec};
 use byteorder::WriteBytesExt;
 
 pub fn string_format<'gc>(
-    gc: &'gc GcContext,
-    _: &mut Vm<'gc>,
-    args: Vec<Value<'gc>>,
-) -> Result<Action<'gc>, ErrorKind> {
+    gc: &'gc mut GcContext,
+    _: &RootSet,
+    _: GcCell<Vm>,
+    args: &[Value<'gc>],
+) -> Result<Vec<Value<'gc>>, ErrorKind> {
     let format_string = args.nth(1);
     let format_string = format_string.to_string()?;
 
@@ -238,7 +239,7 @@ pub fn string_format<'gc>(
         }
     }
 
-    Ok(Action::Return(vec![gc.allocate_string(output).into()]))
+    Ok(vec![gc.allocate_string(output).into()])
 }
 
 struct Specification {

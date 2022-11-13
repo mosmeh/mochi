@@ -16,7 +16,7 @@ pub use thread::{LuaThread, TracebackFrame};
 pub use user_data::UserData;
 
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell, GcContext, Tracer},
+    gc::{GarbageCollect, Gc, GcCell, GcContext, GcLifetime, Tracer},
     number_is_valid_integer,
     string::{parse_positive_hex_float, parse_positive_integer_with_base, trim_whitespaces},
 };
@@ -209,6 +209,10 @@ unsafe impl GarbageCollect for Value<'_> {
     }
 }
 
+unsafe impl<'a> GcLifetime<'a> for Value<'_> {
+    type Aged = Value<'a>;
+}
+
 impl<'gc> Value<'gc> {
     pub fn fmt_bytes(&self, f: &mut impl std::io::Write) -> std::io::Result<()> {
         match self {
@@ -343,17 +347,17 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_lua_closure<'a>(&self, gc: &'a GcContext) -> Option<&LuaClosure<'a>> {
+    pub fn as_lua_closure(&self) -> Option<&LuaClosure<'gc>> {
         if let Self::LuaClosure(x) = self {
-            Some(x.get(gc))
+            Some(x)
         } else {
             None
         }
     }
 
-    pub fn as_native_closure<'a>(&self, gc: &'a GcContext) -> Option<&NativeClosure<'a>> {
+    pub fn as_native_closure(&self) -> Option<&NativeClosure> {
         if let Self::NativeClosure(x) = self {
-            Some(x.get(gc))
+            Some(x)
         } else {
             None
         }
