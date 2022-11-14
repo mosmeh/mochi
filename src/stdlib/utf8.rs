@@ -7,7 +7,10 @@ use crate::{
 };
 use bstr::B;
 
-pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
+    _: &mut Vm<'gc, 'a>,
+) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
     let mut table = Table::new();
     set_functions_to_table(
         gc,
@@ -27,12 +30,12 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
     gc.allocate_cell(table)
 }
 
-fn utf8_char<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn utf8_char<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let mut string = Vec::new();
     for i in 1..args.len() {
         let code = args.nth(i).to_integer()? as u32;
@@ -46,13 +49,16 @@ fn utf8_char<'gc>(
     Ok(vec![gc.allocate_string(string).into()])
 }
 
-fn utf8_codes<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
-    fn iterate<'gc>(args: &[Value<'gc>], lax: bool) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn utf8_codes<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
+    fn iterate<'gc, 'a>(
+        args: &[Value<'gc, '_>],
+        lax: bool,
+    ) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
         let s = args.nth(1);
         let s = s.to_string()?;
         let n = args.nth(2).to_integer()?;
@@ -80,21 +86,21 @@ fn utf8_codes<'gc>(
         }
     }
 
-    fn iterate_lax<'gc>(
-        _: &'gc mut GcContext,
-        _: &RootSet,
-        _: GcCell<Vm>,
-        args: &[Value<'gc>],
-    ) -> Result<Vec<Value<'gc>>, ErrorKind> {
+    fn iterate_lax<'gc, 'a>(
+        _: &'a mut GcContext<'gc>,
+        _: &RootSet<'gc>,
+        _: GcCell<'gc, '_, Vm<'gc, '_>>,
+        args: &[Value<'gc, '_>],
+    ) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
         iterate(args, true)
     }
 
-    fn iterate_strict<'gc>(
-        _: &'gc mut GcContext,
-        _: &RootSet,
-        _: GcCell<Vm>,
-        args: &[Value<'gc>],
-    ) -> Result<Vec<Value<'gc>>, ErrorKind> {
+    fn iterate_strict<'gc, 'a>(
+        _: &'a mut GcContext<'gc>,
+        _: &RootSet<'gc>,
+        _: GcCell<'gc, '_, Vm<'gc, '_>>,
+        args: &[Value<'gc, '_>],
+    ) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
         iterate(args, false)
     }
 
@@ -120,12 +126,12 @@ fn utf8_codes<'gc>(
     ])
 }
 
-fn utf8_codepoint<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn utf8_codepoint<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
     let i = args.nth(2).to_integer_or(1)?;
@@ -163,12 +169,12 @@ fn utf8_codepoint<'gc>(
     Ok(values)
 }
 
-fn utf8_len<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn utf8_len<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
     let i = args.nth(2).to_integer_or(1)?;
@@ -206,12 +212,12 @@ fn utf8_len<'gc>(
     Ok(vec![n.into()])
 }
 
-fn utf8_offset<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn utf8_offset<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let s = args.nth(1);
     let s = s.to_string()?;
     let mut n = args.nth(2).to_integer()?;

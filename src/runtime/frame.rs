@@ -1,6 +1,6 @@
 use super::{ErrorKind, Operation, Vm};
 use crate::{
-    gc::{GarbageCollect, GcCell, GcContext, RootSet},
+    gc::{GarbageCollect, GcCell, GcContext},
     types::Value,
 };
 

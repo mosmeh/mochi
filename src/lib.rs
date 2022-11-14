@@ -45,7 +45,11 @@ pub enum Error {
     RLua(#[from] rlua::Error),
 }
 
-pub fn load<B, S>(gc: &GcContext, bytes: B, source: S) -> Result<LuaClosureProto, Error>
+pub fn load<'gc, 'a, B, S>(
+    gc: &'a GcContext<'gc>,
+    bytes: B,
+    source: S,
+) -> Result<LuaClosureProto<'gc, 'a>, Error>
 where
     B: AsRef<[u8]>,
     S: AsRef<[u8]>,
@@ -74,7 +78,10 @@ where
     }
 }
 
-pub fn load_file<P: AsRef<Path>>(gc: &GcContext, path: P) -> Result<LuaClosureProto, Error> {
+pub fn load_file<'gc, 'a, P: AsRef<Path>>(
+    gc: &'a GcContext<'gc>,
+    path: P,
+) -> Result<LuaClosureProto<'gc, 'a>, Error> {
     const BOM: &[u8] = b"\xef\xbb\xbf";
 
     let bytes = std::fs::read(&path)?;

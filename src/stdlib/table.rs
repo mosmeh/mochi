@@ -6,7 +6,10 @@ use crate::{
 };
 use bstr::B;
 
-pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
+    _: &mut Vm<'gc, 'a>,
+) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
     let mut table = Table::new();
     set_functions_to_table(
         gc,
@@ -23,12 +26,12 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
     gc.allocate_cell(table)
 }
 
-fn table_concat<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn table_concat<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let table = table.borrow(gc);
     let sep = args.nth(2);
@@ -54,12 +57,12 @@ fn table_concat<'gc>(
     Ok(vec![gc.allocate_string(concatenated).into()])
 }
 
-fn table_insert<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn table_insert<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let mut table = table.borrow_mut(gc);
     let end = table.lua_len().wrapping_add(1);
@@ -85,12 +88,12 @@ fn table_insert<'gc>(
     Ok(Vec::new())
 }
 
-fn table_move<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn table_move<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let f = args.nth(2).to_integer()?;
     let e = args.nth(3).to_integer()?;
     let t = args.nth(4).to_integer()?;
@@ -139,12 +142,12 @@ fn table_move<'gc>(
     Ok(vec![a2.into()])
 }
 
-fn table_pack<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn table_pack<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let mut table = Table::from(args.without_callee().to_vec());
     table.set_field(
         gc.allocate_string(B("n")),
@@ -153,12 +156,12 @@ fn table_pack<'gc>(
     Ok(vec![gc.allocate_cell(table).into()])
 }
 
-fn table_remove<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn table_remove<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let mut table = table.borrow_mut(gc);
     let len = table.lua_len();
@@ -180,12 +183,12 @@ fn table_remove<'gc>(
     Ok(vec![removed])
 }
 
-fn table_unpack<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn table_unpack<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let table = table.borrow(gc);
     let start = args.nth(2).to_integer_or(1)?;

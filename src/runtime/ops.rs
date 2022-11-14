@@ -4,7 +4,12 @@ use crate::{
     types::{Integer, Number, Value},
 };
 
-fn arithmetic<'gc, I, F>(a: Value<'gc>, b: Value<'gc>, int_op: I, float_op: F) -> Option<Value<'gc>>
+fn arithmetic<'gc, 'a, I, F>(
+    a: Value<'gc, '_>,
+    b: Value<'gc, '_>,
+    int_op: I,
+    float_op: F,
+) -> Option<Value<'gc, 'a>>
 where
     I: Fn(Integer, Integer) -> Integer,
     F: Fn(Number, Number) -> Number,
@@ -38,8 +43,8 @@ where
     }
 }
 
-pub(super) fn do_arithmetic<I, F>(
-    stack: &mut [Value],
+pub(super) fn do_arithmetic<'gc, I, F>(
+    stack: &mut [Value<'gc, '_>],
     pc: &mut usize,
     insn: Instruction,
     int_op: I,
@@ -57,9 +62,9 @@ pub(super) fn do_arithmetic<I, F>(
 }
 
 pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
-    stack: &mut [Value<'gc>],
+    stack: &mut [Value<'gc, '_>],
     pc: &mut usize,
-    constants: &[Value<'gc>],
+    constants: &[Value<'gc, '_>],
     insn: Instruction,
     int_op: I,
     float_op: F,
@@ -76,8 +81,8 @@ pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
     }
 }
 
-pub(super) fn do_arithmetic_with_immediate<I, F>(
-    stack: &mut [Value],
+pub(super) fn do_arithmetic_with_immediate<'gc, I, F>(
+    stack: &mut [Value<'gc, '_>],
     pc: &mut usize,
     insn: Instruction,
     int_op: I,
@@ -102,8 +107,8 @@ pub(super) fn do_arithmetic_with_immediate<I, F>(
     stack[insn.a()] = result;
 }
 
-pub(super) fn do_float_arithmetic<F>(
-    stack: &mut [Value],
+pub(super) fn do_float_arithmetic<'gc, F>(
+    stack: &mut [Value<'gc, '_>],
     pc: &mut usize,
     insn: Instruction,
     float_op: F,
@@ -122,9 +127,9 @@ pub(super) fn do_float_arithmetic<F>(
 }
 
 pub(super) fn do_float_arithmetic_with_constant<'gc, F>(
-    stack: &mut [Value<'gc>],
+    stack: &mut [Value<'gc, '_>],
     pc: &mut usize,
-    constants: &[Value<'gc>],
+    constants: &[Value<'gc, '_>],
     insn: Instruction,
     float_op: F,
 ) where
@@ -142,8 +147,12 @@ pub(super) fn do_float_arithmetic_with_constant<'gc, F>(
     }
 }
 
-pub(super) fn do_bitwise_op<I>(stack: &mut [Value], pc: &mut usize, insn: Instruction, int_op: I)
-where
+pub(super) fn do_bitwise_op<'gc, I>(
+    stack: &mut [Value<'gc, '_>],
+    pc: &mut usize,
+    insn: Instruction,
+    int_op: I,
+) where
     I: Fn(Integer, Integer) -> Integer,
 {
     let rb = stack[insn.b()];
@@ -158,9 +167,9 @@ where
 }
 
 pub(super) fn do_bitwise_op_with_constant<'gc, I>(
-    stack: &mut [Value<'gc>],
+    stack: &mut [Value<'gc, '_>],
     pc: &mut usize,
-    constants: &[Value<'gc>],
+    constants: &[Value<'gc, '_>],
     insn: Instruction,
     int_op: I,
 ) where
@@ -343,7 +352,7 @@ pub(super) fn shr(x: Integer, y: Integer) -> Integer {
     shl(x, y.wrapping_neg())
 }
 
-pub(super) fn lt(a: Value, b: Value) -> Option<bool> {
+pub(super) fn lt<'gc, 'a>(a: Value<'gc, 'a>, b: Value<'gc, 'a>) -> Option<bool> {
     match (a, b) {
         (Value::Integer(a), Value::Integer(b)) => Some(a < b),
         (Value::Number(a), Value::Number(b)) => Some(a < b),
@@ -368,7 +377,7 @@ pub(super) fn lt(a: Value, b: Value) -> Option<bool> {
     }
 }
 
-pub(super) fn le(a: Value, b: Value) -> Option<bool> {
+pub(super) fn le<'gc, 'a>(a: Value<'gc, 'a>, b: Value<'gc, 'a>) -> Option<bool> {
     match (a, b) {
         (Value::Integer(a), Value::Integer(b)) => Some(a <= b),
         (Value::Number(a), Value::Number(b)) => Some(a <= b),

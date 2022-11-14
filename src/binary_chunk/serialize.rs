@@ -72,10 +72,10 @@ fn dump_protos<W: Write>(
     Ok(())
 }
 
-fn dump_string<'gc, W, S>(writer: &mut W, string: S) -> std::io::Result<()>
+fn dump_string<'gc, 'a, W, S>(writer: &mut W, string: S) -> std::io::Result<()>
 where
     W: Write,
-    S: Into<Option<LuaString<'gc>>>,
+    S: Into<Option<LuaString<'gc, 'a>>>,
 {
     if let Some(string) = string.into() {
         dump_size(writer, string.len() + 1)?;

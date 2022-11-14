@@ -27,7 +27,10 @@ const LUA_DIRSEP: &[u8] = {
 };
 const LUA_LSUBSEP: &[u8] = LUA_DIRSEP;
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
+    vm: &mut Vm<'gc, 'a>,
+) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
     const LUA_EXEC_DIR: &[u8] = b"!";
     const LUA_IGMARK: &[u8] = b"-";
 
@@ -141,13 +144,13 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     package
 }
 
-fn package_require<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    package: &GcCell<Table>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn package_require<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    package: &GcCell<'gc, '_, Table<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let name = gc.allocate_string(args.nth(1).to_string()?);
 
     let loaded = vm
@@ -256,12 +259,12 @@ fn package_require<'gc>(
     todo!()
 }
 
-fn package_searchpath<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn package_searchpath<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let name = args.nth(1);
     let name = name.to_string()?;
 
@@ -304,12 +307,12 @@ where
     Err(msg)
 }
 
-fn searcher_preload<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn searcher_preload<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let name = args.nth(1);
     let name = name.to_string()?;
 
@@ -329,13 +332,13 @@ fn searcher_preload<'gc>(
     })
 }
 
-fn searcher_lua<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    package: &GcCell<Table>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn searcher_lua<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    package: &GcCell<'gc, '_, Table<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let name = args.nth(1);
     let name = name.to_string()?;
 

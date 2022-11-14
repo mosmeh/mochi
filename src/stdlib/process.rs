@@ -80,7 +80,10 @@ impl Process {
     }
 }
 
-pub fn translate_and_return_error<F>(gc: &GcContext, f: F) -> Result<Vec<Value>, ErrorKind>
+pub fn translate_and_return_error<'gc, 'a, F>(
+    gc: &'a GcContext<'gc>,
+    f: F,
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind>
 where
     F: FnOnce() -> Result<Option<ExitStatus>, FileError>,
 {

@@ -22,16 +22,16 @@ pub enum TableError {
 }
 
 #[derive(Clone, Default)]
-pub struct Table<'gc> {
-    array: Vec<Value<'gc>>,
+pub struct Table<'gc, 'a> {
+    array: Vec<Value<'gc, 'a>>,
 
-    buckets: Vec<Bucket<'gc>>,
+    buckets: Vec<Bucket<'gc, 'a>>,
     last_free_bucket: usize,
 
-    metatable: Option<GcCell<'gc, Table<'gc>>>,
+    metatable: Option<GcCell<'gc, 'a, Table<'gc, 'a>>>,
 }
 
-impl std::fmt::Debug for Table<'_> {
+impl std::fmt::Debug for Table<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Table")
             .field("array", &self.array)
@@ -42,8 +42,8 @@ impl std::fmt::Debug for Table<'_> {
     }
 }
 
-impl<'gc> From<Vec<Value<'gc>>> for Table<'gc> {
-    fn from(array: Vec<Value<'gc>>) -> Self {
+impl<'gc, 'a> From<Vec<Value<'gc, 'a>>> for Table<'gc, 'a> {
+    fn from(array: Vec<Value<'gc, 'a>>) -> Self {
         Self {
             array,
             ..Default::default()
@@ -51,7 +51,7 @@ impl<'gc> From<Vec<Value<'gc>>> for Table<'gc> {
     }
 }
 
-unsafe impl GarbageCollect for Table<'_> {
+unsafe impl GarbageCollect for Table<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.array.trace(tracer);
         self.buckets.trace(tracer);
@@ -59,11 +59,11 @@ unsafe impl GarbageCollect for Table<'_> {
     }
 }
 
-unsafe impl<'a> GcLifetime<'a> for Table<'_> {
-    type Aged = Table<'a>;
+unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for Table<'gc, '_> {
+    type Aged = Table<'gc, 'a>;
 }
 
-impl<'gc> Table<'gc> {
+impl<'gc, 'a> Table<'gc, 'a> {
     pub fn new() -> Self {
         Default::default()
     }
@@ -74,7 +74,7 @@ impl<'gc> Table<'gc> {
         table
     }
 
-    pub fn array(&self) -> &[Value<'gc>] {
+    pub fn array(&self) -> &[Value<'gc, 'a>] {
         &self.array
     }
 
@@ -82,9 +82,9 @@ impl<'gc> Table<'gc> {
         self.resize(new_len, self.buckets.len());
     }
 
-    pub fn get<K>(&self, key: K) -> Value<'gc>
+    pub fn get<K>(&self, key: K) -> Value<'gc, 'a>
     where
-        K: Into<Value<'gc>>,
+        K: Into<Value<'gc, 'a>>,
     {
         let mut key = key.into();
         match key {
@@ -101,7 +101,7 @@ impl<'gc> Table<'gc> {
             .unwrap_or_default()
     }
 
-    pub fn get_integer_key(&self, i: Integer) -> Value<'gc> {
+    pub fn get_integer_key(&self, i: Integer) -> Value<'gc, 'a> {
         if let Some(value) = self.array.get((i as usize).wrapping_sub(1)) {
             return *value;
         }
@@ -110,7 +110,7 @@ impl<'gc> Table<'gc> {
             .unwrap_or_default()
     }
 
-    pub fn get_field(&self, field: LuaString) -> Value<'gc> {
+    pub fn get_field(&self, field: LuaString<'gc, 'a>) -> Value<'gc, 'a> {
         self.find_string_key_bucket(field)
             .map(|index| unsafe { self.buckets.get_unchecked(index) }.value())
             .unwrap_or_default()
@@ -118,8 +118,8 @@ impl<'gc> Table<'gc> {
 
     pub fn set<K, V>(&mut self, key: K, value: V) -> Result<(), TableError>
     where
-        K: Into<Value<'gc>>,
-        V: Into<Value<'gc>>,
+        K: Into<Value<'gc, 'a>>,
+        V: Into<Value<'gc, 'a>>,
     {
         let mut key = key.into();
         let value = value.into();
@@ -147,7 +147,7 @@ impl<'gc> Table<'gc> {
 
     pub fn set_integer_key<V>(&mut self, i: Integer, value: V)
     where
-        V: Into<Value<'gc>>,
+        V: Into<Value<'gc, 'a>>,
     {
         let value = value.into();
         if let Some(slot) = self.array.get_mut((i as usize).wrapping_sub(1)) {
@@ -163,9 +163,9 @@ impl<'gc> Table<'gc> {
         }
     }
 
-    pub fn set_field<V>(&mut self, field: LuaString<'gc>, value: V)
+    pub fn set_field<V>(&mut self, field: LuaString<'gc, 'a>, value: V)
     where
-        V: Into<Value<'gc>>,
+        V: Into<Value<'gc, 'a>>,
     {
         let value = value.into();
         if let Some(index) = self.find_string_key_bucket(field) {
@@ -179,8 +179,8 @@ impl<'gc> Table<'gc> {
 
     pub(crate) fn replace<K, V>(&mut self, key: K, value: V) -> Result<bool, TableError>
     where
-        K: Into<Value<'gc>>,
-        V: Into<Value<'gc>>,
+        K: Into<Value<'gc, 'a>>,
+        V: Into<Value<'gc, 'a>>,
     {
         let mut key = key.into();
         match key {
@@ -211,7 +211,7 @@ impl<'gc> Table<'gc> {
 
     pub(crate) fn replace_integer_key<V>(&mut self, i: Integer, value: V) -> bool
     where
-        V: Into<Value<'gc>>,
+        V: Into<Value<'gc, 'a>>,
     {
         match self.array.get_mut((i as usize).wrapping_sub(1)) {
             Some(Value::Nil) => return false,
@@ -231,9 +231,9 @@ impl<'gc> Table<'gc> {
         false
     }
 
-    pub(crate) fn replace_field<V>(&mut self, field: LuaString<'gc>, value: V) -> bool
+    pub(crate) fn replace_field<V>(&mut self, field: LuaString<'gc, 'a>, value: V) -> bool
     where
-        V: Into<Value<'gc>>,
+        V: Into<Value<'gc, 'a>>,
     {
         if let Some(index) = self.find_string_key_bucket(field) {
             let bucket = unsafe { self.buckets.get_unchecked_mut(index) };
@@ -245,13 +245,13 @@ impl<'gc> Table<'gc> {
         false
     }
 
-    pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
+    pub fn metatable(&self) -> Option<GcCell<'gc, 'a, Table<'gc, 'a>>> {
         self.metatable
     }
 
     pub fn set_metatable<T>(&mut self, metatable: T)
     where
-        T: Into<Option<GcCell<'gc, Table<'gc>>>>,
+        T: Into<Option<GcCell<'gc, 'a, Table<'gc, 'a>>>>,
     {
         self.metatable = metatable.into();
     }
@@ -302,7 +302,10 @@ impl<'gc> Table<'gc> {
         i
     }
 
-    pub fn next(&self, key: Value<'gc>) -> Result<Option<(Value<'gc>, Value<'gc>)>, TableError> {
+    pub fn next(
+        &self,
+        key: Value<'gc, 'a>,
+    ) -> Result<Option<(Value<'gc, 'a>, Value<'gc, 'a>)>, TableError> {
         let next_array_index = match key {
             Value::Nil => Some(0),
             Value::Integer(i) if 1 <= i && i as usize <= self.array.len() => Some(i as usize),
@@ -330,7 +333,7 @@ impl<'gc> Table<'gc> {
         Ok(None)
     }
 
-    unsafe fn set_new_hashtable_key(&mut self, key: Value<'gc>, value: Value<'gc>) {
+    unsafe fn set_new_hashtable_key(&mut self, key: Value<'gc, 'a>, value: Value<'gc, 'a>) {
         if self.buckets.is_empty() {
             self.rehash(key);
             self.set(key, value).unwrap();
@@ -400,7 +403,7 @@ impl<'gc> Table<'gc> {
             .set_new_item(key, value);
     }
 
-    fn find_bucket(&self, key: Value<'gc>) -> Option<usize> {
+    fn find_bucket(&self, key: Value<'gc, 'a>) -> Option<usize> {
         if self.buckets.is_empty() {
             return None;
         }
@@ -438,7 +441,7 @@ impl<'gc> Table<'gc> {
         }
     }
 
-    fn find_string_key_bucket(&self, key: LuaString) -> Option<usize> {
+    fn find_string_key_bucket(&self, key: LuaString<'gc, 'a>) -> Option<usize> {
         if self.buckets.is_empty() {
             return None;
         }
@@ -457,7 +460,7 @@ impl<'gc> Table<'gc> {
         }
     }
 
-    fn calc_main_bucket_index(&self, key: Value) -> usize {
+    fn calc_main_bucket_index(&self, key: Value<'gc, 'a>) -> usize {
         debug_assert!(!self.buckets.is_empty());
         debug_assert!(self.buckets.len().is_power_of_two());
 

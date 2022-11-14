@@ -221,10 +221,10 @@ unsafe impl<K: GarbageCollect, V: GarbageCollect> GarbageCollect for BTreeMap<K,
 
 /// # Safety
 /// `Aged` must be an identical type to `Self` but with a GC lifetime `'a`.
-pub unsafe trait GcLifetime<'a>: GarbageCollect {
-    type Aged: GcLifetime<'a> + 'a;
+pub unsafe trait GcLifetime<'gc, 'a>: GarbageCollect {
+    type Aged: GcLifetime<'gc, 'a> + 'a;
 }
 
-unsafe impl<'a, T: GcLifetime<'a>> GcLifetime<'a> for Vec<T> {
+unsafe impl<'gc, 'a, T: GcLifetime<'gc, 'a>> GcLifetime<'gc, 'a> for Vec<T> {
     type Aged = Vec<T::Aged>;
 }

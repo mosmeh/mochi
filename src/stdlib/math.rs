@@ -11,7 +11,10 @@ use rand::{rngs::OsRng, Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use std::{cell::RefCell, ops::DerefMut, rc::Rc, time::SystemTime};
 
-pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
+    _: &mut Vm<'gc, '_>,
+) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
     let mut table = Table::new();
     set_functions_to_table(
         gc,
@@ -116,12 +119,12 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
     gc.allocate_cell(table)
 }
 
-fn math_abs<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_abs<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let arg = args.nth(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
         x.wrapping_abs().into()
@@ -131,30 +134,30 @@ fn math_abs<'gc>(
     Ok(vec![result])
 }
 
-fn math_acos<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_acos<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::acos)
 }
 
-fn math_asin<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_asin<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::asin)
 }
 
-fn math_atan<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_atan<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let y = args.nth(1).to_number()?;
     let x = args.nth(2);
     let result = if x.is_present() {
@@ -165,12 +168,12 @@ fn math_atan<'gc>(
     Ok(vec![result.into()])
 }
 
-fn math_ceil<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_ceil<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let arg = args.nth(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
@@ -181,39 +184,39 @@ fn math_ceil<'gc>(
     Ok(vec![result])
 }
 
-fn math_cos<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_cos<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::cos)
 }
 
-fn math_deg<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_deg<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::to_degrees)
 }
 
-fn math_exp<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_exp<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::exp)
 }
 
-fn math_floor<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_floor<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let arg = args.nth(1);
     let result = if let Some(Value::Integer(x)) = arg.get() {
         x.into()
@@ -224,12 +227,12 @@ fn math_floor<'gc>(
     Ok(vec![result])
 }
 
-fn math_fmod<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_fmod<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let x = args.nth(1);
     let y = args.nth(2);
     let result = match (x.as_value()?, y.as_value()?) {
@@ -245,12 +248,12 @@ fn math_fmod<'gc>(
     Ok(vec![result])
 }
 
-fn math_log<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_log<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let x = args.nth(1).to_number()?;
     let base = args.nth(2);
     let result = if base.is_present() {
@@ -261,12 +264,12 @@ fn math_log<'gc>(
     Ok(vec![result.into()])
 }
 
-fn math_modf<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_modf<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let x = args.nth(1);
     let (trunc, fract) = if let Value::Integer(x) = x.as_value()? {
         (x.into(), 0.0.into())
@@ -279,48 +282,48 @@ fn math_modf<'gc>(
     Ok(vec![trunc, fract])
 }
 
-fn math_rad<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_rad<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::to_radians)
 }
 
-fn math_sin<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_sin<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::sin)
 }
 
-fn math_sqrt<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_sqrt<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::sqrt)
 }
 
-fn math_tan<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_tan<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::tan)
 }
 
-fn math_tointeger<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_tointeger<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let result = args
         .nth(1)
         .as_value()?
@@ -330,12 +333,12 @@ fn math_tointeger<'gc>(
     Ok(vec![result])
 }
 
-fn math_type<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_type<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let result = match args.nth(1).as_value()? {
         Value::Integer(_) => gc.allocate_string(B("integer")).into(),
         Value::Number(_) => gc.allocate_string(B("float")).into(),
@@ -344,87 +347,87 @@ fn math_type<'gc>(
     Ok(vec![result])
 }
 
-fn math_ult<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_ult<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let m = args.nth(1).to_integer()?;
     let n = args.nth(2).to_integer()?;
     Ok(vec![((m as u64) < (n as u64)).into()])
 }
 
-fn math_cosh<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_cosh<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::cosh)
 }
 
-fn math_frexp<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_frexp<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let x = args.nth(1).to_number()?;
     let (fr, exp) = crate::math::frexp(x);
     Ok(vec![fr.into(), (exp as Integer).into()])
 }
 
-fn math_ldexp<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_ldexp<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let x = args.nth(1).to_number()?;
     let exp = args.nth(2).to_integer()?;
     Ok(vec![crate::math::ldexp(x, exp as i32).into()])
 }
 
-fn math_log10<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_log10<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::log10)
 }
 
-fn math_pow<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_pow<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let x = args.nth(1).to_number()?;
     let y = args.nth(2).to_number()?;
     Ok(vec![Number::powf(x, y).into()])
 }
 
-fn math_sinh<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_sinh<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::sinh)
 }
 
-fn math_tanh<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn math_tanh<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     unary_func(args, Number::tanh)
 }
 
-fn unary_func<'gc, F>(args: &[Value<'gc>], f: F) -> Result<Vec<Value<'gc>>, ErrorKind>
+fn unary_func<'gc, 'a, F>(args: &[Value<'gc, 'a>], f: F) -> Result<Vec<Value<'gc, 'a>>, ErrorKind>
 where
     F: Fn(Number) -> Number,
 {
@@ -432,7 +435,7 @@ where
     Ok(vec![f(x).into()])
 }
 
-fn number_to_value<'gc>(x: Number) -> Value<'gc> {
+fn number_to_value<'gc, 'a>(x: Number) -> Value<'gc, 'a> {
     if number_is_valid_integer(x) {
         Value::Integer(x as Integer)
     } else {

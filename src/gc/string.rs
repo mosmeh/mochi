@@ -43,7 +43,7 @@ unsafe impl GarbageCollect for BoxedString {
     }
 }
 
-unsafe impl<'a> GcLifetime<'a> for BoxedString {
+unsafe impl<'gc, 'a> GcLifetime<'gc, 'a> for BoxedString {
     type Aged = Self;
 }
 

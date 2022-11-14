@@ -383,9 +383,9 @@ impl Seek for InnerReader {
     }
 }
 
-pub fn translate_and_raise_error<'gc, F>(f: F) -> Result<Vec<Value<'gc>>, ErrorKind>
+pub fn translate_and_raise_error<'gc, 'a, F>(f: F) -> Result<Vec<Value<'gc, 'a>>, ErrorKind>
 where
-    F: FnOnce() -> Result<Vec<Value<'gc>>, FileError>,
+    F: FnOnce() -> Result<Vec<Value<'gc, 'a>>, FileError>,
 {
     match f() {
         Ok(values) => Ok(values),
@@ -394,12 +394,12 @@ where
     }
 }
 
-pub fn translate_and_return_error<'gc, F>(
-    gc: &'gc GcContext,
+pub fn translate_and_return_error<'gc, 'a, F>(
+    gc: &'a GcContext<'gc>,
     f: F,
-) -> Result<Vec<Value<'gc>>, ErrorKind>
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind>
 where
-    F: FnOnce() -> Result<Vec<Value<'gc>>, FileError>,
+    F: FnOnce() -> Result<Vec<Value<'gc, 'a>>, FileError>,
 {
     match f() {
         Ok(values) => Ok(values),

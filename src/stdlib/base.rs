@@ -13,7 +13,10 @@ use std::{
     rc::Rc,
 };
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
+    vm: &mut Vm<'gc, 'a>,
+) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
     let globals = vm.globals();
     let mut globals = globals.borrow_mut(gc);
     set_functions_to_table(
@@ -80,12 +83,12 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     vm.globals()
 }
 
-fn base_assert<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_assert<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     if args.nth(1).as_value()?.to_boolean() {
         Ok(args.without_callee().to_vec())
     } else if let Some(error_obj) = args.nth(2).get() {
@@ -95,12 +98,12 @@ fn base_assert<'gc>(
     }
 }
 
-fn base_collectgarbage<'gc>(
-    gc: &'gc mut GcContext,
-    roots: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_collectgarbage<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    roots: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let opt = args.nth(1);
     let opt = opt.to_string_or(B("collect"))?;
 
@@ -162,12 +165,12 @@ fn base_collectgarbage<'gc>(
     Ok(vec![result])
 }
 
-fn base_dofile<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_dofile<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let filename = args.nth(1);
     let closure = if filename.is_present() {
         let filename = filename.to_string()?;
@@ -192,22 +195,22 @@ fn base_dofile<'gc>(
     todo!()
 }
 
-fn base_error<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_error<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let error_obj = args.nth(1).get().unwrap_or_default();
     Err(ErrorKind::from_error_object(error_obj))
 }
 
-fn base_getmetatable<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_getmetatable<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     todo!()
     /*let object = args.nth(1).as_value()?;
     let metatable = vm
@@ -227,18 +230,18 @@ fn base_getmetatable<'gc>(
     Ok(vec![metatable])*/
 }
 
-fn base_ipairs<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
-    fn iterate<'gc>(
-        gc: &'gc mut GcContext,
-        _: &RootSet,
-        _: GcCell<Vm>,
-        args: &[Value<'gc>],
-    ) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_ipairs<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
+    fn iterate<'gc, 'a>(
+        gc: &'a mut GcContext<'gc>,
+        _: &RootSet<'gc>,
+        _: GcCell<'gc, '_, Vm<'gc, '_>>,
+        args: &[Value<'gc, '_>],
+    ) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
         let i = args.nth(2).to_integer()?.wrapping_add(1);
         let value = args.nth(1).as_table()?.borrow(gc).get_integer_key(i);
 
@@ -254,12 +257,12 @@ fn base_ipairs<'gc>(
     Ok(vec![NativeFunction::new(iterate).into(), table, 0.into()])
 }
 
-fn base_load<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_load<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let mode = args.nth(3);
     let mode = mode.to_string_or(B("bt"))?;
     if !mode.contains(&b'b') || !mode.contains(&b't') {
@@ -293,12 +296,12 @@ fn base_load<'gc>(
     Ok(vec![gc.allocate(closure).into()])
 }
 
-fn base_loadfile<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_loadfile<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let mode = args.nth(2);
     let mode = mode.to_string_or(B("bt"))?;
     if !mode.contains(&b'b') || !mode.contains(&b't') {
@@ -339,12 +342,12 @@ fn base_loadfile<'gc>(
     Ok(vec![gc.allocate(closure).into()])
 }
 
-fn base_next<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_next<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let table = table.borrow(gc);
     let index = args.nth(2).get().unwrap_or_default();
@@ -356,12 +359,12 @@ fn base_next<'gc>(
     })
 }
 
-fn base_pairs<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_pairs<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_value()?;
     let metamethod = vm
         .borrow(gc)
@@ -386,12 +389,12 @@ fn base_pairs<'gc>(
     todo!()
 }
 
-fn base_pcall<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_pcall<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let f = args.nth(1).as_value()?;
     /*Ok(Action::ProtectedCall {
         callee: f,
@@ -414,12 +417,12 @@ fn base_pcall<'gc>(
     todo!()
 }
 
-fn base_print<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_print<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let mut stdout = std::io::stdout().lock();
     if let Some((last, xs)) = args.without_callee().split_last() {
         for x in xs {
@@ -432,34 +435,34 @@ fn base_print<'gc>(
     Ok(Vec::new())
 }
 
-fn base_rawequal<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_rawequal<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let v1 = args.nth(1).as_value()?;
     let v2 = args.nth(2).as_value()?;
     Ok(vec![(v1 == v2).into()])
 }
 
-fn base_rawget<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_rawget<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let index = args.nth(2).as_value()?;
     let value = args.nth(1).as_table()?.borrow(gc).get(index);
     Ok(vec![value])
 }
 
-fn base_rawlen<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_rawlen<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let len = match args.nth(1).get() {
         Some(Value::Table(t)) => t.borrow(gc).lua_len(),
         Some(Value::String(s)) => s.len() as Integer,
@@ -474,12 +477,12 @@ fn base_rawlen<'gc>(
     Ok(vec![len.into()])
 }
 
-fn base_rawset<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_rawset<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let index = args.nth(2).as_value()?;
     let value = args.nth(3).as_value()?;
@@ -489,12 +492,12 @@ fn base_rawset<'gc>(
     Ok(vec![table.into()])
 }
 
-fn base_select<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_select<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let num_args = args.without_callee().len() as Integer;
     let index = args.nth(1);
 
@@ -517,12 +520,12 @@ fn base_select<'gc>(
     Ok(args.without_callee()[index as usize..].to_vec())
 }
 
-fn base_setmetatable<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_setmetatable<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
     let new_metatable = match args.nth(2).get() {
         Some(Value::Nil) => None,
@@ -550,12 +553,12 @@ fn base_setmetatable<'gc>(
     Ok(vec![table.into()])
 }
 
-fn base_tonumber<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_tonumber<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let result = match args.nth(1).as_value()? {
         Value::Integer(x) => Value::Integer(x),
         Value::Number(x) => Value::Number(x),
@@ -599,23 +602,23 @@ fn base_tonumber<'gc>(
     Ok(vec![result])
 }
 
-fn base_tostring<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_tostring<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let mut string = Vec::new();
     args.nth(1).as_value()?.fmt_bytes(&mut string)?;
     Ok(vec![gc.allocate_string(string).into()])
 }
 
-fn base_type<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn base_type<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let string = args.nth(1).as_value()?.ty().name().as_bytes();
     Ok(vec![gc.allocate_string(string).into()])
 }

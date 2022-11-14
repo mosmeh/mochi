@@ -42,11 +42,11 @@ impl Runtime {
 
     pub fn execute<F>(&mut self, f: F) -> Result<(), RuntimeError>
     where
-        F: for<'gc> FnOnce(
-            &'gc GcContext,
-            GcCell<Vm>,
+        F: for<'gc, 'a> FnOnce(
+            &'a GcContext<'gc>,
+            GcCell<'gc, '_, Vm<'gc, '_>>,
         ) -> Result<
-            Value<'gc>,
+            Value<'gc, 'a>,
             Box<dyn std::error::Error + Send + Sync + 'static>,
         >,
     {
@@ -83,16 +83,16 @@ impl Runtime {
     }
 }
 
-pub struct Vm<'gc> {
-    registry: GcCell<'gc, Table<'gc>>,
-    main_thread: GcCell<'gc, LuaThread<'gc>>,
-    globals: GcCell<'gc, Table<'gc>>,
-    thread_stack: Vec<GcCell<'gc, LuaThread<'gc>>>,
-    metamethod_names: [LuaString<'gc>; Metamethod::COUNT],
-    metatables: [Option<GcCell<'gc, Table<'gc>>>; Type::COUNT],
+pub struct Vm<'gc, 'a> {
+    registry: GcCell<'gc, 'a, Table<'gc, 'a>>,
+    main_thread: GcCell<'gc, 'a, LuaThread<'gc, 'a>>,
+    globals: GcCell<'gc, 'a, Table<'gc, 'a>>,
+    thread_stack: Vec<GcCell<'gc, 'a, LuaThread<'gc, 'a>>>,
+    metamethod_names: [LuaString<'gc, 'a>; Metamethod::COUNT],
+    metatables: [Option<GcCell<'gc, 'a, Table<'gc, 'a>>>; Type::COUNT],
 }
 
-unsafe impl GarbageCollect for Vm<'_> {
+unsafe impl GarbageCollect for Vm<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.registry.trace(tracer);
         self.main_thread.trace(tracer);
@@ -103,12 +103,12 @@ unsafe impl GarbageCollect for Vm<'_> {
     }
 }
 
-unsafe impl<'a> GcLifetime<'a> for Vm<'_> {
-    type Aged = Vm<'a>;
+unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for Vm<'gc, '_> {
+    type Aged = Vm<'gc, 'a>;
 }
 
-impl<'gc> Vm<'gc> {
-    pub(crate) fn new(gc: &'gc GcContext) -> Self {
+impl<'gc, 'a> Vm<'gc, 'a> {
+    pub(crate) fn new(gc: &'a GcContext<'gc>) -> Self {
         let main_thread = gc.allocate_cell(LuaThread::new());
         let globals = gc.allocate_cell(Table::new());
         let registry = Table::from(vec![main_thread.into(), globals.into()]);
@@ -122,35 +122,35 @@ impl<'gc> Vm<'gc> {
         }
     }
 
-    pub fn registry(&self) -> GcCell<'gc, Table<'gc>> {
+    pub fn registry(&self) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
         self.registry
     }
 
-    pub fn main_thread(&self) -> GcCell<'gc, LuaThread<'gc>> {
+    pub fn main_thread(&self) -> GcCell<'gc, 'a, LuaThread<'gc, 'a>> {
         self.main_thread
     }
 
-    pub fn current_thread(&self) -> GcCell<'gc, LuaThread<'gc>> {
+    pub fn current_thread(&self) -> GcCell<'gc, 'a, LuaThread<'gc, 'a>> {
         match self.thread_stack.as_slice() {
             [.., current] => *current,
             _ => self.main_thread,
         }
     }
 
-    pub fn globals(&self) -> GcCell<'gc, Table<'gc>> {
+    pub fn globals(&self) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
         self.globals
     }
 
-    pub fn load_stdlib(&mut self, gc: &'gc GcContext) {
+    pub fn load_stdlib(&mut self, gc: &'a GcContext<'gc>) {
         crate::stdlib::load(gc, self);
     }
 
     pub fn load<B, S>(
         &self,
-        gc: &'gc GcContext,
+        gc: &'a GcContext<'gc>,
         bytes: B,
         source: S,
-    ) -> Result<LuaClosure<'gc>, Error>
+    ) -> Result<LuaClosure<'gc, 'a>, Error>
     where
         B: AsRef<[u8]>,
         S: AsRef<[u8]>,
@@ -165,9 +165,9 @@ impl<'gc> Vm<'gc> {
 
     pub fn load_file<P: AsRef<Path>>(
         &self,
-        gc: &'gc GcContext,
+        gc: &'a GcContext<'gc>,
         path: P,
-    ) -> Result<LuaClosure<'gc>, Error> {
+    ) -> Result<LuaClosure<'gc, 'a>, Error> {
         let proto = crate::load_file(gc, path)?;
         let mut closure = LuaClosure::from(gc.allocate(proto));
         closure
@@ -176,15 +176,15 @@ impl<'gc> Vm<'gc> {
         Ok(closure)
     }
 
-    pub fn metamethod_name(&self, metamethod: Metamethod) -> LuaString<'gc> {
+    pub fn metamethod_name(&self, metamethod: Metamethod) -> LuaString<'gc, 'a> {
         self.metamethod_names[metamethod as usize]
     }
 
     pub fn metatable_of_object(
         &self,
-        gc: &'gc GcContext,
-        object: Value,
-    ) -> Option<GcCell<Table<'gc>>> {
+        gc: &'a GcContext<'gc>,
+        object: Value<'gc, 'a>,
+    ) -> Option<GcCell<'gc, 'a, Table<'gc, 'a>>> {
         match object {
             Value::Table(table) => table.borrow(gc).metatable(),
             Value::UserData(ud) => ud.borrow(gc).metatable(),
@@ -194,10 +194,10 @@ impl<'gc> Vm<'gc> {
 
     pub fn metamethod_of_object(
         &self,
-        gc: &'gc GcContext,
+        gc: &'a GcContext<'gc>,
         metamethod: Metamethod,
-        object: Value,
-    ) -> Option<Value<'gc>> {
+        object: Value<'gc, 'a>,
+    ) -> Option<Value<'gc, 'a>> {
         self.metatable_of_object(gc, object).and_then(|metatable| {
             let metamethod = metatable
                 .borrow(gc)
@@ -208,13 +208,17 @@ impl<'gc> Vm<'gc> {
 
     pub fn set_metatable_of_type<T>(&mut self, ty: Type, metatable: T)
     where
-        T: Into<Option<GcCell<'gc, Table<'gc>>>>,
+        T: Into<Option<GcCell<'gc, 'a, Table<'gc, 'a>>>>,
     {
         self.metatables[ty as usize] = metatable.into();
     }
 }
 
-fn execute(gc: &mut GcContext, roots: &RootSet, vm: GcCell<Vm>) -> Result<(), RuntimeError> {
+fn execute<'gc>(
+    gc: &mut GcContext<'gc>,
+    roots: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+) -> Result<(), RuntimeError> {
     bytecode_vm::execute_lua_frame(gc, roots, vm).unwrap();
 
     let mut vm = vm.borrow_mut(gc);
@@ -273,11 +277,11 @@ fn execute(gc: &mut GcContext, roots: &RootSet, vm: GcCell<Vm>) -> Result<(), Ru
     }*/
 }
 
-pub(crate) fn call_value(
-    gc: &mut GcContext,
-    roots: &RootSet,
-    vm: GcCell<Vm>,
-    thread: GcCell<LuaThread>,
+pub(crate) fn call_value<'gc>(
+    gc: &mut GcContext<'gc>,
+    roots: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    thread: GcCell<'gc, '_, LuaThread<'gc, '_>>,
     bottom: usize,
 ) -> Result<(), ErrorKind> {
     let mut thread_ref = thread.borrow_mut(gc);
@@ -329,7 +333,7 @@ pub(crate) fn call_value(
     }
 }
 
-impl<'gc> LuaThread<'gc> {
+impl<'gc> LuaThread<'gc, '_> {
     fn save_pc(&mut self, pc: usize) {
         match self.frames.as_mut_slice() {
             [.., Frame::Lua(frame)] => frame.pc = pc,
@@ -338,15 +342,15 @@ impl<'gc> LuaThread<'gc> {
     }
 }
 
-impl<'gc> Upvalue<'gc> {
+impl<'gc, 'a> Upvalue<'gc, 'a> {
     fn get(
         &self,
-        gc: &'gc GcContext,
-        current_thread: GcCell<'gc, LuaThread<'gc>>,
+        gc: &'a GcContext<'gc>,
+        current_thread: GcCell<'gc, 'a, LuaThread<'gc, 'a>>,
         base: usize,
-        lower_stack: &[Value<'gc>],
-        stack: &[Value<'gc>],
-    ) -> Value<'gc> {
+        lower_stack: &[Value<'gc, 'a>],
+        stack: &[Value<'gc, 'a>],
+    ) -> Value<'gc, 'a> {
         match self {
             Upvalue::Open { thread, index } => {
                 if GcCell::ptr_eq(thread, &current_thread) {
@@ -365,12 +369,12 @@ impl<'gc> Upvalue<'gc> {
 
     fn set(
         &mut self,
-        gc: &'gc GcContext,
-        current_thread: GcCell<'gc, LuaThread<'gc>>,
+        gc: &'a GcContext<'gc>,
+        current_thread: GcCell<'gc, 'a, LuaThread<'gc, 'a>>,
         base: usize,
-        lower_stack: &mut [Value<'gc>],
-        stack: &mut [Value<'gc>],
-        value: Value<'gc>,
+        lower_stack: &mut [Value<'gc, 'a>],
+        stack: &mut [Value<'gc, 'a>],
+        value: Value<'gc, 'a>,
     ) {
         match self {
             Upvalue::Open { thread, index } => {

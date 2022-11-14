@@ -69,87 +69,87 @@ pub type Integer = i64;
 pub type Number = f64;
 
 #[derive(Debug, Clone, Copy)]
-pub enum Value<'gc> {
+pub enum Value<'gc, 'a> {
     Nil,
     Boolean(bool),
     Integer(Integer),
     Number(Number),
     NativeFunction(NativeFunction),
-    String(LuaString<'gc>),
-    Table(GcCell<'gc, Table<'gc>>),
-    LuaClosure(Gc<'gc, LuaClosure<'gc>>),
-    NativeClosure(Gc<'gc, NativeClosure<'gc>>),
-    UserData(GcCell<'gc, UserData<'gc>>),
-    Thread(GcCell<'gc, LuaThread<'gc>>),
+    String(LuaString<'gc, 'a>),
+    Table(GcCell<'gc, 'a, Table<'gc, 'a>>),
+    LuaClosure(Gc<'gc, 'a, LuaClosure<'gc, 'a>>),
+    NativeClosure(Gc<'gc, 'a, NativeClosure<'gc, 'a>>),
+    UserData(GcCell<'gc, 'a, UserData<'gc, 'a>>),
+    Thread(GcCell<'gc, 'a, LuaThread<'gc, 'a>>),
 }
 
-impl Default for Value<'_> {
+impl Default for Value<'_, '_> {
     fn default() -> Self {
         Self::Nil
     }
 }
 
-impl From<bool> for Value<'_> {
+impl From<bool> for Value<'_, '_> {
     fn from(x: bool) -> Self {
         Self::Boolean(x)
     }
 }
 
-impl From<Integer> for Value<'_> {
+impl From<Integer> for Value<'_, '_> {
     fn from(x: Integer) -> Self {
         Self::Integer(x)
     }
 }
 
-impl From<Number> for Value<'_> {
+impl From<Number> for Value<'_, '_> {
     fn from(x: Number) -> Self {
         Self::Number(x)
     }
 }
 
-impl From<NativeFunction> for Value<'_> {
+impl From<NativeFunction> for Value<'_, '_> {
     fn from(x: NativeFunction) -> Self {
         Self::NativeFunction(x)
     }
 }
 
-impl<'gc> From<LuaString<'gc>> for Value<'gc> {
-    fn from(x: LuaString<'gc>) -> Self {
+impl<'gc, 'a> From<LuaString<'gc, 'a>> for Value<'gc, 'a> {
+    fn from(x: LuaString<'gc, 'a>) -> Self {
         Self::String(x)
     }
 }
 
-impl<'gc> From<GcCell<'gc, Table<'gc>>> for Value<'gc> {
-    fn from(x: GcCell<'gc, Table<'gc>>) -> Self {
+impl<'gc, 'a> From<GcCell<'gc, 'a, Table<'gc, 'a>>> for Value<'gc, 'a> {
+    fn from(x: GcCell<'gc, 'a, Table<'gc, 'a>>) -> Self {
         Self::Table(x)
     }
 }
 
-impl<'gc> From<Gc<'gc, LuaClosure<'gc>>> for Value<'gc> {
-    fn from(x: Gc<'gc, LuaClosure<'gc>>) -> Self {
+impl<'gc, 'a> From<Gc<'gc, 'a, LuaClosure<'gc, 'a>>> for Value<'gc, 'a> {
+    fn from(x: Gc<'gc, 'a, LuaClosure<'gc, 'a>>) -> Self {
         Self::LuaClosure(x)
     }
 }
 
-impl<'gc> From<Gc<'gc, NativeClosure<'gc>>> for Value<'gc> {
-    fn from(x: Gc<'gc, NativeClosure<'gc>>) -> Self {
+impl<'gc, 'a> From<Gc<'gc, 'a, NativeClosure<'gc, 'a>>> for Value<'gc, 'a> {
+    fn from(x: Gc<'gc, 'a, NativeClosure<'gc, 'a>>) -> Self {
         Self::NativeClosure(x)
     }
 }
 
-impl<'gc> From<GcCell<'gc, UserData<'gc>>> for Value<'gc> {
-    fn from(x: GcCell<'gc, UserData<'gc>>) -> Self {
+impl<'gc, 'a> From<GcCell<'gc, 'a, UserData<'gc, 'a>>> for Value<'gc, 'a> {
+    fn from(x: GcCell<'gc, 'a, UserData<'gc, 'a>>) -> Self {
         Self::UserData(x)
     }
 }
 
-impl<'gc> From<GcCell<'gc, LuaThread<'gc>>> for Value<'gc> {
-    fn from(x: GcCell<'gc, LuaThread<'gc>>) -> Self {
+impl<'gc, 'a> From<GcCell<'gc, 'a, LuaThread<'gc, 'a>>> for Value<'gc, 'a> {
+    fn from(x: GcCell<'gc, 'a, LuaThread<'gc, 'a>>) -> Self {
         Self::Thread(x)
     }
 }
 
-impl PartialEq for Value<'_> {
+impl PartialEq for Value<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Nil, Self::Nil) => true,
@@ -174,9 +174,9 @@ impl PartialEq for Value<'_> {
     }
 }
 
-impl Eq for Value<'_> {}
+impl Eq for Value<'_, '_> {}
 
-impl std::hash::Hash for Value<'_> {
+impl std::hash::Hash for Value<'_, '_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
@@ -195,7 +195,7 @@ impl std::hash::Hash for Value<'_> {
     }
 }
 
-unsafe impl GarbageCollect for Value<'_> {
+unsafe impl GarbageCollect for Value<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         match self {
             Self::String(x) => x.trace(tracer),
@@ -209,11 +209,11 @@ unsafe impl GarbageCollect for Value<'_> {
     }
 }
 
-unsafe impl<'a> GcLifetime<'a> for Value<'_> {
-    type Aged = Value<'a>;
+unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for Value<'gc, '_> {
+    type Aged = Value<'gc, 'a>;
 }
 
-impl<'gc> Value<'gc> {
+impl<'gc, 'a> Value<'gc, 'a> {
     pub fn fmt_bytes(&self, f: &mut impl std::io::Write) -> std::io::Result<()> {
         match self {
             Self::Nil => f.write_all(b"nil"),
@@ -323,7 +323,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_table(&self) -> Option<GcCell<'gc, Table<'gc>>> {
+    pub fn as_table(&self) -> Option<GcCell<'gc, 'a, Table<'gc, 'a>>> {
         if let Self::Table(x) = self {
             Some(*x)
         } else {
@@ -331,7 +331,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn borrow_as_table<'a>(&self, gc: &'a GcContext) -> Option<Ref<Table<'a>>> {
+    pub fn borrow_as_table(&self, gc: &'a GcContext<'gc>) -> Option<Ref<Table<'gc, 'a>>> {
         if let Self::Table(x) = self {
             Some(x.borrow(gc))
         } else {
@@ -339,7 +339,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn borrow_as_table_mut<'a>(&self, gc: &'a GcContext) -> Option<RefMut<Table<'a>>> {
+    pub fn borrow_as_table_mut(&self, gc: &'a GcContext<'gc>) -> Option<RefMut<Table<'gc, 'a>>> {
         if let Self::Table(x) = self {
             Some(x.borrow_mut(gc))
         } else {
@@ -347,7 +347,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_lua_closure(&self) -> Option<&LuaClosure<'gc>> {
+    pub fn as_lua_closure(&self) -> Option<&LuaClosure<'gc, 'a>> {
         if let Self::LuaClosure(x) = self {
             Some(x)
         } else {
@@ -355,7 +355,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_native_closure(&self) -> Option<&NativeClosure> {
+    pub fn as_native_closure(&self) -> Option<&NativeClosure<'gc, 'a>> {
         if let Self::NativeClosure(x) = self {
             Some(x)
         } else {
@@ -363,7 +363,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_thread(&self) -> Option<GcCell<'gc, LuaThread<'gc>>> {
+    pub fn as_thread(&self) -> Option<GcCell<'gc, 'a, LuaThread<'gc, 'a>>> {
         if let Self::Thread(x) = self {
             Some(*x)
         } else {
@@ -371,7 +371,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn borrow_as_thread<'a>(&self, gc: &'a GcContext) -> Option<Ref<LuaThread<'a>>> {
+    pub fn borrow_as_thread(&self, gc: &'a GcContext<'gc>) -> Option<Ref<LuaThread<'gc, 'a>>> {
         if let Self::Thread(x) = self {
             Some(x.borrow(gc))
         } else {
@@ -379,7 +379,10 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn borrow_as_thread_mut<'a>(&self, gc: &'a GcContext) -> Option<RefMut<LuaThread<'a>>> {
+    pub fn borrow_as_thread_mut(
+        &self,
+        gc: &'a GcContext<'gc>,
+    ) -> Option<RefMut<LuaThread<'gc, 'a>>> {
         if let Self::Thread(x) = self {
             Some(x.borrow_mut(gc))
         } else {
@@ -387,14 +390,17 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_userdata<T: Any>(&self, gc: &GcContext) -> Option<GcCell<'gc, UserData<'gc>>> {
+    pub fn as_userdata<T: Any>(
+        &self,
+        gc: &GcContext<'gc>,
+    ) -> Option<GcCell<'gc, 'a, UserData<'gc, 'a>>> {
         match self {
             Self::UserData(ud) if ud.borrow(gc).is::<T>() => Some(*ud),
             _ => None,
         }
     }
 
-    pub fn borrow_as_userdata<'a, T: Any>(&self, gc: &'a GcContext) -> Option<Ref<'a, T>> {
+    pub fn borrow_as_userdata<'b, T: Any>(&self, gc: &'b GcContext<'gc>) -> Option<Ref<'b, T>> {
         if let Self::UserData(ud) = self {
             Ref::filter_map(ud.borrow(gc), |ud| ud.get()).ok()
         } else {
@@ -402,10 +408,10 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn borrow_as_userdata_mut<'a, T: Any>(
-        &'a self,
-        gc: &'gc GcContext,
-    ) -> Option<RefMut<'a, T>> {
+    pub fn borrow_as_userdata_mut<'b, T: Any>(
+        &'b self,
+        gc: &'a GcContext<'gc>,
+    ) -> Option<RefMut<'b, T>> {
         if let Self::UserData(ud) = self {
             RefMut::filter_map(ud.borrow_mut(gc), |ud| ud.get_mut()).ok()
         } else {

@@ -8,12 +8,12 @@ use crate::{
 use bstr::{ByteSlice, ByteVec};
 use byteorder::WriteBytesExt;
 
-pub fn string_format<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+pub fn string_format<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let format_string = args.nth(1);
     let format_string = format_string.to_string()?;
 

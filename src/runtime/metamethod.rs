@@ -1,6 +1,6 @@
 use super::{ErrorKind, Operation, Vm};
 use crate::{
-    gc::{GcCell, GcContext, Rooted},
+    gc::{GcCell, GcContext},
     types::{LuaString, LuaThread, Value},
 };
 use bstr::B;
@@ -15,7 +15,7 @@ macro_rules! metamethods {
         impl Metamethod {
             pub const COUNT: usize = crate::count!($($variant)*);
 
-            pub fn allocate_names(gc: &GcContext) -> [LuaString; Self::COUNT] {
+            pub fn allocate_names<'gc, 'a>(gc: &'a GcContext<'gc>) -> [LuaString<'gc, 'a>; Self::COUNT] {
                 [
                     $(gc.allocate_string(B($name)),)*
                 ]
@@ -59,16 +59,16 @@ metamethods!(
     Close => "__close",
 );
 
-pub(super) fn index_slow_path<'gc, K>(
-    gc: &'gc GcContext,
-    vm: GcCell<Vm>,
-    thread: &mut LuaThread<'gc>,
-    mut table_like: Value<'gc>,
+pub(super) fn index_slow_path<'a, 'gc: 'a, K>(
+    gc: &'a GcContext<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    thread: &mut LuaThread<'gc, 'a>,
+    mut table_like: Value<'gc, 'a>,
     key: K,
     dest: usize,
 ) -> Result<(), ErrorKind>
 where
-    K: Into<Value<'gc>>,
+    K: Into<Value<'gc, 'a>>,
 {
     let key = key.into();
     let index_key = vm.borrow(gc).metamethod_name(Metamethod::Index);
@@ -128,17 +128,17 @@ where
     Err(ErrorKind::other("'__index' chain too long; possible loop"))
 }
 
-pub(super) fn new_index_slow_path<'gc, K, V>(
-    gc: &'gc mut GcContext,
-    vm: GcCell<Vm>,
-    thread: Rooted<GcCell<LuaThread>>,
-    mut table_like: Value<'gc>,
+pub(super) fn new_index_slow_path<'a, 'gc: 'a, K, V>(
+    gc: &'a mut GcContext<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    thread: GcCell<LuaThread>,
+    mut table_like: Value<'gc, 'a>,
     key: K,
     value: V,
 ) -> Result<(), ErrorKind>
 where
-    K: Into<Value<'gc>>,
-    V: Into<Value<'gc>>,
+    K: Into<Value<'gc, 'a>>,
+    V: Into<Value<'gc, 'a>>,
 {
     let key = key.into();
     let new_index_key = vm.borrow(gc).metamethod_name(Metamethod::NewIndex);
@@ -191,8 +191,8 @@ where
     ))
 }
 
-impl<'gc> Vm<'gc> {
-    /*pub(super) fn arithmetic_slow_path(
+/*impl<'gc> Vm<'gc> {
+    pub(super) fn arithmetic_slow_path(
         &self,
         gc: &'gc GcContext,
         thread: &mut LuaThread<'gc>,
@@ -379,9 +379,9 @@ impl<'gc> Vm<'gc> {
                 Ok(Action::ReturnArguments)
             },
         ))
-    }*/
+    }
 
-    /*#[must_use]
+    #[must_use]
     pub(super) fn push_metamethod_frame_with_continuation<F>(
         &self,
         gc: &'gc GcContext,
@@ -409,8 +409,8 @@ impl<'gc> Vm<'gc> {
             callee_bottom: metamethod_bottom,
         });
         self.push_frame(gc, thread, metamethod_bottom).unwrap()
-    }*/
-}
+    }
+}*/
 
 pub(super) fn call_metamethod(
     gc: &mut GcContext,

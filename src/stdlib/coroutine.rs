@@ -6,7 +6,10 @@ use crate::{
 };
 use bstr::B;
 
-pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
+    _: &mut Vm<'gc, 'a>,
+) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
     let mut table = Table::new();
     set_functions_to_table(
         gc,
@@ -25,12 +28,12 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
     gc.allocate_cell(table)
 }
 
-fn coroutine_close<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn coroutine_close<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let co = args.nth(1).as_thread()?;
     let status = get_coroutine_status(gc, vm.borrow(gc).current_thread(), co);
     if !matches!(status, CoroutineStatus::Dead | CoroutineStatus::Suspended) {
@@ -54,24 +57,24 @@ fn coroutine_close<'gc>(
     })
 }
 
-fn coroutine_create<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn coroutine_create<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let f = args.nth(1).ensure_function()?;
     let co = create_coroutine(gc, vm, f)?;
 
     Ok(vec![gc.allocate_cell(co).into()])
 }
 
-fn coroutine_isyieldable<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn coroutine_isyieldable<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let co = args.nth(1);
     let co = if co.is_none() {
         vm.borrow(gc).current_thread()
@@ -83,12 +86,12 @@ fn coroutine_isyieldable<'gc>(
     Ok(vec![(!is_main_thread).into()])
 }
 
-fn coroutine_resume<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn coroutine_resume<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let coroutine = args.nth(1).as_thread()?;
     let args = args.without_callee()[1..].to_vec();
 
@@ -111,12 +114,12 @@ fn coroutine_resume<'gc>(
     todo!()
 }
 
-fn coroutine_running<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    _: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn coroutine_running<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    _: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let thread = vm.borrow(gc).current_thread();
     Ok(vec![
         thread.into(),
@@ -124,23 +127,23 @@ fn coroutine_running<'gc>(
     ])
 }
 
-fn coroutine_status<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn coroutine_status<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let co = args.nth(1).as_thread()?;
     let status = get_coroutine_status(gc, vm.borrow(gc).current_thread(), co);
     Ok(vec![gc.allocate_string(status.name().as_bytes()).into()])
 }
 
-fn coroutine_wrap<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn coroutine_wrap<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let f = args.nth(1).ensure_function()?;
     let co = create_coroutine(gc, vm, f)?;
     let coroutine = gc.allocate_cell(co);
@@ -165,21 +168,21 @@ fn coroutine_wrap<'gc>(
     todo!()
 }
 
-fn coroutine_yield<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn coroutine_yield<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     //Ok(Action::Yield(args.without_callee().to_vec()))
     todo!()
 }
 
-fn create_coroutine<'gc>(
-    gc: &'gc GcContext,
+fn create_coroutine<'gc, 'a>(
+    gc: &GcContext<'gc>,
     vm: GcCell<Vm>,
-    body: Value<'gc>,
-) -> Result<LuaThread<'gc>, ErrorKind> {
+    body: Value<'gc, '_>,
+) -> Result<LuaThread<'gc, 'a>, ErrorKind> {
     let mut co = LuaThread::new();
     co.stack.push(body);
     //vm.push_frame(gc, &mut co, 0)?;
@@ -211,10 +214,10 @@ impl CoroutineStatus {
     }
 }
 
-fn get_coroutine_status<'gc>(
-    gc: &GcContext,
-    thread: GcCell<'gc, LuaThread<'gc>>,
-    coroutine: GcCell<'gc, LuaThread<'gc>>,
+fn get_coroutine_status<'gc, 'a>(
+    gc: &GcContext<'gc>,
+    thread: GcCell<'gc, 'a, LuaThread<'gc, 'a>>,
+    coroutine: GcCell<'gc, 'a, LuaThread<'gc, 'a>>,
 ) -> CoroutineStatus {
     if GcCell::ptr_eq(&coroutine, &thread) {
         return CoroutineStatus::Running;

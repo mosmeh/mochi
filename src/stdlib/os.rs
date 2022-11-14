@@ -11,7 +11,10 @@ use crate::{
 use bstr::{ByteSlice, ByteVec, B};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
 
-pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
+    _: &mut Vm<'gc, 'a>,
+) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
     let mut table = Table::new();
     set_functions_to_table(
         gc,
@@ -32,12 +35,12 @@ pub fn load<'gc>(gc: &'gc GcContext, _: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>>
     gc.allocate_cell(table)
 }
 
-fn os_clock<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    _: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn os_clock<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    _: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let clock = cpu_time::ProcessTime::now()
         .as_duration()
         .as_secs_f64()
@@ -45,12 +48,12 @@ fn os_clock<'gc>(
     Ok(vec![clock])
 }
 
-fn os_date<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn os_date<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let format = args.nth(1);
     let format = format.to_string_or(B("%c"))?;
 
@@ -109,23 +112,23 @@ fn os_date<'gc>(
         .into()])
 }
 
-fn os_difftime<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn os_difftime<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let t2 = args.nth(1).to_number()?;
     let t1 = args.nth(2).to_number()?;
     Ok(vec![(t2 - t1).into()])
 }
 
-fn os_execute<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn os_execute<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let command = args.nth(1);
     match command.get() {
         None | Some(Value::Nil) => {
@@ -145,12 +148,12 @@ fn os_execute<'gc>(
     }
 }
 
-fn os_exit<'gc>(
-    _: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn os_exit<'gc, 'a>(
+    _: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     // TODO: use std::process::ExitCode::exit_process once stabilized
     const EXIT_SUCCESS: i32 = 0;
     const EXIT_FAILURE: i32 = 1;
@@ -171,12 +174,12 @@ fn os_exit<'gc>(
     std::process::exit(code)
 }
 
-fn os_getenv<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn os_getenv<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let env = args
         .nth(1)
         .to_string()?
@@ -189,12 +192,12 @@ fn os_getenv<'gc>(
     Ok(vec![env])
 }
 
-fn os_remove<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn os_remove<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let filename = args.nth(1);
     let filename = filename.to_string()?;
     file::translate_and_return_error(gc, || {
@@ -213,12 +216,12 @@ fn os_remove<'gc>(
     })
 }
 
-fn os_rename<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn os_rename<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let old_name = args.nth(1);
     let old_name = old_name.to_string()?;
     let new_name = args.nth(2);
@@ -232,12 +235,12 @@ fn os_rename<'gc>(
     })
 }
 
-fn os_setlocale<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn os_setlocale<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let locale = args.nth(1);
     let locale = locale.to_string_or(B("C"))?;
     let category = args.nth(2);
@@ -259,15 +262,15 @@ fn os_setlocale<'gc>(
     }])
 }
 
-fn os_time<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
-    fn get_field<'gc, T, D>(
-        gc: &'gc GcContext,
-        table: &Table<'gc>,
+fn os_time<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
+    fn get_field<'gc, 'a, T, D>(
+        gc: &'a GcContext<'gc>,
+        table: &Table<'gc, 'a>,
         field: &[u8],
         default: D,
     ) -> Result<T, ErrorKind>
@@ -317,9 +320,9 @@ fn os_time<'gc>(
     Ok(vec![datetime.timestamp().into()])
 }
 
-fn set_datetime_to_table<'gc, Tz: TimeZone>(
-    gc: &'gc GcContext,
-    table: &mut Table<'gc>,
+fn set_datetime_to_table<'gc, 'a, Tz: TimeZone>(
+    gc: &'a GcContext<'gc>,
+    table: &mut Table<'gc, 'a>,
     datetime: &DateTime<Tz>,
 ) {
     table.set_field(gc.allocate_string(B("year")), datetime.year() as Integer);

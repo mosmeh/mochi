@@ -1,97 +1,103 @@
 use super::{GarbageCollect, GcContext, GcLifetime};
 use std::{
-    cell::RefCell,
-    ops::{Deref, DerefMut},
-    pin::Pin,
+    cell::{Cell, RefCell},
+    marker::PhantomData,
+    ops::Deref,
     ptr::NonNull,
 };
 
-pub struct RootSet(pub(super) RefCell<Vec<Option<NonNull<dyn GarbageCollect>>>>);
-
-pub struct ShadowedRoot<'roots, T> {
-    roots: &'roots RootSet,
-    index: usize,
-    ptr: Option<NonNull<T>>,
+pub struct RootSet<'gc> {
+    pub(super) stack: RefCell<Vec<Option<NonNull<dyn GarbageCollect>>>>,
+    pub(super) invariant: PhantomData<Cell<&'gc ()>>,
 }
 
-impl<T> Drop for ShadowedRoot<'_, T> {
+#[doc(hidden)]
+pub struct ShadowedRoot<'gc, 'roots, T> {
+    roots: &'roots RootSet<'gc>,
+    index: usize,
+    value: Option<T>,
+}
+
+impl<T> Drop for ShadowedRoot<'_, '_, T> {
     fn drop(&mut self) {
-        self.roots.0.borrow_mut().pop().unwrap();
-        debug_assert_eq!(self.roots.0.borrow().len(), self.index);
-        if let Some(ptr) = self.ptr {
-            unsafe { Box::from_raw(ptr.as_ptr()) };
-        }
+        self.roots.stack.borrow_mut().pop().unwrap();
+        debug_assert_eq!(self.roots.stack.borrow().len(), self.index);
     }
 }
 
-impl<'roots, T> ShadowedRoot<'roots, T> {
-    #[doc(hidden)]
-    pub fn new(roots: &'roots RootSet) -> Self {
-        let mut roots_ref = roots.0.borrow_mut();
+impl<'gc, 'roots, T> ShadowedRoot<'gc, 'roots, T> {
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn new(roots: &'roots RootSet<'gc>) -> Self {
+        let mut roots_ref = roots.stack.borrow_mut();
         let index = roots_ref.len();
         roots_ref.push(None);
         Self {
             roots,
             index,
-            ptr: None,
+            value: None,
         }
     }
 }
 
-pub struct Root<'roots, 'root, T>(Pin<&'root mut ShadowedRoot<'roots, T>>);
+pub struct Root<'gc, 'roots, 'root, T>(&'root mut ShadowedRoot<'gc, 'roots, T>);
 
-impl<'roots, 'root, T> Root<'roots, 'root, T> {
+impl<'gc, 'roots, 'root, T> Root<'gc, 'roots, 'root, T> {
     #[doc(hidden)]
-    pub fn new(shadowed: &'root mut ShadowedRoot<'roots, T>) -> Self {
-        Self(Pin::new(shadowed))
+    pub unsafe fn new(shadowed: &'root mut ShadowedRoot<'gc, 'roots, T>) -> Self {
+        Self(shadowed)
     }
 }
 
-impl<'roots, 'root, T> Root<'roots, 'root, T> {
-    pub fn bind<U>(mut self, x: U) -> Rooted<'roots, 'root, T>
+impl<'gc, 'roots, 'root, T> Root<'gc, 'roots, 'root, T> {
+    pub fn bind<U>(self, x: U) -> Rooted<'gc, 'roots, 'root, T>
     where
         T: GarbageCollect,
-        U: GcLifetime<'roots, Aged = T>,
+        U: GcLifetime<'gc, 'roots, Aged = T>,
     {
-        let ptr = Box::into_raw(Box::new(x)) as *mut T;
-        let ptr = unsafe { NonNull::new_unchecked(ptr) };
-        self.0.ptr = Some(ptr);
+        self.0.value = Some(unsafe { super::age_value(x) });
 
+        let ptr = self.0.value.as_mut().unwrap() as *mut T;
+        let ptr = unsafe { NonNull::new_unchecked(ptr) };
         fn to_static<'a>(ptr: NonNull<dyn GarbageCollect + 'a>) -> NonNull<dyn GarbageCollect> {
             unsafe { std::mem::transmute(ptr) }
         }
-        self.0.roots.0.borrow_mut()[self.0.index] = Some(to_static(ptr));
+        self.0.roots.stack.borrow_mut()[self.0.index] = Some(to_static(ptr));
 
         Rooted(self.0)
     }
 }
 
-pub struct Rooted<'roots, 'root, T>(Pin<&'root mut ShadowedRoot<'roots, T>>);
+pub struct Rooted<'gc, 'roots, 'root, T>(&'root mut ShadowedRoot<'gc, 'roots, T>);
 
-impl<'root, T: GcLifetime<'root>> Deref for Rooted<'_, 'root, T> {
+impl<'gc, 'root, T: GcLifetime<'gc, 'root>> Deref for Rooted<'gc, '_, 'root, T> {
     type Target = T::Aged;
 
     fn deref(&self) -> &Self::Target {
-        let ptr = self.0.ptr.unwrap().as_ptr() as *mut T::Aged;
+        let ptr = self.0.value.as_ref().unwrap() as *const T;
+        let ptr = ptr as *const T::Aged;
         unsafe { &*ptr }
     }
 }
 
-impl<'a, T: GcLifetime<'a>> Rooted<'_, '_, T> {
+impl<'gc, 'root, T: GcLifetime<'gc, 'root>> AsRef<T::Aged> for Rooted<'gc, '_, 'root, T> {
+    fn as_ref(&self) -> &T::Aged {
+        self.deref()
+    }
+}
+
+impl<'gc, 'a, T: GcLifetime<'gc, 'a>> Rooted<'gc, '_, '_, T> {
     #[allow(unused_variables)]
-    pub fn into_inner(mut self, gc: &'a GcContext) -> T::Aged {
-        let shadowed = self.0.deref_mut();
-        shadowed.roots.0.borrow_mut()[shadowed.index] = None;
-        let ptr = shadowed.ptr.take().unwrap().as_ptr() as *mut T::Aged;
-        *unsafe { Box::from_raw(ptr) }
+    pub fn into_inner(self, gc: &'a GcContext<'gc>) -> T::Aged {
+        self.0.roots.stack.borrow_mut()[self.0.index] = None;
+        unsafe { super::age_value(self.0.value.take().unwrap()) }
     }
 }
 
 #[macro_export]
 macro_rules! new_root {
     ($roots:expr, $($root:ident),*) => {$(
-        let mut $root = $crate::gc::ShadowedRoot::new($roots);
-        let $root = $crate::gc::Root::new(&mut $root);
+        let mut $root = unsafe { $crate::gc::ShadowedRoot::new($roots) };
+        let $root = unsafe { $crate::gc::Root::new(&mut $root) };
     )*}
 }
 

@@ -6,25 +6,25 @@ use crate::{
 use std::{collections::BTreeMap, fmt::Display};
 
 #[derive(Default)]
-pub struct LuaThread<'gc> {
+pub struct LuaThread<'gc, 'a> {
     pub(crate) status: ThreadStatus,
-    pub(crate) stack: Vec<Value<'gc>>,
+    pub(crate) stack: Vec<Value<'gc, 'a>>,
     pub(crate) frames: Vec<Frame>,
-    pub(crate) open_upvalues: BTreeMap<usize, GcCell<'gc, Upvalue<'gc>>>,
+    pub(crate) open_upvalues: BTreeMap<usize, GcCell<'gc, 'a, Upvalue<'gc, 'a>>>,
 }
 
-unsafe impl GarbageCollect for LuaThread<'_> {
+unsafe impl GarbageCollect for LuaThread<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.stack.trace(tracer);
         self.open_upvalues.trace(tracer);
     }
 }
 
-unsafe impl<'a> GcLifetime<'a> for LuaThread<'_> {
-    type Aged = LuaThread<'a>;
+unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for LuaThread<'gc, '_> {
+    type Aged = LuaThread<'gc, 'a>;
 }
 
-impl std::fmt::Debug for LuaThread<'_> {
+impl std::fmt::Debug for LuaThread<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LuaThread")
             .field("status", &self.status)
@@ -33,12 +33,12 @@ impl std::fmt::Debug for LuaThread<'_> {
     }
 }
 
-impl<'gc> LuaThread<'gc> {
+impl<'gc, 'a> LuaThread<'gc, 'a> {
     pub fn new() -> Self {
         Default::default()
     }
 
-    pub fn close(&mut self, gc: &'gc GcContext) {
+    pub fn close(&mut self, gc: &'a GcContext<'gc>) {
         self.close_upvalues(gc, 0);
         *self = Self {
             status: ThreadStatus::Unresumable,
@@ -64,7 +64,7 @@ impl<'gc> LuaThread<'gc> {
             .collect()
     }
 
-    pub(crate) fn close_upvalues(&mut self, gc: &'gc GcContext, boundary: usize) {
+    pub(crate) fn close_upvalues(&mut self, gc: &'a GcContext<'gc>, boundary: usize) {
         for (_, upvalue) in self.open_upvalues.split_off(&boundary) {
             let mut upvalue = upvalue.borrow_mut(gc);
             if let Upvalue::Open { index, .. } = *upvalue {

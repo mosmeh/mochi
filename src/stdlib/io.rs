@@ -19,7 +19,10 @@ const LUA_FILEHANDLE: &[u8] = b"FILE*";
 const IO_INPUT: &[u8] = b"_IO_input";
 const IO_OUTPUT: &[u8] = b"_IO_output";
 
-pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>> {
+pub fn load<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
+    vm: &mut Vm<'gc, 'a>,
+) -> GcCell<'gc, 'a, Table<'gc, 'a>> {
     let mut table = Table::new();
     set_functions_to_table(
         gc,
@@ -76,12 +79,12 @@ pub fn load<'gc>(gc: &'gc GcContext, vm: &mut Vm<'gc>) -> GcCell<'gc, Table<'gc>
     gc.allocate_cell(table)
 }
 
-fn io_close<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn io_close<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let file = args.nth(1);
     process::translate_and_return_error(gc, || {
         if file.is_none() {
@@ -98,12 +101,12 @@ fn io_close<'gc>(
     })
 }
 
-fn io_flush<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    _: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn io_flush<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    _: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let output = vm
         .borrow(gc)
         .registry()
@@ -120,21 +123,21 @@ fn io_flush<'gc>(
     })
 }
 
-fn io_input<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn io_input<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     common_io_input_or_output(gc, vm, args, IO_INPUT, OpenOptions::new().read(true))
 }
 
-fn io_open<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn io_open<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let filename = args.nth(1);
     let filename = filename.to_string()?;
     let mode = args.nth(2);
@@ -162,12 +165,12 @@ fn io_open<'gc>(
     })
 }
 
-fn io_output<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn io_output<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     common_io_input_or_output(
         gc,
         vm,
@@ -177,12 +180,12 @@ fn io_output<'gc>(
     )
 }
 
-fn io_popen<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn io_popen<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let prog = args.nth(1);
     let prog = prog.to_string()?;
     let mode = args.nth(2);
@@ -218,12 +221,12 @@ fn io_popen<'gc>(
     })
 }
 
-fn io_read<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn io_read<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let input = vm
         .borrow(gc)
         .registry()
@@ -233,19 +236,19 @@ fn io_read<'gc>(
 
     file::translate_and_return_error(gc, || {
         if let Some(input) = input.get_mut() {
-            common_read(gc, input, &args, 1)
+            common_read(gc, input, args, 1)
         } else {
             Err(FileError::DefaultFileClosed { kind: "input" })
         }
     })
 }
 
-fn io_type<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn io_type<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let handle = args.nth(1).as_value()?;
     let result = if let Some(handle) = handle.borrow_as_userdata::<FileHandle>(gc) {
         let s = if handle.is_open() {
@@ -260,12 +263,12 @@ fn io_type<'gc>(
     Ok(vec![result])
 }
 
-fn io_write<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn io_write<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, '_>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let output = vm
         .borrow(gc)
         .registry()
@@ -285,23 +288,23 @@ fn io_write<'gc>(
     })
 }
 
-fn file_close<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn file_close<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
     process::translate_and_return_error(gc, || handle.close())
 }
 
-fn file_flush<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn file_flush<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
     file::translate_and_return_error(gc, || {
@@ -314,12 +317,12 @@ fn file_flush<'gc>(
     })
 }
 
-fn file_read<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn file_read<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
@@ -329,16 +332,16 @@ fn file_read<'gc>(
         } else {
             return Err(FileError::Closed);
         };
-        common_read(gc, file, &args, 2)
+        common_read(gc, file, args, 2)
     })
 }
 
-fn file_seek<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn file_seek<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
@@ -375,12 +378,12 @@ fn file_seek<'gc>(
     })
 }
 
-fn file_setvbuf<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn file_setvbuf<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
@@ -421,12 +424,12 @@ fn file_setvbuf<'gc>(
     })
 }
 
-fn file_write<'gc>(
-    gc: &'gc mut GcContext,
-    _: &RootSet,
-    _: GcCell<Vm>,
-    args: &[Value<'gc>],
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+fn file_write<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    _: &RootSet<'gc>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let handle = args.nth(1);
     let mut handle_ref = handle.borrow_as_userdata_mut::<FileHandle>(gc)?;
 
@@ -442,13 +445,13 @@ fn file_write<'gc>(
     })
 }
 
-fn common_io_input_or_output<'gc, K: AsRef<[u8]>>(
-    gc: &'gc mut GcContext,
-    vm: GcCell<Vm>,
-    args: &[Value<'gc>],
+fn common_io_input_or_output<'gc, 'a, K: AsRef<[u8]>>(
+    gc: &'a mut GcContext<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    args: &[Value<'gc, 'a>],
     key: K,
     options: &OpenOptions,
-) -> Result<Vec<Value<'gc>>, ErrorKind> {
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let file = args.nth(1);
     let registry = vm.borrow(gc).registry();
     let key = gc.allocate_string(key.as_ref());
@@ -469,17 +472,17 @@ fn common_io_input_or_output<'gc, K: AsRef<[u8]>>(
     })
 }
 
-fn common_read<'gc>(
-    gc: &'gc GcContext,
+fn common_read<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
     file: &mut LuaFile,
-    args: &[Value<'gc>],
+    args: &[Value<'gc, '_>],
     first_arg_index: usize,
-) -> Result<Vec<Value<'gc>>, FileError> {
-    fn read_line<'gc>(
-        gc: &'gc GcContext,
+) -> Result<Vec<Value<'gc, 'a>>, FileError> {
+    fn read_line<'gc, 'a>(
+        gc: &'a GcContext<'gc>,
         file: &mut LuaFile,
         chop: bool,
-    ) -> Result<Option<Value<'gc>>, FileError> {
+    ) -> Result<Option<Value<'gc, 'a>>, FileError> {
         let mut buf = Vec::new();
         let num_read = file.read_until(b'\n', &mut buf)?;
         if num_read > 0 {
@@ -552,7 +555,11 @@ fn common_read<'gc>(
     Ok(values)
 }
 
-fn create_file_handle<'gc, I>(gc: &'gc GcContext, registry: &Table<'gc>, inner: I) -> UserData<'gc>
+fn create_file_handle<'gc, 'a, I>(
+    gc: &'a GcContext<'gc>,
+    registry: &Table<'gc, 'a>,
+    inner: I,
+) -> UserData<'gc, 'a>
 where
     I: Into<LuaFile>,
 {
@@ -565,12 +572,12 @@ where
     handle
 }
 
-fn open_file<'gc, P: AsRef<[u8]>>(
-    gc: &'gc GcContext,
-    registry: &Table<'gc>,
+fn open_file<'gc, 'a, P: AsRef<[u8]>>(
+    gc: &'a GcContext<'gc>,
+    registry: &Table<'gc, 'a>,
     options: &OpenOptions,
     path: P,
-) -> Result<UserData<'gc>, FileError> {
+) -> Result<UserData<'gc, 'a>, FileError> {
     let path = path.as_ref().to_path()?;
     let file = options.open(path)?;
     Ok(create_file_handle(

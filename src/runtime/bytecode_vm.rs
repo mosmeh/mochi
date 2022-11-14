@@ -10,10 +10,10 @@ use std::{
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Sub},
 };
 
-pub(super) fn execute_lua_frame(
-    gc: &mut GcContext,
-    roots: &RootSet,
-    vm: GcCell<Vm>,
+pub(super) fn execute_lua_frame<'gc>(
+    gc: &mut GcContext<'gc>,
+    roots: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
 ) -> Result<(), ErrorKind> {
     'start: loop {
         let thread = vm.borrow(gc).current_thread();

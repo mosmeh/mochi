@@ -11,25 +11,25 @@ use std::{
     cell::RefMut,
 };
 
-pub trait ArgumentsExt<'gc> {
-    fn callee(&self) -> Value<'gc>;
-    fn without_callee(&self) -> &[Value<'gc>];
-    fn nth(&self, nth: usize) -> Argument<'gc>;
+pub trait ArgumentsExt<'gc, 'a> {
+    fn callee(&self) -> Value<'gc, 'a>;
+    fn without_callee(&self) -> &[Value<'gc, 'a>];
+    fn nth(&self, nth: usize) -> Argument<'gc, 'a>;
 }
 
-impl<'gc, T> ArgumentsExt<'gc> for T
+impl<'a, 'gc: 'a, T> ArgumentsExt<'gc, 'a> for T
 where
-    T: Borrow<[Value<'gc>]>,
+    T: Borrow<[Value<'gc, 'a>]>,
 {
-    fn callee(&self) -> Value<'gc> {
+    fn callee(&self) -> Value<'gc, 'a> {
         self.borrow()[0]
     }
 
-    fn without_callee(&self) -> &[Value<'gc>] {
+    fn without_callee(&self) -> &[Value<'gc, 'a>] {
         &self.borrow()[1..]
     }
 
-    fn nth(&self, nth: usize) -> Argument<'gc> {
+    fn nth(&self, nth: usize) -> Argument<'gc, 'a> {
         Argument {
             value: self.borrow().get(nth).copied(),
             nth,
@@ -37,12 +37,12 @@ where
     }
 }
 
-pub struct Argument<'gc> {
-    value: Option<Value<'gc>>,
+pub struct Argument<'gc, 'a> {
+    value: Option<Value<'gc, 'a>>,
     nth: usize,
 }
 
-impl<'gc> Argument<'gc> {
+impl<'gc, 'a> Argument<'gc, 'a> {
     pub fn is_present(&self) -> bool {
         !matches!(self.value, Some(Value::Nil) | None)
     }
@@ -51,11 +51,11 @@ impl<'gc> Argument<'gc> {
         self.value.is_none()
     }
 
-    pub fn get(&self) -> Option<Value<'gc>> {
+    pub fn get(&self) -> Option<Value<'gc, 'a>> {
         self.value
     }
 
-    pub fn as_value(&self) -> Result<Value<'gc>, ErrorKind> {
+    pub fn as_value(&self) -> Result<Value<'gc, 'a>, ErrorKind> {
         self.to_type("value", |value| Some(*value))
     }
 
@@ -94,9 +94,9 @@ impl<'gc> Argument<'gc> {
         self.to_type("string", Value::to_string)
     }
 
-    pub fn to_string_or<'a, I>(&'a self, default: I) -> Result<Cow<'a, [u8]>, ErrorKind>
+    pub fn to_string_or<'b, I>(&'b self, default: I) -> Result<Cow<'b, [u8]>, ErrorKind>
     where
-        I: Into<Cow<'a, [u8]>>,
+        I: Into<Cow<'b, [u8]>>,
     {
         if self.is_present() {
             self.to_type("string", Value::to_string)
@@ -105,37 +105,37 @@ impl<'gc> Argument<'gc> {
         }
     }
 
-    pub fn as_table(&self) -> Result<GcCell<'gc, Table<'gc>>, ErrorKind> {
+    pub fn as_table(&self) -> Result<GcCell<'gc, 'a, Table<'gc, 'a>>, ErrorKind> {
         self.to_type("table", Value::as_table)
     }
 
-    pub fn as_thread(&self) -> Result<GcCell<'gc, LuaThread<'gc>>, ErrorKind> {
+    pub fn as_thread(&self) -> Result<GcCell<'gc, 'a, LuaThread<'gc, 'a>>, ErrorKind> {
         self.to_type("thread", Value::as_thread)
     }
 
     pub fn as_userdata<T: Any>(
         &self,
-        gc: &'gc GcContext,
-    ) -> Result<GcCell<UserData<'gc>>, ErrorKind> {
+        gc: &GcContext<'gc>,
+    ) -> Result<GcCell<'gc, 'a, UserData<'gc, 'a>>, ErrorKind> {
         self.to_type("userdata", |value| value.as_userdata::<T>(gc))
     }
 
-    pub fn borrow_as_userdata_mut<'a, T: Any>(
-        &'a self,
-        gc: &'gc GcContext,
-    ) -> Result<RefMut<'a, T>, ErrorKind> {
+    pub fn borrow_as_userdata_mut<'b, T: Any>(
+        &'b self,
+        gc: &'a GcContext<'gc>,
+    ) -> Result<RefMut<'b, T>, ErrorKind> {
         self.to_type("userdata", |value| value.borrow_as_userdata_mut(gc))
     }
 
-    pub fn ensure_function(&self) -> Result<Value<'gc>, ErrorKind> {
+    pub fn ensure_function(&self) -> Result<Value<'gc, 'a>, ErrorKind> {
         self.to_type("function", |value| {
             (value.ty() == Type::Function).then_some(*value)
         })
     }
 
-    fn to_type<'a, F, T>(&'a self, name: &'static str, convert: F) -> Result<T, ErrorKind>
+    fn to_type<'b, F, T>(&'b self, name: &'static str, convert: F) -> Result<T, ErrorKind>
     where
-        F: Fn(&'a Value<'gc>) -> Option<T> + 'a,
+        F: Fn(&'b Value<'gc, 'a>) -> Option<T> + 'b,
     {
         let got_type = if let Some(value) = &self.value {
             if let Some(value) = convert(value) {
@@ -153,9 +153,9 @@ impl<'gc> Argument<'gc> {
     }
 }
 
-pub fn set_functions_to_table<'gc>(
-    gc: &'gc GcContext,
-    table: &mut Table<'gc>,
+pub fn set_functions_to_table<'gc, 'a>(
+    gc: &'a GcContext<'gc>,
+    table: &mut Table<'gc, 'a>,
     functions: &[(&[u8], NativeFunctionPtr)],
 ) {
     for (name, func) in functions {
