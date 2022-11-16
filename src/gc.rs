@@ -187,7 +187,7 @@ impl<'gc> GcContext<'gc> {
         });
         let ptr = Box::into_raw(gc_box) as *mut GcBox<T::Aged>;
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
-        self.all.set(Some(unsafe { into_ptr_to_static(ptr) }));
+        self.all.set(Some(unsafe { gc_ptr_to_static(ptr) }));
         self.debt
             .set(self.debt.get() + std::mem::size_of::<GcBox<T>>() as isize);
         Gc::new(ptr)
@@ -315,7 +315,7 @@ impl<'gc> GcContext<'gc> {
             gc_box.color.set(Color::Gray);
             self.gray_again
                 .borrow_mut()
-                .push(unsafe { into_ptr_to_static(ptr) });
+                .push(unsafe { gc_ptr_to_static(ptr) });
         }
     }
 
@@ -409,6 +409,10 @@ impl<'gc> GcContext<'gc> {
         let current_white = Color::White(self.current_white);
         let other_white = Color::White(!self.current_white);
 
+        let mut finalizer = Finalizer {
+            string_pool: &mut self.string_pool.borrow_mut(),
+        };
+
         while let Some(ptr) = self.sweep {
             let gc_box = unsafe { ptr.as_ref() };
             work += std::mem::size_of_val(gc_box);
@@ -422,6 +426,7 @@ impl<'gc> GcContext<'gc> {
                 self.sweep = gc_box.next;
                 debt -= std::mem::size_of_val(gc_box) as isize;
 
+                gc_box.value.finalize(&mut finalizer);
                 unsafe { Box::from_raw(ptr.as_ptr()) };
             } else {
                 debug_assert_eq!(gc_box.color.get(), Color::Black);
@@ -441,7 +446,7 @@ impl<'gc> GcContext<'gc> {
     }
 }
 
-unsafe fn into_ptr_to_static<'a>(ptr: GcPtr<dyn GarbageCollect + 'a>) -> GcPtr<dyn GarbageCollect> {
+unsafe fn gc_ptr_to_static<'a>(ptr: GcPtr<dyn GarbageCollect + 'a>) -> GcPtr<dyn GarbageCollect> {
     std::mem::transmute(ptr)
 }
 
@@ -532,7 +537,7 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Gc<'_, '_, T> {
         if let Color::White(_) = color.get() {
             if T::needs_trace() {
                 color.set(Color::Gray);
-                tracer.gray.push(unsafe { into_ptr_to_static(self.ptr) });
+                tracer.gray.push(unsafe { gc_ptr_to_static(self.ptr) });
             } else {
                 color.set(Color::Black);
             }
