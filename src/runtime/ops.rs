@@ -38,8 +38,8 @@ where
     }
 }
 
-pub(super) fn do_arithmetic<'gc, I, F>(
-    stack: &mut [Value<'gc>],
+pub(super) fn do_arithmetic<I, F>(
+    stack: &mut [Value],
     pc: &mut usize,
     insn: Instruction,
     int_op: I,
@@ -76,8 +76,8 @@ pub(super) fn do_arithmetic_with_constant<'gc, I, F>(
     }
 }
 
-pub(super) fn do_arithmetic_with_immediate<'gc, I, F>(
-    stack: &mut [Value<'gc>],
+pub(super) fn do_arithmetic_with_immediate<I, F>(
+    stack: &mut [Value],
     pc: &mut usize,
     insn: Instruction,
     int_op: I,
@@ -102,8 +102,8 @@ pub(super) fn do_arithmetic_with_immediate<'gc, I, F>(
     stack[insn.a()] = result;
 }
 
-pub(super) fn do_float_arithmetic<'gc, F>(
-    stack: &mut [Value<'gc>],
+pub(super) fn do_float_arithmetic<F>(
+    stack: &mut [Value],
     pc: &mut usize,
     insn: Instruction,
     float_op: F,
@@ -142,12 +142,8 @@ pub(super) fn do_float_arithmetic_with_constant<'gc, F>(
     }
 }
 
-pub(super) fn do_bitwise_op<'gc, I>(
-    stack: &mut [Value<'gc>],
-    pc: &mut usize,
-    insn: Instruction,
-    int_op: I,
-) where
+pub(super) fn do_bitwise_op<I>(stack: &mut [Value], pc: &mut usize, insn: Instruction, int_op: I)
+where
     I: Fn(Integer, Integer) -> Integer,
 {
     let rb = stack[insn.b()];
