@@ -1,4 +1,5 @@
-use super::{Finalizer, GarbageCollect, GcLifetime, GcPtr};
+use super::{Finalizer, GarbageCollect, GcBind, GcPtr, Trace};
+use bstr::ByteSlice;
 use hashbrown::HashMap;
 use rustc_hash::FxHasher;
 use std::{
@@ -10,6 +11,14 @@ pub(super) type StringPool = HashMap<GcPtr<BoxedString>, (), ()>;
 
 #[derive(Hash, PartialEq, Eq)]
 pub struct BoxedString(pub(super) Box<[u8]>);
+
+impl std::fmt::Debug for BoxedString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("BoxedString")
+            .field(&self.0.as_bstr())
+            .finish()
+    }
+}
 
 impl AsRef<[u8]> for BoxedString {
     fn as_ref(&self) -> &[u8] {
@@ -25,11 +34,13 @@ impl Deref for BoxedString {
     }
 }
 
-unsafe impl GarbageCollect for BoxedString {
+unsafe impl Trace for BoxedString {
     fn needs_trace() -> bool {
         false
     }
+}
 
+unsafe impl GarbageCollect for BoxedString {
     fn finalize(&self, finalizer: &mut Finalizer) {
         let hash = calc_str_hash(&self.0);
         let table = finalizer.string_pool.raw_table();
@@ -43,8 +54,8 @@ unsafe impl GarbageCollect for BoxedString {
     }
 }
 
-unsafe impl<'gc, 'a> GcLifetime<'gc, 'a> for BoxedString {
-    type Aged = Self;
+unsafe impl<'gc, 'a> GcBind<'gc, 'a> for BoxedString {
+    type Bound = Self;
 }
 
 impl BoxedString {

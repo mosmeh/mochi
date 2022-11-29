@@ -1,6 +1,6 @@
 use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Table, Value};
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell},
+    gc::{Gc, GcCell, Trace},
     types::{LuaClosure, LuaThread, UserData},
 };
 
@@ -18,7 +18,18 @@ pub struct Bucket<'gc, 'a> {
     next_index: u32,
 }
 
-unsafe impl GarbageCollect for Bucket<'_, '_> {
+impl std::fmt::Debug for Bucket<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Bucket")
+            .field("key_tag", &self.key_tag)
+            .field("value_tag", &self.value_tag)
+            .field("has_next", &self.has_next)
+            .field("next_index", &self.next_index)
+            .finish()
+    }
+}
+
+unsafe impl Trace for Bucket<'_, '_> {
     fn trace(&self, tracer: &mut crate::gc::Tracer) {
         if self.has_value() {
             debug_assert!(self.has_key());
@@ -91,7 +102,7 @@ impl<'gc, 'a> Bucket<'gc, 'a> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Tag {
     Nil,
     Boolean,

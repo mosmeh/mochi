@@ -1,5 +1,5 @@
 use super::Table;
-use crate::gc::{GarbageCollect, GcCell, GcLifetime, Tracer};
+use crate::gc::{GarbageCollect, GcBind, GcCell, Trace, Tracer};
 use std::any::Any;
 
 #[derive(Debug)]
@@ -8,14 +8,16 @@ pub struct UserData<'gc, 'a> {
     metatable: Option<GcCell<'gc, 'a, Table<'gc, 'a>>>,
 }
 
-unsafe impl GarbageCollect for UserData<'_, '_> {
+unsafe impl Trace for UserData<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.metatable.trace(tracer);
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for UserData<'gc, '_> {
-    type Aged = UserData<'gc, 'a>;
+unsafe impl GarbageCollect for UserData<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for UserData<'gc, '_> {
+    type Bound = UserData<'gc, 'a>;
 }
 
 impl<'gc, 'a> UserData<'gc, 'a> {

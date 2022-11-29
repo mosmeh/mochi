@@ -1,6 +1,6 @@
 use super::{LineRange, Upvalue, Value};
 use crate::{
-    gc::{GarbageCollect, GcCell, GcContext, GcLifetime, Tracer},
+    gc::{GarbageCollect, GcBind, GcCell, GcContext, Trace, Tracer},
     runtime::{ErrorKind, Frame},
 };
 use std::{collections::BTreeMap, fmt::Display};
@@ -13,15 +13,17 @@ pub struct LuaThread<'gc, 'a> {
     pub(crate) open_upvalues: BTreeMap<usize, GcCell<'gc, 'a, Upvalue<'gc, 'a>>>,
 }
 
-unsafe impl GarbageCollect for LuaThread<'_, '_> {
+unsafe impl Trace for LuaThread<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.stack.trace(tracer);
         self.open_upvalues.trace(tracer);
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for LuaThread<'gc, '_> {
-    type Aged = LuaThread<'gc, 'a>;
+unsafe impl GarbageCollect for LuaThread<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for LuaThread<'gc, '_> {
+    type Bound = LuaThread<'gc, 'a>;
 }
 
 impl std::fmt::Debug for LuaThread<'_, '_> {

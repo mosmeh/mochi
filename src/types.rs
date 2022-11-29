@@ -16,7 +16,7 @@ pub use thread::{LuaThread, TracebackFrame};
 pub use user_data::UserData;
 
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell, GcContext, GcLifetime, Tracer},
+    gc::{GarbageCollect, Gc, GcBind, GcCell, GcContext, Trace, Tracer},
     number_is_valid_integer,
     string::{parse_positive_hex_float, parse_positive_integer_with_base, trim_whitespaces},
 };
@@ -195,7 +195,7 @@ impl std::hash::Hash for Value<'_, '_> {
     }
 }
 
-unsafe impl GarbageCollect for Value<'_, '_> {
+unsafe impl Trace for Value<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         match self {
             Self::String(x) => x.trace(tracer),
@@ -209,8 +209,10 @@ unsafe impl GarbageCollect for Value<'_, '_> {
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for Value<'gc, '_> {
-    type Aged = Value<'gc, 'a>;
+unsafe impl GarbageCollect for Value<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for Value<'gc, '_> {
+    type Bound = Value<'gc, 'a>;
 }
 
 impl<'gc, 'a> Value<'gc, 'a> {

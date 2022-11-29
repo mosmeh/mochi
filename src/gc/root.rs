@@ -1,4 +1,4 @@
-use super::{GarbageCollect, GcContext, GcLifetime};
+use super::{GcBind, GcContext, Trace};
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
@@ -7,7 +7,7 @@ use std::{
 };
 
 pub struct RootSet<'gc> {
-    pub(super) stack: RefCell<Vec<Option<NonNull<dyn GarbageCollect>>>>,
+    pub(super) stack: RefCell<Vec<Option<NonNull<dyn Trace>>>>,
     pub(super) invariant: PhantomData<Cell<&'gc ()>>,
 }
 
@@ -51,14 +51,14 @@ impl<'gc, 'roots, 'root, T> Root<'gc, 'roots, 'root, T> {
 impl<'gc, 'roots, 'root, T> Root<'gc, 'roots, 'root, T> {
     pub fn bind<U>(self, x: U) -> Rooted<'gc, 'roots, 'root, T>
     where
-        T: GarbageCollect,
-        U: GcLifetime<'gc, 'roots, Aged = T>,
+        T: Trace,
+        U: GcBind<'gc, 'roots, Bound = T>,
     {
-        self.0.value = Some(unsafe { super::age_value(x) });
+        self.0.value = Some(unsafe { super::bind_value(x) });
 
         let ptr = self.0.value.as_mut().unwrap() as *mut T;
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
-        fn to_static<'a>(ptr: NonNull<dyn GarbageCollect + 'a>) -> NonNull<dyn GarbageCollect> {
+        fn to_static<'a>(ptr: NonNull<dyn Trace + 'a>) -> NonNull<dyn Trace> {
             unsafe { std::mem::transmute(ptr) }
         }
         self.0.roots.stack.borrow_mut()[self.0.index] = Some(to_static(ptr));
@@ -69,27 +69,27 @@ impl<'gc, 'roots, 'root, T> Root<'gc, 'roots, 'root, T> {
 
 pub struct Rooted<'gc, 'roots, 'root, T>(&'root mut ShadowedRoot<'gc, 'roots, T>);
 
-impl<'gc, 'root, T: GcLifetime<'gc, 'root>> Deref for Rooted<'gc, '_, 'root, T> {
-    type Target = T::Aged;
+impl<'gc, 'root, T: GcBind<'gc, 'root>> Deref for Rooted<'gc, '_, 'root, T> {
+    type Target = T::Bound;
 
     fn deref(&self) -> &Self::Target {
         let ptr = self.0.value.as_ref().unwrap() as *const T;
-        let ptr = ptr as *const T::Aged;
+        let ptr = ptr as *const T::Bound;
         unsafe { &*ptr }
     }
 }
 
-impl<'gc, 'root, T: GcLifetime<'gc, 'root>> AsRef<T::Aged> for Rooted<'gc, '_, 'root, T> {
-    fn as_ref(&self) -> &T::Aged {
+impl<'gc, 'root, T: GcBind<'gc, 'root>> AsRef<T::Bound> for Rooted<'gc, '_, 'root, T> {
+    fn as_ref(&self) -> &T::Bound {
         self.deref()
     }
 }
 
-impl<'gc, 'a, T: GcLifetime<'gc, 'a>> Rooted<'gc, '_, '_, T> {
+impl<'gc, 'a, 'roots, 'root, T: GcBind<'gc, 'a>> Rooted<'gc, 'roots, 'root, T> {
     #[allow(unused_variables)]
-    pub fn into_inner(self, gc: &'a GcContext<'gc>) -> T::Aged {
+    pub fn into_inner(self, gc: &'a GcContext<'gc>) -> T::Bound {
         self.0.roots.stack.borrow_mut()[self.0.index] = None;
-        unsafe { super::age_value(self.0.value.take().unwrap()) }
+        unsafe { super::bind_value(self.0.value.take().unwrap()) }
     }
 }
 
@@ -97,14 +97,15 @@ impl<'gc, 'a, T: GcLifetime<'gc, 'a>> Rooted<'gc, '_, '_, T> {
 macro_rules! new_root {
     ($roots:expr, $($root:ident),*) => {$(
         let mut $root = unsafe { $crate::gc::ShadowedRoot::new($roots) };
-        let $root = unsafe { $crate::gc::Root::new(&mut $root) };
+        #[allow(unused_mut)]
+        let mut $root = unsafe { $crate::gc::Root::new(&mut $root) };
     )*}
 }
 
 #[macro_export]
 macro_rules! to_rooted {
     ($roots:expr, $($value:ident),*) => {$(
-        new_root!($roots, r);
+        $crate::new_root!($roots, r);
         let $value = r.bind($value);
     )*}
 }

@@ -15,8 +15,8 @@ pub use metamethod::Metamethod;
 pub use opcode::OpCode;
 
 use crate::{
-    gc::{GarbageCollect, GcCell, GcContext, GcHeap, GcLifetime, RootSet, Tracer},
-    new_root, rebind, to_rooted,
+    gc::{GarbageCollect, GcBind, GcCell, GcContext, GcHeap, RootSet, Trace, Tracer},
+    rebind, to_rooted,
     types::{LuaString, LuaThread, Table, ThreadStatus, Type, Upvalue, Value},
     Error, LuaClosure,
 };
@@ -83,6 +83,7 @@ impl Runtime {
     }
 }
 
+#[derive(Debug)]
 pub struct Vm<'gc, 'a> {
     registry: GcCell<'gc, 'a, Table<'gc, 'a>>,
     main_thread: GcCell<'gc, 'a, LuaThread<'gc, 'a>>,
@@ -92,7 +93,7 @@ pub struct Vm<'gc, 'a> {
     metatables: [Option<GcCell<'gc, 'a, Table<'gc, 'a>>>; Type::COUNT],
 }
 
-unsafe impl GarbageCollect for Vm<'_, '_> {
+unsafe impl Trace for Vm<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.registry.trace(tracer);
         self.main_thread.trace(tracer);
@@ -103,8 +104,10 @@ unsafe impl GarbageCollect for Vm<'_, '_> {
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for Vm<'gc, '_> {
-    type Aged = Vm<'gc, 'a>;
+unsafe impl GarbageCollect for Vm<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for Vm<'gc, '_> {
+    type Bound = Vm<'gc, 'a>;
 }
 
 impl<'gc, 'a> Vm<'gc, 'a> {
@@ -219,7 +222,7 @@ fn execute<'gc>(
     roots: &RootSet<'gc>,
     vm: GcCell<'gc, '_, Vm<'gc, '_>>,
 ) -> Result<(), RuntimeError> {
-    bytecode_vm::execute_lua_frame(gc, roots, vm).unwrap();
+    bytecode_vm::execute_lua_frame(gc, roots, vm, 0).unwrap();
 
     let mut vm = vm.borrow_mut(gc);
     let thread = vm.current_thread();
@@ -277,6 +280,29 @@ fn execute<'gc>(
     }*/
 }
 
+pub fn call<'gc, 'a>(
+    gc: &'a mut GcContext<'gc>,
+    roots: &RootSet<'gc>,
+    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    thread: GcCell<'gc, '_, LuaThread<'gc, '_>>,
+    callee: Value<'gc, 'a>,
+    args: &[Value<'gc, 'a>],
+) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
+    let (bottom, level) = {
+        let mut thread_ref = thread.borrow_mut(gc);
+        let bottom = thread_ref.stack.len();
+        thread_ref.stack.push(rebind!(gc, callee));
+        thread_ref.stack.extend_from_slice(rebind!(gc, args));
+        (bottom, thread_ref.frames.len())
+    };
+    call_value(gc, roots, vm, thread, bottom).unwrap();
+    if let Value::LuaClosure(_) = callee {
+        bytecode_vm::execute_lua_frame(gc, roots, vm, level)?;
+    }
+    let results = thread.borrow_mut(gc).stack.split_off(bottom);
+    Ok(results)
+}
+
 pub(crate) fn call_value<'gc>(
     gc: &mut GcContext<'gc>,
     roots: &RootSet<'gc>,
@@ -285,34 +311,26 @@ pub(crate) fn call_value<'gc>(
     bottom: usize,
 ) -> Result<(), ErrorKind> {
     let mut thread_ref = thread.borrow_mut(gc);
-    match thread_ref.stack[bottom] {
+    let mut results = match thread_ref.stack[bottom] {
         Value::LuaClosure(_) => {
             thread_ref.frames.push(Frame::Lua(LuaFrame::new(bottom)));
-            Ok(())
+            return Ok(());
         }
         Value::NativeFunction(f) => {
-            thread_ref.frames.push(Frame::Native { bottom });
+            thread_ref.frames.push(Frame::Native);
             let args = thread_ref.stack.split_off(bottom);
             drop(thread_ref);
             to_rooted!(roots, args);
             let results = (f.0)(gc, roots, vm, &args)?;
-            let mut results = rebind!(gc, results);
-            let mut thread_ref = thread.borrow_mut(gc);
-            thread_ref.stack.append(&mut results);
-            thread_ref.frames.pop().unwrap();
-            Ok(())
+            rebind!(gc, results)
         }
         Value::NativeClosure(f) => {
-            thread_ref.frames.push(Frame::Native { bottom });
+            thread_ref.frames.push(Frame::Native);
             let args = thread_ref.stack.split_off(bottom);
             drop(thread_ref);
             to_rooted!(roots, args, f);
             let results = f.call(gc, roots, vm, &args)?;
-            let mut results = rebind!(gc, results);
-            let mut thread_ref = thread.borrow_mut(gc);
-            thread_ref.stack.append(&mut results);
-            thread_ref.frames.pop().unwrap();
-            Ok(())
+            rebind!(gc, results)
         }
         value => {
             match vm
@@ -328,9 +346,18 @@ pub(crate) fn call_value<'gc>(
                 }
             };
             drop(thread_ref);
-            call_value(gc, roots, vm, thread, bottom)
+            return call_value(gc, roots, vm, thread, bottom);
         }
+    };
+    {
+        let mut thread_ref = thread.borrow_mut(gc);
+        thread_ref.stack.append(&mut results);
+        thread_ref.frames.pop().unwrap();
     }
+    if gc.should_perform_gc() {
+        gc.step(roots);
+    }
+    Ok(())
 }
 
 impl<'gc> LuaThread<'gc, '_> {

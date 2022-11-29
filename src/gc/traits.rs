@@ -5,13 +5,9 @@ pub struct Tracer<'a> {
     pub(super) gray: &'a mut Vec<GcPtr<dyn GarbageCollect>>,
 }
 
-pub struct Finalizer<'a> {
-    pub(super) string_pool: &'a mut StringPool,
-}
-
 /// # Safety
 /// `trace` must trace every `Gc` or `GcCell` inside a struct.
-pub unsafe trait GarbageCollect {
+pub unsafe trait Trace {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -21,12 +17,9 @@ pub unsafe trait GarbageCollect {
 
     #[allow(unused_variables)]
     fn trace(&self, tracer: &mut Tracer) {}
-
-    #[allow(unused_variables)]
-    fn finalize(&self, finalizer: &mut Finalizer) {}
 }
 
-unsafe impl<T: GarbageCollect> GarbageCollect for &T {
+unsafe impl<T: Trace> Trace for &T {
     fn needs_trace() -> bool {
         T::needs_trace()
     }
@@ -36,16 +29,16 @@ unsafe impl<T: GarbageCollect> GarbageCollect for &T {
     }
 }
 
-unsafe impl GarbageCollect for () {
+unsafe impl Trace for () {
     fn needs_trace() -> bool {
         false
     }
 }
 
-unsafe impl<T1, T2> GarbageCollect for (T1, T2)
+unsafe impl<T1, T2> Trace for (T1, T2)
 where
-    T1: GarbageCollect,
-    T2: GarbageCollect,
+    T1: Trace,
+    T2: Trace,
 {
     fn needs_trace() -> bool {
         T1::needs_trace() || T2::needs_trace()
@@ -57,11 +50,11 @@ where
     }
 }
 
-unsafe impl<T1, T2, T3> GarbageCollect for (T1, T2, T3)
+unsafe impl<T1, T2, T3> Trace for (T1, T2, T3)
 where
-    T1: GarbageCollect,
-    T2: GarbageCollect,
-    T3: GarbageCollect,
+    T1: Trace,
+    T2: Trace,
+    T3: Trace,
 {
     fn needs_trace() -> bool {
         T1::needs_trace() || T2::needs_trace() || T3::needs_trace()
@@ -74,25 +67,25 @@ where
     }
 }
 
-unsafe impl GarbageCollect for u8 {
+unsafe impl Trace for u8 {
     fn needs_trace() -> bool {
         false
     }
 }
 
-unsafe impl GarbageCollect for i32 {
+unsafe impl Trace for i32 {
     fn needs_trace() -> bool {
         false
     }
 }
 
-unsafe impl GarbageCollect for usize {
+unsafe impl Trace for usize {
     fn needs_trace() -> bool {
         false
     }
 }
 
-unsafe impl<T: GarbageCollect, const N: usize> GarbageCollect for [T; N] {
+unsafe impl<T: Trace, const N: usize> Trace for [T; N] {
     fn needs_trace() -> bool {
         T::needs_trace()
     }
@@ -104,7 +97,7 @@ unsafe impl<T: GarbageCollect, const N: usize> GarbageCollect for [T; N] {
     }
 }
 
-unsafe impl<T: GarbageCollect> GarbageCollect for Option<T> {
+unsafe impl<T: Trace> Trace for Option<T> {
     fn needs_trace() -> bool {
         T::needs_trace()
     }
@@ -116,7 +109,7 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Option<T> {
     }
 }
 
-unsafe impl<T: GarbageCollect> GarbageCollect for &[T] {
+unsafe impl<T: Trace> Trace for &[T] {
     fn needs_trace() -> bool {
         T::needs_trace()
     }
@@ -128,7 +121,7 @@ unsafe impl<T: GarbageCollect> GarbageCollect for &[T] {
     }
 }
 
-unsafe impl<T: GarbageCollect> GarbageCollect for &mut [T] {
+unsafe impl<T: Trace> Trace for &mut [T] {
     fn needs_trace() -> bool {
         T::needs_trace()
     }
@@ -140,13 +133,13 @@ unsafe impl<T: GarbageCollect> GarbageCollect for &mut [T] {
     }
 }
 
-unsafe impl<T: ?Sized + GarbageCollect> GarbageCollect for Box<T> {
+unsafe impl<T: ?Sized + Trace> Trace for Box<T> {
     fn trace(&self, tracer: &mut Tracer) {
         self.deref().trace(tracer);
     }
 }
 
-unsafe impl<T: GarbageCollect> GarbageCollect for Box<[T]> {
+unsafe impl<T: Trace> Trace for Box<[T]> {
     fn needs_trace() -> bool {
         T::needs_trace()
     }
@@ -158,13 +151,13 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Box<[T]> {
     }
 }
 
-unsafe impl GarbageCollect for String {
+unsafe impl Trace for String {
     fn needs_trace() -> bool {
         false
     }
 }
 
-unsafe impl<T: GarbageCollect> GarbageCollect for Vec<T> {
+unsafe impl<T: Trace> Trace for Vec<T> {
     fn needs_trace() -> bool {
         T::needs_trace()
     }
@@ -176,9 +169,7 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Vec<T> {
     }
 }
 
-unsafe impl<K: GarbageCollect, V: GarbageCollect, S: BuildHasher> GarbageCollect
-    for std::collections::HashMap<K, V, S>
-{
+unsafe impl<K: Trace, V: Trace, S: BuildHasher> Trace for std::collections::HashMap<K, V, S> {
     fn needs_trace() -> bool {
         K::needs_trace() || V::needs_trace()
     }
@@ -191,9 +182,7 @@ unsafe impl<K: GarbageCollect, V: GarbageCollect, S: BuildHasher> GarbageCollect
     }
 }
 
-unsafe impl<K: GarbageCollect, V: GarbageCollect, S: BuildHasher> GarbageCollect
-    for hashbrown::HashMap<K, V, S>
-{
+unsafe impl<K: Trace, V: Trace, S: BuildHasher> Trace for hashbrown::HashMap<K, V, S> {
     fn needs_trace() -> bool {
         K::needs_trace() || V::needs_trace()
     }
@@ -206,7 +195,7 @@ unsafe impl<K: GarbageCollect, V: GarbageCollect, S: BuildHasher> GarbageCollect
     }
 }
 
-unsafe impl<K: GarbageCollect, V: GarbageCollect> GarbageCollect for BTreeMap<K, V> {
+unsafe impl<K: Trace, V: Trace> Trace for BTreeMap<K, V> {
     fn needs_trace() -> bool {
         K::needs_trace() || V::needs_trace()
     }
@@ -219,12 +208,25 @@ unsafe impl<K: GarbageCollect, V: GarbageCollect> GarbageCollect for BTreeMap<K,
     }
 }
 
-/// # Safety
-/// `Aged` must be an identical type to `Self` but with a GC lifetime `'a`.
-pub unsafe trait GcLifetime<'gc, 'a>: GarbageCollect {
-    type Aged: GcLifetime<'gc, 'a> + 'a;
+pub struct Finalizer<'a> {
+    pub(super) string_pool: &'a mut StringPool,
 }
 
-unsafe impl<'gc, 'a, T: GcLifetime<'gc, 'a>> GcLifetime<'gc, 'a> for Vec<T> {
-    type Aged = Vec<T::Aged>;
+#[allow(clippy::missing_safety_doc)]
+pub unsafe trait GarbageCollect: Trace + std::fmt::Debug {
+    #[allow(unused_variables)]
+    fn finalize(&self, finalizer: &mut Finalizer) {}
+}
+
+#[allow(clippy::missing_safety_doc)]
+pub unsafe trait GcBind<'gc, 'a> {
+    type Bound: GcBind<'gc, 'a> + 'a;
+}
+
+unsafe impl<'gc, 'a, T: GcBind<'gc, 'a>> GcBind<'gc, 'a> for Vec<T> {
+    type Bound = Vec<T::Bound>;
+}
+
+unsafe impl<'gc, 'a, T: GcBind<'gc, 'a>> GcBind<'gc, 'a> for &'a [T] {
+    type Bound = &'a [T::Bound];
 }

@@ -1,5 +1,5 @@
 use crate::{
-    gc::{GarbageCollect, Gc, GcCell, GcContext, GcLifetime, RootSet, Tracer},
+    gc::{GarbageCollect, Gc, GcBind, GcCell, GcContext, RootSet, Trace, Tracer},
     runtime::{ErrorKind, Instruction, Vm},
     types::{LuaString, LuaThread, Value},
 };
@@ -56,7 +56,7 @@ pub struct LuaClosureProto<'gc, 'a> {
     pub source: LuaString<'gc, 'a>,
 }
 
-unsafe impl GarbageCollect for LuaClosureProto<'_, '_> {
+unsafe impl Trace for LuaClosureProto<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.constants.trace(tracer);
         self.protos.trace(tracer);
@@ -64,8 +64,10 @@ unsafe impl GarbageCollect for LuaClosureProto<'_, '_> {
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for LuaClosureProto<'gc, '_> {
-    type Aged = LuaClosureProto<'gc, 'a>;
+unsafe impl GarbageCollect for LuaClosureProto<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for LuaClosureProto<'gc, '_> {
+    type Bound = LuaClosureProto<'gc, 'a>;
 }
 
 #[derive(Debug, Clone)]
@@ -80,15 +82,17 @@ pub struct LuaClosure<'gc, 'a> {
     pub(crate) upvalues: Vec<GcCell<'gc, 'a, Upvalue<'gc, 'a>>>,
 }
 
-unsafe impl GarbageCollect for LuaClosure<'_, '_> {
+unsafe impl Trace for LuaClosure<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.proto.trace(tracer);
         self.upvalues.trace(tracer);
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for LuaClosure<'gc, '_> {
-    type Aged = LuaClosure<'gc, 'a>;
+unsafe impl GarbageCollect for LuaClosure<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for LuaClosure<'gc, '_> {
+    type Bound = LuaClosure<'gc, 'a>;
 }
 
 impl<'gc, 'a> From<Gc<'gc, 'a, LuaClosureProto<'gc, 'a>>> for LuaClosure<'gc, 'a> {
@@ -100,7 +104,7 @@ impl<'gc, 'a> From<Gc<'gc, 'a, LuaClosureProto<'gc, 'a>>> for LuaClosure<'gc, 'a
     }
 }
 
-trait NativeClosureFn<'gc>: GarbageCollect {
+trait NativeClosureFn<'gc>: Trace {
     fn call<'a>(
         &self,
         gc: &'a mut GcContext<'gc>,
@@ -118,14 +122,16 @@ impl std::fmt::Debug for NativeClosure<'_, '_> {
     }
 }
 
-unsafe impl GarbageCollect for NativeClosure<'_, '_> {
+unsafe impl Trace for NativeClosure<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.0.trace(tracer);
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for NativeClosure<'gc, '_> {
-    type Aged = NativeClosure<'gc, 'a>;
+unsafe impl GarbageCollect for NativeClosure<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for NativeClosure<'gc, '_> {
+    type Bound = NativeClosure<'gc, 'a>;
 }
 
 impl<'a, 'gc: 'a> NativeClosure<'gc, 'a> {
@@ -140,6 +146,12 @@ impl<'a, 'gc: 'a> NativeClosure<'gc, 'a> {
             ) -> Result<Vec<Value<'gc, 'b>>, ErrorKind>,
     {
         struct SimpleNativeClosure<F>(F);
+
+        impl<F> std::fmt::Debug for SimpleNativeClosure<F> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_tuple("SimpleNativeClosure").finish()
+            }
+        }
 
         impl<'gc, F> NativeClosureFn<'gc> for SimpleNativeClosure<F>
         where
@@ -161,7 +173,7 @@ impl<'a, 'gc: 'a> NativeClosure<'gc, 'a> {
             }
         }
 
-        unsafe impl<F> GarbageCollect for SimpleNativeClosure<F> {
+        unsafe impl<F> Trace for SimpleNativeClosure<F> {
             fn needs_trace() -> bool {
                 false
             }
@@ -180,11 +192,17 @@ impl<'a, 'gc: 'a> NativeClosure<'gc, 'a> {
                 &U,
                 &[Value<'gc, 'b>],
             ) -> Result<Vec<Value<'gc, 'b>>, ErrorKind>,
-        U: 'a + GarbageCollect,
+        U: 'a + Trace,
     {
         struct UpvalueNativeClosure<F, U> {
             f: F,
             upvalue: U,
+        }
+
+        impl<F, U> std::fmt::Debug for UpvalueNativeClosure<F, U> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_tuple("UpvalueNativeClosure").finish()
+            }
         }
 
         impl<'gc, F, U> NativeClosureFn<'gc> for UpvalueNativeClosure<F, U>
@@ -196,7 +214,7 @@ impl<'a, 'gc: 'a> NativeClosure<'gc, 'a> {
                 &U,
                 &[Value<'gc, 'b>],
             ) -> Result<Vec<Value<'gc, 'b>>, ErrorKind>,
-            U: GarbageCollect,
+            U: Trace,
         {
             fn call<'b>(
                 &self,
@@ -209,7 +227,7 @@ impl<'a, 'gc: 'a> NativeClosure<'gc, 'a> {
             }
         }
 
-        unsafe impl<F, U: GarbageCollect> GarbageCollect for UpvalueNativeClosure<F, U> {
+        unsafe impl<F, U: Trace> Trace for UpvalueNativeClosure<F, U> {
             fn needs_trace() -> bool {
                 U::needs_trace()
             }
@@ -248,7 +266,7 @@ impl<'gc, 'a> From<Value<'gc, 'a>> for Upvalue<'gc, 'a> {
     }
 }
 
-unsafe impl GarbageCollect for Upvalue<'_, '_> {
+unsafe impl Trace for Upvalue<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         match self {
             Self::Open { thread, .. } => thread.trace(tracer),
@@ -257,8 +275,10 @@ unsafe impl GarbageCollect for Upvalue<'_, '_> {
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for Upvalue<'gc, '_> {
-    type Aged = Upvalue<'gc, 'a>;
+unsafe impl GarbageCollect for Upvalue<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for Upvalue<'gc, '_> {
+    type Bound = Upvalue<'gc, 'a>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

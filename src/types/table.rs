@@ -2,7 +2,7 @@ mod bucket;
 
 use super::{Integer, LuaString, NativeClosure, NativeFunction, Number, Value};
 use crate::{
-    gc::{GarbageCollect, GcCell, GcLifetime, Tracer},
+    gc::{GarbageCollect, GcBind, GcCell, Trace, Tracer},
     number_is_valid_integer,
 };
 use bucket::Bucket;
@@ -51,7 +51,7 @@ impl<'gc, 'a> From<Vec<Value<'gc, 'a>>> for Table<'gc, 'a> {
     }
 }
 
-unsafe impl GarbageCollect for Table<'_, '_> {
+unsafe impl Trace for Table<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.array.trace(tracer);
         self.buckets.trace(tracer);
@@ -59,8 +59,10 @@ unsafe impl GarbageCollect for Table<'_, '_> {
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for Table<'gc, '_> {
-    type Aged = Table<'gc, 'a>;
+unsafe impl GarbageCollect for Table<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for Table<'gc, '_> {
+    type Bound = Table<'gc, 'a>;
 }
 
 impl<'gc, 'a> Table<'gc, 'a> {

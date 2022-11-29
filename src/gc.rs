@@ -4,7 +4,7 @@ mod traits;
 
 pub use root::{Root, RootSet, Rooted, ShadowedRoot};
 pub(crate) use string::BoxedString;
-pub use traits::{Finalizer, GarbageCollect, GcLifetime, Tracer};
+pub use traits::{Finalizer, GarbageCollect, GcBind, Trace, Tracer};
 
 use crate::{
     runtime::Vm,
@@ -54,9 +54,9 @@ impl Default for GcHeap {
             invariant: Default::default(),
         };
 
-        fn to_static<'gc, T: GcLifetime<'gc, 'static>>(
+        fn to_static<'gc, T: GcBind<'gc, 'static>>(
             ptr: GcCell<T>,
-        ) -> GcCell<'gc, 'static, T::Aged> {
+        ) -> GcCell<'gc, 'static, T::Bound> {
             unsafe { std::mem::transmute(ptr) }
         }
         let vm = to_static(gc.allocate_cell(Vm::new(&gc)));
@@ -175,8 +175,12 @@ impl<'gc> GcContext<'gc> {
         self.is_running() && self.debt() > 0
     }
 
-    pub fn allocate<'a, T: GcLifetime<'gc, 'a>>(&'a self, value: T) -> Gc<'gc, 'a, T::Aged> {
-        debug_assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<T::Aged>());
+    pub fn allocate<'a, T>(&'a self, value: T) -> Gc<'gc, 'a, T::Bound>
+    where
+        T: GarbageCollect + GcBind<'gc, 'a>,
+        T::Bound: GarbageCollect,
+    {
+        debug_assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<T::Bound>());
 
         let color = Color::White(self.current_white);
         let mut gc_box = Box::new(std::mem::MaybeUninit::uninit());
@@ -185,7 +189,7 @@ impl<'gc> GcContext<'gc> {
             next: self.all.get(),
             value,
         });
-        let ptr = Box::into_raw(gc_box) as *mut GcBox<T::Aged>;
+        let ptr = Box::into_raw(gc_box) as *mut GcBox<T::Bound>;
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
         self.all.set(Some(unsafe { gc_ptr_to_static(ptr) }));
         self.debt
@@ -193,10 +197,11 @@ impl<'gc> GcContext<'gc> {
         Gc::new(ptr)
     }
 
-    pub fn allocate_cell<'a, T: GcLifetime<'gc, 'a>>(
-        &'a self,
-        value: T,
-    ) -> GcCell<'gc, 'a, T::Aged> {
+    pub fn allocate_cell<'a, T>(&'a self, value: T) -> GcCell<'gc, 'a, T::Bound>
+    where
+        T: GarbageCollect + GcBind<'gc, 'a>,
+        T::Bound: GarbageCollect,
+    {
         GcCell(self.allocate(GcRefCell::new(value)))
     }
 
@@ -450,8 +455,8 @@ unsafe fn gc_ptr_to_static<'a>(ptr: GcPtr<dyn GarbageCollect + 'a>) -> GcPtr<dyn
     std::mem::transmute(ptr)
 }
 
-unsafe fn age_value<'gc, 'a, T: GcLifetime<'gc, 'a>>(x: T) -> T::Aged {
-    debug_assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<T::Aged>());
+unsafe fn bind_value<'gc, 'a, T: GcBind<'gc, 'a>>(x: T) -> T::Bound {
+    debug_assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<T::Bound>());
     let mut v = MaybeUninit::uninit();
     (v.as_mut_ptr() as *mut T).write(x);
     v.assume_init()
@@ -472,32 +477,32 @@ enum Color {
     Gray,
 }
 
-struct GcBox<T: ?Sized + GarbageCollect> {
+struct GcBox<T: ?Sized> {
     color: Cell<Color>,
     next: Option<GcPtr<dyn GarbageCollect>>,
     value: T,
 }
 
-pub struct Gc<'gc, 'a, T: 'a + ?Sized + GarbageCollect> {
+pub struct Gc<'gc, 'a, T: 'a + ?Sized> {
     ptr: NonNull<GcBox<T>>,
     invariant: PhantomData<Cell<(&'gc (), &'a ())>>,
 }
 
-impl<T: GarbageCollect> Clone for Gc<'_, '_, T> {
+impl<T> Clone for Gc<'_, '_, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: GarbageCollect> Copy for Gc<'_, '_, T> {}
+impl<T> Copy for Gc<'_, '_, T> {}
 
-impl<T: GarbageCollect + Debug> Debug for Gc<'_, '_, T> {
+impl<T: Debug> Debug for Gc<'_, '_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_tuple("Gc").field(self.deref()).finish()
     }
 }
 
-impl<T: GarbageCollect> Deref for Gc<'_, '_, T> {
+impl<T> Deref for Gc<'_, '_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -506,31 +511,31 @@ impl<T: GarbageCollect> Deref for Gc<'_, '_, T> {
     }
 }
 
-impl<T: GarbageCollect> AsRef<T> for Gc<'_, '_, T> {
+impl<T> AsRef<T> for Gc<'_, '_, T> {
     fn as_ref(&self) -> &T {
         self.deref()
     }
 }
 
-impl<'gc, T: GarbageCollect + PartialEq> PartialEq for Gc<'gc, '_, T> {
+impl<'gc, T: PartialEq> PartialEq for Gc<'gc, '_, T> {
     fn eq(&self, other: &Gc<'gc, '_, T>) -> bool {
         **self == **other
     }
 }
 
-impl<'gc, T: GarbageCollect + PartialOrd> PartialOrd for Gc<'gc, '_, T> {
+impl<'gc, T: PartialOrd> PartialOrd for Gc<'gc, '_, T> {
     fn partial_cmp(&self, other: &Gc<'gc, '_, T>) -> Option<std::cmp::Ordering> {
         self.deref().partial_cmp(other.deref())
     }
 }
 
-impl<T: GarbageCollect + Hash> Hash for Gc<'_, '_, T> {
+impl<T: Hash> Hash for Gc<'_, '_, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.deref().hash(state);
     }
 }
 
-unsafe impl<T: GarbageCollect> GarbageCollect for Gc<'_, '_, T> {
+unsafe impl<T: GarbageCollect> Trace for Gc<'_, '_, T> {
     fn trace(&self, tracer: &mut Tracer) {
         let gc_box = unsafe { self.ptr.as_ref() };
         let color = &gc_box.color;
@@ -545,11 +550,13 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Gc<'_, '_, T> {
     }
 }
 
-unsafe impl<'a, 'gc: 'a, T: GcLifetime<'gc, 'a>> GcLifetime<'gc, 'a> for Gc<'gc, '_, T> {
-    type Aged = Gc<'gc, 'a, T::Aged>;
+unsafe impl<T: GarbageCollect> GarbageCollect for Gc<'_, '_, T> {}
+
+unsafe impl<'a, 'gc: 'a, T: GcBind<'gc, 'a>> GcBind<'gc, 'a> for Gc<'gc, '_, T> {
+    type Bound = Gc<'gc, 'a, T::Bound>;
 }
 
-impl<'gc, T: GarbageCollect> Gc<'gc, '_, T> {
+impl<'gc, T> Gc<'gc, '_, T> {
     fn new(ptr: GcPtr<T>) -> Self {
         Self {
             ptr,
@@ -567,9 +574,10 @@ impl<'gc, T: GarbageCollect> Gc<'gc, '_, T> {
     }
 }
 
-struct GcRefCell<T: GarbageCollect>(RefCell<T>);
+#[derive(Debug)]
+struct GcRefCell<T>(RefCell<T>);
 
-unsafe impl<T: GarbageCollect> GarbageCollect for GcRefCell<T> {
+unsafe impl<T: Trace> Trace for GcRefCell<T> {
     fn needs_trace() -> bool {
         T::needs_trace()
     }
@@ -579,43 +587,43 @@ unsafe impl<T: GarbageCollect> GarbageCollect for GcRefCell<T> {
     }
 }
 
-unsafe impl<'gc, 'a, T> GcLifetime<'gc, 'a> for GcRefCell<T>
-where
-    T: GcLifetime<'gc, 'a>,
-    T::Aged: GcLifetime<'gc, 'a>,
-{
-    type Aged = GcRefCell<T::Aged>;
+unsafe impl<T: GarbageCollect> GarbageCollect for GcRefCell<T> {}
+
+unsafe impl<'gc, 'a, T: GcBind<'gc, 'a>> GcBind<'gc, 'a> for GcRefCell<T> {
+    type Bound = GcRefCell<T::Bound>;
 }
 
-impl<T: GarbageCollect> GcRefCell<T> {
+impl<T> GcRefCell<T> {
     fn new(value: T) -> Self {
         Self(RefCell::new(value))
     }
 }
 
-pub struct GcCell<'gc, 'a, T: 'a + GarbageCollect>(Gc<'gc, 'a, GcRefCell<T>>);
+pub struct GcCell<'gc, 'a, T: 'a>(Gc<'gc, 'a, GcRefCell<T>>);
 
-impl<T: GarbageCollect> Clone for GcCell<'_, '_, T> {
+impl<T> Clone for GcCell<'_, '_, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: GarbageCollect> Copy for GcCell<'_, '_, T> {}
+impl<T> Copy for GcCell<'_, '_, T> {}
 
-impl<T: GarbageCollect + Debug> Debug for GcCell<'_, '_, T> {
+impl<T: Debug> Debug for GcCell<'_, '_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_tuple("GcCell").field(&self.0.deref().0).finish()
     }
 }
 
-unsafe impl<T: GarbageCollect> GarbageCollect for GcCell<'_, '_, T> {
+unsafe impl<T: GarbageCollect> GarbageCollect for GcCell<'_, '_, T> {}
+
+unsafe impl<T: GarbageCollect> Trace for GcCell<'_, '_, T> {
     fn trace(&self, tracer: &mut Tracer) {
         self.0.trace(tracer);
     }
 }
 
-impl<'gc, T: GarbageCollect> GcCell<'gc, '_, T> {
+impl<'gc, T> GcCell<'gc, '_, T> {
     pub fn ptr_eq(&self, other: &GcCell<'gc, '_, T>) -> bool {
         self.0.ptr_eq(&other.0)
     }
@@ -626,19 +634,22 @@ impl<'gc, T: GarbageCollect> GcCell<'gc, '_, T> {
     }
 }
 
-unsafe impl<'a, 'gc: 'a, T: GcLifetime<'gc, 'a>> GcLifetime<'gc, 'a> for GcCell<'gc, '_, T> {
-    type Aged = GcCell<'gc, 'a, T::Aged>;
+unsafe impl<'a, 'gc: 'a, T: GcBind<'gc, 'a>> GcBind<'gc, 'a> for GcCell<'gc, '_, T> {
+    type Bound = GcCell<'gc, 'a, T::Bound>;
 }
 
-impl<'gc, 'a, T: GcLifetime<'gc, 'a>> GcCell<'gc, '_, T> {
+impl<'gc, 'a, T> GcCell<'gc, '_, T>
+where
+    T: GarbageCollect + GcBind<'gc, 'a>,
+{
     #[allow(unused_variables)]
-    pub fn borrow(&self, gc: &'a GcContext<'gc>) -> Ref<'a, T::Aged> {
-        let ptr = self.0.ptr.as_ptr() as *mut GcBox<GcRefCell<T::Aged>>;
+    pub fn borrow(&self, gc: &'a GcContext<'gc>) -> Ref<'a, T::Bound> {
+        let ptr = self.0.ptr.as_ptr() as *mut GcBox<GcRefCell<T::Bound>>;
         unsafe { &*ptr }.value.0.borrow()
     }
 
-    pub fn borrow_mut(&self, gc: &'a GcContext<'gc>) -> RefMut<'a, T::Aged> {
-        let ptr = self.0.ptr.as_ptr() as *mut GcBox<GcRefCell<T::Aged>>;
+    pub fn borrow_mut(&self, gc: &'a GcContext<'gc>) -> RefMut<'a, T::Bound> {
+        let ptr = self.0.ptr.as_ptr() as *mut GcBox<GcRefCell<T::Bound>>;
         let b = unsafe { &*ptr }.value.0.borrow_mut();
         gc.write_barrier(self.0.ptr);
         b
@@ -656,12 +667,12 @@ macro_rules! rebind {
 }
 
 #[doc(hidden)]
-pub unsafe fn unbind<'gc, 'a, T: GcLifetime<'gc, 'a>>(x: T) -> T::Aged {
-    age_value(x)
+pub unsafe fn unbind<'gc, 'a, T: GcBind<'gc, 'a>>(x: T) -> T::Bound {
+    bind_value(x)
 }
 
 #[doc(hidden)]
 #[allow(unused_variables)]
-pub unsafe fn bind<'gc, 'a, T: GcLifetime<'gc, 'a>>(gc: &'a GcContext<'gc>, x: T) -> T::Aged {
-    age_value(x)
+pub unsafe fn bind<'gc, 'a, T: GcBind<'gc, 'a>>(gc: &'a GcContext<'gc>, x: T) -> T::Bound {
+    bind_value(x)
 }

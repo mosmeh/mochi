@@ -1,8 +1,9 @@
 use super::helpers::{set_functions_to_table, ArgumentsExt};
 use crate::{
     gc::{GcCell, GcContext, RootSet},
-    runtime::{ErrorKind, Vm},
-    string,
+    rebind,
+    runtime::{call, ErrorKind, Vm},
+    string, to_rooted,
     types::{Integer, LuaClosure, NativeClosure, NativeFunction, Number, Table, Upvalue, Value},
     LUA_VERSION,
 };
@@ -167,7 +168,7 @@ fn base_collectgarbage<'gc, 'a>(
 
 fn base_dofile<'gc, 'a>(
     gc: &'a mut GcContext<'gc>,
-    _: &RootSet<'gc>,
+    roots: &RootSet<'gc>,
     vm: GcCell<'gc, '_, Vm<'gc, '_>>,
     args: &[Value<'gc, '_>],
 ) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
@@ -188,11 +189,11 @@ fn base_dofile<'gc, 'a>(
             .map_err(|e| ErrorKind::Other(e.to_string()))?
     };
 
-    /*Ok(Action::TailCall {
-        callee: gc.allocate(closure).into(),
-        args: Vec::new(),
-    })*/
-    todo!()
+    let thread = vm.borrow(gc).current_thread();
+    let callee = Value::from(gc.allocate(closure));
+    to_rooted!(roots, thread, callee);
+    let results = call(gc, roots, vm, *thread, *callee, &[])?;
+    Ok(rebind!(gc, results))
 }
 
 fn base_error<'gc, 'a>(
@@ -209,10 +210,9 @@ fn base_getmetatable<'gc, 'a>(
     gc: &'a mut GcContext<'gc>,
     _: &RootSet<'gc>,
     vm: GcCell<'gc, '_, Vm<'gc, '_>>,
-    args: &[Value<'gc, '_>],
+    args: &[Value<'gc, 'a>],
 ) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
-    todo!()
-    /*let object = args.nth(1).as_value()?;
+    let object = args.nth(1).as_value()?;
     let metatable = vm
         .borrow(gc)
         .metatable_of_object(gc, object)
@@ -227,7 +227,7 @@ fn base_getmetatable<'gc, 'a>(
             }
         })
         .unwrap_or_default();
-    Ok(vec![metatable])*/
+    Ok(vec![metatable])
 }
 
 fn base_ipairs<'gc, 'a>(
@@ -345,7 +345,7 @@ fn base_loadfile<'gc, 'a>(
 fn base_next<'gc, 'a>(
     gc: &'a mut GcContext<'gc>,
     _: &RootSet<'gc>,
-    vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    _: GcCell<'gc, '_, Vm<'gc, '_>>,
     args: &[Value<'gc, 'a>],
 ) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_table()?;
@@ -361,32 +361,34 @@ fn base_next<'gc, 'a>(
 
 fn base_pairs<'gc, 'a>(
     gc: &'a mut GcContext<'gc>,
-    _: &RootSet<'gc>,
+    roots: &RootSet<'gc>,
     vm: GcCell<'gc, '_, Vm<'gc, '_>>,
     args: &[Value<'gc, 'a>],
 ) -> Result<Vec<Value<'gc, 'a>>, ErrorKind> {
     let table = args.nth(1).as_value()?;
+    to_rooted!(roots, table);
     let metamethod = vm
         .borrow(gc)
-        .metatable_of_object(gc, table)
+        .metatable_of_object(gc, *table)
         .and_then(|metatable| {
             let value = metatable
                 .borrow(gc)
                 .get_field(gc.allocate_string(B("__pairs")));
             (!value.is_nil()).then_some(value)
         });
-    /*match metamethod {
-        Some(metamethod) => Ok(Action::TailCall {
-            callee: metamethod,
-            args: vec![table],
-        }),
-        None => Ok(Action::Return(vec![
+    match metamethod {
+        Some(metamethod) => {
+            let thread = vm.borrow(gc).current_thread();
+            to_rooted!(roots, thread, metamethod);
+            let results = call(gc, roots, vm, *thread, *metamethod, &[*table])?;
+            Ok(rebind!(gc, results))
+        }
+        None => Ok(vec![
             NativeFunction::new(base_next).into(),
-            table,
+            rebind!(gc, *table),
             Value::Nil,
-        ])),
-    }*/
-    todo!()
+        ]),
+    }
 }
 
 fn base_pcall<'gc, 'a>(
@@ -493,7 +495,7 @@ fn base_rawset<'gc, 'a>(
 }
 
 fn base_select<'gc, 'a>(
-    gc: &'a mut GcContext<'gc>,
+    _: &'a mut GcContext<'gc>,
     _: &RootSet<'gc>,
     _: GcCell<'gc, '_, Vm<'gc, '_>>,
     args: &[Value<'gc, 'a>],
@@ -554,7 +556,7 @@ fn base_setmetatable<'gc, 'a>(
 }
 
 fn base_tonumber<'gc, 'a>(
-    gc: &'a mut GcContext<'gc>,
+    _: &'a mut GcContext<'gc>,
     _: &RootSet<'gc>,
     _: GcCell<'gc, '_, Vm<'gc, '_>>,
     args: &[Value<'gc, '_>],

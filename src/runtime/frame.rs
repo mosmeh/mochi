@@ -1,13 +1,7 @@
-use super::{ErrorKind, Operation, Vm};
-use crate::{
-    gc::{GarbageCollect, GcCell, GcContext},
-    types::Value,
-};
-
 #[derive(Debug)]
 pub(crate) enum Frame {
     Lua(LuaFrame),
-    Native { bottom: usize },
+    Native,
 }
 
 #[derive(Debug, Clone)]

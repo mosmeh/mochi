@@ -1,15 +1,13 @@
 use super::helpers::ArgumentsExt;
 use crate::{
     gc::{GcCell, GcContext, RootSet},
-    runtime::{ErrorKind, Vm},
+    rebind,
+    runtime::{call, ErrorKind, Vm},
+    to_rooted,
     types::{NativeClosure, NativeFunction, Table, Value},
     LUA_VERSION,
 };
 use bstr::{ByteSlice, ByteVec, B};
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-};
 
 const LUA_PATH_SEP: &[u8] = b";";
 const LUA_PATH_MARK: &[u8] = b"?";
@@ -146,7 +144,7 @@ pub fn load<'gc, 'a>(
 
 fn package_require<'gc, 'a>(
     gc: &'a mut GcContext<'gc>,
-    _: &RootSet<'gc>,
+    roots: &RootSet<'gc>,
     vm: GcCell<'gc, '_, Vm<'gc, '_>>,
     package: &GcCell<'gc, '_, Table<'gc, '_>>,
     args: &[Value<'gc, '_>],
@@ -163,7 +161,7 @@ fn package_require<'gc, 'a>(
 
     let value = loaded.borrow(gc).get_field(name);
     if value.to_boolean() {
-        return Ok(vec![value]);
+        return Ok(vec![rebind!(gc, value)]);
     }
 
     let searchers = package
@@ -173,90 +171,66 @@ fn package_require<'gc, 'a>(
         .as_table()
         .ok_or_else(|| ErrorKind::other("'package.searchers' must be a table"))?;
 
-    /*let i = Cell::new(0);
-    let msg = Rc::new(RefCell::new(Vec::new()));
-    let continuation = NativeClosure::with_upvalue(
-        (name, searchers, loaded),
-        move |_, _, &(name, searchers, loaded), args| {
-            let next_i = i.get() + 1;
-            i.set(next_i);
+    let thread = vm.borrow(gc).current_thread();
 
-            let searcher = searchers.borrow(gc).get_integer_key(next_i);
-            if searcher.is_nil() {
-                return Err(ErrorKind::Other(format!(
-                    "module '{}' not found:{}",
-                    name.as_bstr(),
-                    msg.borrow().as_bstr()
-                )));
+    to_rooted!(roots, searchers, loaded, name, thread);
+
+    let mut msg = Vec::new();
+    for i in 1.. {
+        let searcher = searchers.borrow(gc).get_integer_key(i);
+        if searcher.is_nil() {
+            return Err(ErrorKind::Other(format!(
+                "module '{}' not found:{}",
+                name.as_bstr(),
+                msg.as_bstr()
+            )));
+        }
+
+        to_rooted!(roots, searcher);
+        let results = call(gc, roots, vm, *thread, *searcher, &[(*name).into()])?;
+        let loader = match results.first() {
+            Some(
+                value @ Value::NativeFunction(_)
+                | value @ Value::LuaClosure(_)
+                | value @ Value::NativeClosure(_),
+            ) => *value,
+            Some(value) => {
+                if let Some(s) = value.to_string() {
+                    msg.push_str(b"\n\t");
+                    msg.extend_from_slice(&s);
+                }
+                continue;
             }
+            _ => continue,
+        };
+        let loader_data = results.get(1).copied().unwrap_or_default();
 
-            let msg = msg.clone();
-            Ok(Action::Call {
-                callee: searcher,
-                args: vec![name.into()],
-                continuation: Continuation::with_context(
-                    (args[0], name, loaded),
-                    move |_, _, (original_callee, name, loaded), results: Vec<Value>| {
-                        let loader = match results.first() {
-                            Some(
-                                value @ Value::NativeFunction(_)
-                                | value @ Value::LuaClosure(_)
-                                | value @ Value::NativeClosure(_),
-                            ) => *value,
-                            Some(value) => {
-                                if let Some(s) = value.to_string() {
-                                    let mut msg = msg.borrow_mut();
-                                    msg.push_str(b"\n\t");
-                                    msg.extend_from_slice(&s);
-                                }
-                                return Ok(Action::TailCall {
-                                    callee: original_callee,
-                                    args: Vec::new(),
-                                });
-                            }
-                            _ => {
-                                return Ok(Action::TailCall {
-                                    callee: original_callee,
-                                    args: Vec::new(),
-                                })
-                            }
-                        };
-                        let loader_data = results.get(1).copied().unwrap_or_default();
-
-                        Ok(Action::Call {
-                            callee: loader,
-                            args: vec![name.into(), loader_data],
-                            continuation: Continuation::with_context(
-                                (name, loaded, loader_data),
-                                |gc, _, (name, loaded, loader_data), results: Vec<Value>| {
-                                    let mut loaded = loaded.borrow_mut(gc);
-                                    let value = match results.first() {
-                                        Some(Value::Nil) | None => {
-                                            let value = loaded.get_field(name);
-                                            if value.is_nil() {
-                                                Value::Boolean(true)
-                                            } else {
-                                                value
-                                            }
-                                        }
-                                        Some(value) => *value,
-                                    };
-                                    loaded.set_field(name, value);
-                                    Ok(Action::Return(vec![value, loader_data]))
-                                },
-                            ),
-                        })
-                    },
-                ),
-            })
-        },
-    );
-
-    Ok(Action::TailCall {
-        callee: gc.allocate(continuation).into(),
-        args: Vec::new(),
-    })*/
-    todo!()
+        to_rooted!(roots, loader, loader_data);
+        let results = call(
+            gc,
+            roots,
+            vm,
+            *thread,
+            *loader,
+            &[(*name).into(), *loader_data],
+        )?;
+        let results = rebind!(gc, results);
+        let mut loaded = loaded.borrow_mut(gc);
+        let value = match results.first() {
+            Some(Value::Nil) | None => {
+                let value = loaded.get_field(*name);
+                if value.is_nil() {
+                    Value::Boolean(true)
+                } else {
+                    value
+                }
+            }
+            Some(value) => *value,
+        };
+        loaded.set_field(*name, value);
+        return Ok(vec![rebind!(gc, value), rebind!(gc, *loader_data)]);
+    }
+    unreachable!()
 }
 
 fn package_searchpath<'gc, 'a>(

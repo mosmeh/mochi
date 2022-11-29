@@ -1,4 +1,4 @@
-use crate::gc::{BoxedString, GarbageCollect, Gc, GcLifetime, Tracer};
+use crate::gc::{BoxedString, GarbageCollect, Gc, GcBind, Trace, Tracer};
 use std::{cmp::Ordering, fmt::Write, hash::Hash, ops::Deref, str::Utf8Error};
 
 #[derive(Clone, Copy)]
@@ -64,14 +64,16 @@ impl Hash for LuaString<'_, '_> {
     }
 }
 
-unsafe impl GarbageCollect for LuaString<'_, '_> {
+unsafe impl Trace for LuaString<'_, '_> {
     fn trace(&self, tracer: &mut Tracer) {
         self.0.trace(tracer);
     }
 }
 
-unsafe impl<'a, 'gc: 'a> GcLifetime<'gc, 'a> for LuaString<'gc, '_> {
-    type Aged = LuaString<'gc, 'a>;
+unsafe impl GarbageCollect for LuaString<'_, '_> {}
+
+unsafe impl<'a, 'gc: 'a> GcBind<'gc, 'a> for LuaString<'gc, '_> {
+    type Bound = LuaString<'gc, 'a>;
 }
 
 impl LuaString<'_, '_> {

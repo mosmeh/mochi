@@ -1,7 +1,7 @@
 use super::{opcode, ops, ErrorKind, Frame, LuaFrame, Metamethod, Operation, Vm};
 use crate::{
     gc::{GcCell, GcContext, RootSet},
-    new_root, to_rooted,
+    to_rooted,
     types::{Integer, Number, Table, Upvalue, UpvalueDescription, Value},
     LuaClosure,
 };
@@ -14,12 +14,13 @@ pub(super) fn execute_lua_frame<'gc>(
     gc: &mut GcContext<'gc>,
     roots: &RootSet<'gc>,
     vm: GcCell<'gc, '_, Vm<'gc, '_>>,
+    level: usize,
 ) -> Result<(), ErrorKind> {
     'start: loop {
         let thread = vm.borrow(gc).current_thread();
         let mut thread_ref = thread.borrow_mut(gc);
 
-        let frame = match thread_ref.frames.as_slice() {
+        let frame = match &thread_ref.frames[level..] {
             [.., Frame::Lua(frame)] => frame.clone(),
             [] => return Ok(()),
             _ => unreachable!(),
@@ -98,12 +99,15 @@ pub(super) fn execute_lua_frame<'gc>(
                     match value {
                         Some(Value::Nil) | None => {
                             thread_ref.save_pc(pc);
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, table, rc);
                             super::metamethod::index_slow_path(
                                 gc,
+                                roots,
                                 vm,
-                                &mut thread_ref,
-                                table,
-                                rc,
+                                *thread,
+                                *table,
+                                *rc,
                                 base + insn.a(),
                             )?;
                             continue 'start;
@@ -118,12 +122,15 @@ pub(super) fn execute_lua_frame<'gc>(
                     match value {
                         Some(Value::Nil) | None => {
                             thread_ref.save_pc(pc);
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, rb, rc);
                             super::metamethod::index_slow_path(
                                 gc,
+                                roots,
                                 vm,
-                                &mut thread_ref,
-                                rb,
-                                rc,
+                                *thread,
+                                *rb,
+                                *rc,
                                 base + insn.a(),
                             )?;
                             continue 'start;
@@ -138,11 +145,14 @@ pub(super) fn execute_lua_frame<'gc>(
                     match value {
                         Some(Value::Nil) | None => {
                             thread_ref.save_pc(pc);
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, rb);
                             super::metamethod::index_slow_path(
                                 gc,
+                                roots,
                                 vm,
-                                &mut thread_ref,
-                                rb,
+                                *thread,
+                                *rb,
                                 c,
                                 base + insn.a(),
                             )?;
@@ -161,12 +171,15 @@ pub(super) fn execute_lua_frame<'gc>(
                     match value {
                         Some(Value::Nil) | None => {
                             thread_ref.save_pc(pc);
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, rb, rc);
                             super::metamethod::index_slow_path(
                                 gc,
+                                roots,
                                 vm,
-                                &mut thread_ref,
-                                rb,
-                                rc,
+                                *thread,
+                                *rb,
+                                *rc,
                                 base + insn.a(),
                             )?;
                             continue 'start;
@@ -192,8 +205,10 @@ pub(super) fn execute_lua_frame<'gc>(
                     if !replaced {
                         thread_ref.save_pc(pc);
                         drop(thread_ref);
-                        todo!();
-                        //super::metamethod::new_index_slow_path(gc, vm, thread, table, kb, rkc)?;
+                        to_rooted!(roots, thread, table, kb, rkc);
+                        super::metamethod::new_index_slow_path(
+                            gc, roots, vm, *thread, *table, *kb, *rkc,
+                        )?;
                         continue 'start;
                     }
                 }
@@ -210,8 +225,10 @@ pub(super) fn execute_lua_frame<'gc>(
                     if !replaced {
                         thread_ref.save_pc(pc);
                         drop(thread_ref);
-                        todo!();
-                        //super::metamethod::new_index_slow_path(gc, vm, thread, ra, rb, rkc)?;
+                        to_rooted!(roots, thread, ra, rb, rkc);
+                        super::metamethod::new_index_slow_path(
+                            gc, roots, vm, *thread, *ra, *rb, *rkc,
+                        )?;
                         continue 'start;
                     }
                 }
@@ -227,8 +244,10 @@ pub(super) fn execute_lua_frame<'gc>(
                     if !replaced {
                         thread_ref.save_pc(pc);
                         drop(thread_ref);
-                        todo!();
-                        //super::metamethod::new_index_slow_path(gc, vm, thread, ra, b, rkc)?;
+                        to_rooted!(roots, thread, ra, rkc);
+                        super::metamethod::new_index_slow_path(
+                            gc, roots, vm, *thread, *ra, b, *rkc,
+                        )?;
                         continue 'start;
                     }
                 }
@@ -247,8 +266,10 @@ pub(super) fn execute_lua_frame<'gc>(
                     if !replaced {
                         thread_ref.save_pc(pc);
                         drop(thread_ref);
-                        todo!();
-                        //super::metamethod::new_index_slow_path(gc, vm, thread, ra, kb, rkc)?;
+                        to_rooted!(roots, thread, ra, kb, rkc);
+                        super::metamethod::new_index_slow_path(
+                            gc, roots, vm, *thread, *ra, *kb, *rkc,
+                        )?;
                         continue 'start;
                     }
                 }
@@ -286,12 +307,15 @@ pub(super) fn execute_lua_frame<'gc>(
                     match value {
                         Some(Value::Nil) | None => {
                             thread_ref.save_pc(pc);
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, rb, rkc);
                             super::metamethod::index_slow_path(
                                 gc,
+                                roots,
                                 vm,
-                                &mut thread_ref,
-                                rb,
-                                rkc,
+                                *thread,
+                                *rb,
+                                *rkc,
                                 base + a,
                             )?;
                             continue 'start;
@@ -424,15 +448,11 @@ pub(super) fn execute_lua_frame<'gc>(
                     let metamethod = Metamethod::from(insn.c());
 
                     thread_ref.save_pc(pc);
-                    todo!();
-                    /*super::metamethod::arithmetic_slow_path(
-                        gc,
-                        &mut thread_ref,
-                        metamethod,
-                        ra,
-                        rb,
-                        dest,
-                    )? ;*/
+                    drop(thread_ref);
+                    to_rooted!(roots, thread, ra, rb);
+                    super::metamethod::arithmetic_slow_path(
+                        gc, roots, vm, *thread, metamethod, *ra, *rb, dest,
+                    )?;
                     continue 'start;
                 }
                 opcode::MMBINI => {
@@ -444,15 +464,11 @@ pub(super) fn execute_lua_frame<'gc>(
                     let (a, b) = if insn.k() { (imm, ra) } else { (ra, imm) };
 
                     thread_ref.save_pc(pc);
-                    todo!();
-                    /*super::metamethod::arithmetic_slow_path(
-                        gc,
-                        &mut thread_ref,
-                        metamethod,
-                        a,
-                        b,
-                        dest,
-                    )?;*/
+                    drop(thread_ref);
+                    to_rooted!(roots, thread, a, b);
+                    super::metamethod::arithmetic_slow_path(
+                        gc, roots, vm, *thread, metamethod, *a, *b, dest,
+                    )?;
                     continue 'start;
                 }
                 opcode::MMBINK => {
@@ -464,15 +480,11 @@ pub(super) fn execute_lua_frame<'gc>(
                     let (a, b) = if insn.k() { (imm, ra) } else { (ra, imm) };
 
                     thread_ref.save_pc(pc);
-                    todo!();
-                    /*super::metamethod::arithmetic_slow_path(
-                        gc,
-                        &mut thread_ref,
-                        metamethod,
-                        a,
-                        b,
-                        dest,
-                    )?;*/
+                    drop(thread_ref);
+                    to_rooted!(roots, thread, a, b);
+                    super::metamethod::arithmetic_slow_path(
+                        gc, roots, vm, *thread, metamethod, *a, *b, dest,
+                    )?;
                     continue 'start;
                 }
                 opcode::UNM => {
@@ -484,15 +496,18 @@ pub(super) fn execute_lua_frame<'gc>(
                         Value::Number(-x)
                     } else {
                         thread_ref.save_pc(pc);
-                        todo!();
-                        /*super::metamethod::arithmetic_slow_path(
+                        drop(thread_ref);
+                        to_rooted!(roots, thread, rb);
+                        super::metamethod::arithmetic_slow_path(
                             gc,
-                            &mut thread_ref,
+                            roots,
+                            vm,
+                            *thread,
                             Metamethod::Unm,
-                            rb,
-                            rb,
+                            *rb,
+                            *rb,
                             base + a,
-                        )?;*/
+                        )?;
                         continue 'start;
                     };
                     stack[a] = result;
@@ -504,15 +519,18 @@ pub(super) fn execute_lua_frame<'gc>(
                         Value::Integer(!x)
                     } else {
                         thread_ref.save_pc(pc);
-                        todo!();
-                        /*super::metamethod::arithmetic_slow_path(
+                        drop(thread_ref);
+                        to_rooted!(roots, thread, rb);
+                        super::metamethod::arithmetic_slow_path(
                             gc,
-                            &mut thread_ref,
+                            roots,
+                            vm,
+                            *thread,
                             Metamethod::BNot,
-                            rb,
-                            rb,
+                            *rb,
+                            *rb,
                             base + a,
-                        )?;*/
+                        )?;
                         continue 'start;
                     };
                     stack[a] = result;
@@ -533,13 +551,16 @@ pub(super) fn execute_lua_frame<'gc>(
                                 .is_some()
                             {
                                 thread_ref.save_pc(pc);
-                                todo!();
-                                /*super::metamethod::len_slow_path(
+                                drop(thread_ref);
+                                to_rooted!(roots, thread, rb);
+                                super::metamethod::len_slow_path(
                                     gc,
-                                    &mut thread_ref,
-                                    rb,
+                                    roots,
+                                    vm,
+                                    *thread,
+                                    *rb,
                                     base + a,
-                                )?;*/
+                                )?;
                                 continue 'start;
                             } else {
                                 table.borrow(gc).lua_len()
@@ -547,8 +568,16 @@ pub(super) fn execute_lua_frame<'gc>(
                         }
                         _ => {
                             thread_ref.save_pc(pc);
-                            todo!();
-                            //super::metamethod::len_slow_path(gc, &mut thread_ref, rb, base + a)?;
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, rb);
+                            super::metamethod::len_slow_path(
+                                gc,
+                                roots,
+                                vm,
+                                *thread,
+                                *rb,
+                                base + a,
+                            )?;
                             continue 'start;
                         }
                     };
@@ -580,6 +609,7 @@ pub(super) fn execute_lua_frame<'gc>(
                                 rhs,
                                 base + a,
                             )?;*/
+                            todo!();
                             continue 'start;
                         }
                         strings.reverse();
@@ -614,16 +644,20 @@ pub(super) fn execute_lua_frame<'gc>(
                             .is_some()
                     {
                         thread_ref.save_pc(pc);
-                        todo!();
-                        /*super::metamethod::compare_slow_path(
+                        drop(thread_ref);
+                        to_rooted!(roots, thread, ra, rb);
+                        super::metamethod::compare_slow_path(
                             gc,
-                            &mut thread_ref,
+                            roots,
+                            vm,
+                            *thread,
                             Metamethod::Eq,
-                            ra,
-                            rb,
+                            *ra,
+                            *rb,
                             pc,
-                            code,
-                        )?;*/
+                            code[pc - 1],
+                            code[pc],
+                        )?;
                         continue 'start;
                     } else {
                         ops::do_conditional_jump(&mut pc, code, insn, false);
@@ -636,16 +670,20 @@ pub(super) fn execute_lua_frame<'gc>(
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
                             thread_ref.save_pc(pc);
-                            todo!();
-                            /*super::metamethod::compare_slow_path(
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, ra, rb);
+                            super::metamethod::compare_slow_path(
                                 gc,
-                                &mut thread_ref,
+                                roots,
+                                vm,
+                                *thread,
                                 Metamethod::Lt,
-                                ra,
-                                rb,
+                                *ra,
+                                *rb,
                                 pc,
-                                code,
-                            )?*/
+                                code[pc - 1],
+                                code[pc],
+                            )?;
                             continue 'start;
                         }
                     }
@@ -657,16 +695,20 @@ pub(super) fn execute_lua_frame<'gc>(
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
                             thread_ref.save_pc(pc);
-                            todo!();
-                            /*super::metamethod::compare_slow_path(
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, ra, rb);
+                            super::metamethod::compare_slow_path(
                                 gc,
-                                &mut thread_ref,
+                                roots,
+                                vm,
+                                *thread,
                                 Metamethod::Le,
-                                ra,
-                                rb,
+                                *ra,
+                                *rb,
                                 pc,
-                                code,
-                            )?;*/
+                                code[pc - 1],
+                                code[pc],
+                            )?;
                             continue 'start;
                         }
                     }
@@ -693,22 +735,26 @@ pub(super) fn execute_lua_frame<'gc>(
                     match ops::compare_with_immediate(ra, imm, PartialOrd::lt, PartialOrd::lt) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
-                            todo!();
-                            /*let imm = if insn.c() == 0 {
+                            let imm = if insn.c() == 0 {
                                 (imm as Integer).into()
                             } else {
                                 (imm as Number).into()
                             };
                             thread_ref.save_pc(pc);
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, ra);
                             super::metamethod::compare_slow_path(
                                 gc,
-                                &mut thread_ref,
+                                roots,
+                                vm,
+                                *thread,
                                 Metamethod::Lt,
-                                ra,
+                                *ra,
                                 imm,
                                 pc,
-                                code,
-                            )?;*/
+                                code[pc - 1],
+                                code[pc],
+                            )?;
                             continue 'start;
                         }
                     }
@@ -719,22 +765,26 @@ pub(super) fn execute_lua_frame<'gc>(
                     match ops::compare_with_immediate(ra, imm, PartialOrd::le, PartialOrd::le) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
-                            todo!();
-                            /*let imm = if insn.c() == 0 {
+                            let imm = if insn.c() == 0 {
                                 (imm as Integer).into()
                             } else {
                                 (imm as Number).into()
                             };
                             thread_ref.save_pc(pc);
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, ra);
                             super::metamethod::compare_slow_path(
                                 gc,
-                                &mut thread_ref,
+                                roots,
+                                vm,
+                                *thread,
                                 Metamethod::Le,
-                                ra,
+                                *ra,
                                 imm,
                                 pc,
-                                code,
-                            )?;*/
+                                code[pc - 1],
+                                code[pc],
+                            )?;
                             continue 'start;
                         }
                     }
@@ -745,22 +795,26 @@ pub(super) fn execute_lua_frame<'gc>(
                     match ops::compare_with_immediate(ra, imm, PartialOrd::gt, PartialOrd::gt) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
-                            todo!();
-                            /*let imm = if insn.c() == 0 {
+                            let imm = if insn.c() == 0 {
                                 (imm as Integer).into()
                             } else {
                                 (imm as Number).into()
                             };
                             thread_ref.save_pc(pc);
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, ra);
                             super::metamethod::compare_slow_path(
                                 gc,
-                                &mut thread_ref,
+                                roots,
+                                vm,
+                                *thread,
                                 Metamethod::Lt,
+                                *ra,
                                 imm,
-                                ra,
                                 pc,
-                                code,
-                            )?;*/
+                                code[pc - 1],
+                                code[pc],
+                            )?;
                             continue 'start;
                         }
                     }
@@ -771,22 +825,26 @@ pub(super) fn execute_lua_frame<'gc>(
                     match ops::compare_with_immediate(ra, imm, PartialOrd::ge, PartialOrd::ge) {
                         Some(cond) => ops::do_conditional_jump(&mut pc, code, insn, cond),
                         None => {
-                            todo!();
-                            /*let imm = if insn.c() == 0 {
+                            let imm = if insn.c() == 0 {
                                 (imm as Integer).into()
                             } else {
                                 (imm as Number).into()
                             };
                             thread_ref.save_pc(pc);
+                            drop(thread_ref);
+                            to_rooted!(roots, thread, ra);
                             super::metamethod::compare_slow_path(
                                 gc,
-                                &mut thread_ref,
+                                roots,
+                                vm,
+                                *thread,
                                 Metamethod::Le,
+                                *ra,
                                 imm,
-                                ra,
                                 pc,
-                                code,
-                            )?;*/
+                                code[pc - 1],
+                                code[pc],
+                            )?;
                             continue 'start;
                         }
                     }
@@ -859,27 +917,18 @@ pub(super) fn execute_lua_frame<'gc>(
                         .copy_within(base + a..base + a + num_results, bottom);
                     thread_ref.stack.truncate(bottom + num_results);
                     thread_ref.frames.pop().unwrap();
-                    match thread_ref.frames.as_slice() {
-                        [.., Frame::Lua(_)] => continue 'start,
-                        _ => return Ok(()),
-                    }
+                    continue 'start;
                 }
                 opcode::RETURN0 => {
                     thread_ref.stack.truncate(bottom);
                     thread_ref.frames.pop().unwrap();
-                    match thread_ref.frames.as_slice() {
-                        [.., Frame::Lua(_)] => continue 'start,
-                        _ => return Ok(()),
-                    }
+                    continue 'start;
                 }
                 opcode::RETURN1 => {
                     thread_ref.stack[bottom] = stack[insn.a()];
                     thread_ref.stack.truncate(bottom + 1);
                     thread_ref.frames.pop().unwrap();
-                    match thread_ref.frames.as_slice() {
-                        [.., Frame::Lua(_)] => continue 'start,
-                        _ => return Ok(()),
-                    }
+                    continue 'start;
                 }
                 opcode::FORLOOP => {
                     let a = insn.a();
