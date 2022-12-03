@@ -24,9 +24,9 @@ use std::{
 use string::StringPool;
 
 pub struct GcHeap {
-    gc: GcContext<'static>,
-    roots: RootSet<'static>,
     vm: GcCell<'static, 'static, Vm<'static, 'static>>,
+    roots: RootSet<'static>,
+    gc: GcContext<'static>,
 }
 
 impl Default for GcHeap {
@@ -564,12 +564,12 @@ impl<'gc, T> Gc<'gc, '_, T> {
         }
     }
 
-    pub fn ptr_eq(&self, other: &Gc<'gc, '_, T>) -> bool {
-        self.ptr.as_ptr() == other.ptr.as_ptr()
+    pub fn ptr_eq(this: Self, other: Gc<'gc, '_, T>) -> bool {
+        this.ptr.as_ptr() == other.ptr.as_ptr()
     }
 
-    pub fn as_ptr(&self) -> *const T {
-        let gc_box = unsafe { self.ptr.as_ref() };
+    pub fn as_ptr(this: Self) -> *const T {
+        let gc_box = unsafe { this.ptr.as_ref() };
         &gc_box.value as *const T
     }
 }
@@ -619,16 +619,16 @@ unsafe impl<T: GarbageCollect> GarbageCollect for GcCell<'_, '_, T> {}
 
 unsafe impl<T: GarbageCollect> Trace for GcCell<'_, '_, T> {
     fn trace(&self, tracer: &mut Tracer) {
-        self.0.trace(tracer);
+        Gc::trace(&self.0, tracer);
     }
 }
 
 impl<'gc, T> GcCell<'gc, '_, T> {
-    pub fn ptr_eq(&self, other: &GcCell<'gc, '_, T>) -> bool {
-        self.0.ptr_eq(&other.0)
+    pub fn ptr_eq(self, other: GcCell<'gc, '_, T>) -> bool {
+        Gc::ptr_eq(self.0, other.0)
     }
 
-    pub fn as_ptr(&self) -> *const T {
+    pub fn as_ptr(self) -> *const T {
         let gc_box = unsafe { self.0.ptr.as_ref() };
         gc_box.value.0.as_ptr()
     }
@@ -643,12 +643,12 @@ where
     T: GarbageCollect + GcBind<'gc, 'a>,
 {
     #[allow(unused_variables)]
-    pub fn borrow(&self, gc: &'a GcContext<'gc>) -> Ref<'a, T::Bound> {
+    pub fn borrow(self, gc: &'a GcContext<'gc>) -> Ref<'a, T::Bound> {
         let ptr = self.0.ptr.as_ptr() as *mut GcBox<GcRefCell<T::Bound>>;
         unsafe { &*ptr }.value.0.borrow()
     }
 
-    pub fn borrow_mut(&self, gc: &'a GcContext<'gc>) -> RefMut<'a, T::Bound> {
+    pub fn borrow_mut(self, gc: &'a GcContext<'gc>) -> RefMut<'a, T::Bound> {
         let ptr = self.0.ptr.as_ptr() as *mut GcBox<GcRefCell<T::Bound>>;
         let b = unsafe { &*ptr }.value.0.borrow_mut();
         gc.write_barrier(self.0.ptr);

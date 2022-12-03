@@ -229,7 +229,7 @@ fn execute<'gc>(
     let thread_ref = thread.borrow(gc);
     debug_assert!(thread_ref.frames.is_empty());
     let coroutine = vm.thread_stack.pop().unwrap();
-    debug_assert!(GcCell::ptr_eq(&coroutine, &thread));
+    debug_assert!(GcCell::ptr_eq(coroutine, thread));
     Ok(())
 
     /*let thread = vm.borrow(gc).current_thread();
@@ -380,7 +380,7 @@ impl<'gc, 'a> Upvalue<'gc, 'a> {
     ) -> Value<'gc, 'a> {
         match self {
             Upvalue::Open { thread, index } => {
-                if GcCell::ptr_eq(thread, &current_thread) {
+                if GcCell::ptr_eq(*thread, current_thread) {
                     if *index < base {
                         lower_stack[*index]
                     } else {
@@ -405,7 +405,7 @@ impl<'gc, 'a> Upvalue<'gc, 'a> {
     ) {
         match self {
             Upvalue::Open { thread, index } => {
-                if GcCell::ptr_eq(thread, &current_thread) {
+                if GcCell::ptr_eq(*thread, current_thread) {
                     if *index < base {
                         lower_stack[*index] = value;
                     } else {

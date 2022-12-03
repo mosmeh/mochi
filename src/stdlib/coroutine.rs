@@ -81,7 +81,7 @@ fn coroutine_isyieldable<'gc, 'a>(
     } else {
         co.as_thread()?
     };
-    let is_main_thread = GcCell::ptr_eq(&co, &vm.borrow(gc).main_thread());
+    let is_main_thread = GcCell::ptr_eq(co, vm.borrow(gc).main_thread());
 
     Ok(vec![(!is_main_thread).into()])
 }
@@ -123,7 +123,7 @@ fn coroutine_running<'gc, 'a>(
     let thread = vm.borrow(gc).current_thread();
     Ok(vec![
         thread.into(),
-        GcCell::ptr_eq(&thread, &vm.borrow(gc).main_thread()).into(),
+        GcCell::ptr_eq(thread, vm.borrow(gc).main_thread()).into(),
     ])
 }
 
@@ -219,7 +219,7 @@ fn get_coroutine_status<'gc, 'a>(
     thread: GcCell<'gc, 'a, LuaThread<'gc, 'a>>,
     coroutine: GcCell<'gc, 'a, LuaThread<'gc, 'a>>,
 ) -> CoroutineStatus {
-    if GcCell::ptr_eq(&coroutine, &thread) {
+    if GcCell::ptr_eq(coroutine, thread) {
         return CoroutineStatus::Running;
     }
     let coroutine_ref = coroutine.borrow(gc);

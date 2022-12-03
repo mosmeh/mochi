@@ -169,13 +169,13 @@ impl<'gc, 'a> Value<'gc, 'a> {
             Value::Number(x) => tag == Tag::Number && *x == payload.number,
             Value::NativeFunction(f) => tag == Tag::NativeFunction && *f == payload.native_func,
             Value::String(s) => tag == Tag::String && *s == payload.string,
-            Value::Table(t) => tag == Tag::Table && GcCell::ptr_eq(t, &payload.table),
-            Value::LuaClosure(l) => tag == Tag::LuaClosure && Gc::ptr_eq(l, &payload.lua_closure),
+            Value::Table(t) => tag == Tag::Table && GcCell::ptr_eq(*t, payload.table),
+            Value::LuaClosure(l) => tag == Tag::LuaClosure && Gc::ptr_eq(*l, payload.lua_closure),
             Value::NativeClosure(n) => {
-                tag == Tag::NativeClosure && Gc::ptr_eq(n, &payload.native_closure)
+                tag == Tag::NativeClosure && Gc::ptr_eq(*n, payload.native_closure)
             }
-            Value::UserData(u) => tag == Tag::UserData && GcCell::ptr_eq(u, &payload.user_data),
-            Value::Thread(t) => tag == Tag::Thread && GcCell::ptr_eq(t, &payload.thread),
+            Value::UserData(u) => tag == Tag::UserData && GcCell::ptr_eq(*u, payload.user_data),
+            Value::Thread(t) => tag == Tag::Thread && GcCell::ptr_eq(*t, payload.thread),
         }
     }
 

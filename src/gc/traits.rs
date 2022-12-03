@@ -169,7 +169,9 @@ unsafe impl<T: Trace> Trace for Vec<T> {
     }
 }
 
-unsafe impl<K: Trace, V: Trace, S: BuildHasher> Trace for std::collections::HashMap<K, V, S> {
+unsafe impl<K: Trace, V: Trace, S: BuildHasher + 'static> Trace
+    for std::collections::HashMap<K, V, S>
+{
     fn needs_trace() -> bool {
         K::needs_trace() || V::needs_trace()
     }
@@ -182,7 +184,7 @@ unsafe impl<K: Trace, V: Trace, S: BuildHasher> Trace for std::collections::Hash
     }
 }
 
-unsafe impl<K: Trace, V: Trace, S: BuildHasher> Trace for hashbrown::HashMap<K, V, S> {
+unsafe impl<K: Trace, V: Trace, S: BuildHasher + 'static> Trace for hashbrown::HashMap<K, V, S> {
     fn needs_trace() -> bool {
         K::needs_trace() || V::needs_trace()
     }

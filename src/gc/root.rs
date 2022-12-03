@@ -1,4 +1,4 @@
-use super::{GcBind, GcContext, Trace};
+use super::{GcBind, Trace};
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
@@ -52,7 +52,7 @@ impl<'gc, 'roots, 'root, T> Root<'gc, 'roots, 'root, T> {
     pub fn bind<U>(self, x: U) -> Rooted<'gc, 'roots, 'root, T>
     where
         T: Trace,
-        U: GcBind<'gc, 'roots, Bound = T>,
+        U: Trace + GcBind<'gc, 'roots, Bound = T>,
     {
         self.0.value = Some(unsafe { super::bind_value(x) });
 
@@ -82,14 +82,6 @@ impl<'gc, 'root, T: GcBind<'gc, 'root>> Deref for Rooted<'gc, '_, 'root, T> {
 impl<'gc, 'root, T: GcBind<'gc, 'root>> AsRef<T::Bound> for Rooted<'gc, '_, 'root, T> {
     fn as_ref(&self) -> &T::Bound {
         self.deref()
-    }
-}
-
-impl<'gc, 'a, 'roots, 'root, T: GcBind<'gc, 'a>> Rooted<'gc, 'roots, 'root, T> {
-    #[allow(unused_variables)]
-    pub fn into_inner(self, gc: &'a GcContext<'gc>) -> T::Bound {
-        self.0.roots.stack.borrow_mut()[self.0.index] = None;
-        unsafe { super::bind_value(self.0.value.take().unwrap()) }
     }
 }
 

@@ -119,7 +119,7 @@ fn table_move<'gc, 'a>(
         });
     }
 
-    if GcCell::ptr_eq(&a1, &a2) {
+    if GcCell::ptr_eq(a1, a2) {
         let mut table = a1.borrow_mut(gc);
         if t <= f || e < t {
             for i in 0..n {

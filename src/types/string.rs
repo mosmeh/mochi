@@ -42,7 +42,7 @@ impl AsRef<[u8]> for LuaString<'_, '_> {
 
 impl<'gc> PartialEq for LuaString<'gc, '_> {
     fn eq(&self, other: &LuaString<'gc, '_>) -> bool {
-        Gc::ptr_eq(&self.0, &other.0)
+        Gc::ptr_eq(self.0, other.0)
     }
 }
 
@@ -50,7 +50,7 @@ impl Eq for LuaString<'_, '_> {}
 
 impl<'gc> PartialOrd for LuaString<'gc, '_> {
     fn partial_cmp(&self, other: &LuaString<'gc, '_>) -> Option<Ordering> {
-        if Gc::ptr_eq(&self.0, &other.0) {
+        if Gc::ptr_eq(self.0, other.0) {
             Some(Ordering::Equal)
         } else {
             self.as_bytes().partial_cmp(other.as_ref())

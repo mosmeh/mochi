@@ -164,11 +164,11 @@ impl PartialEq for Value<'_, '_> {
             }
             (Self::NativeFunction(lhs), Self::NativeFunction(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
-            (Self::Table(lhs), Self::Table(rhs)) => GcCell::ptr_eq(lhs, rhs),
-            (Self::LuaClosure(lhs), Self::LuaClosure(rhs)) => Gc::ptr_eq(lhs, rhs),
-            (Self::NativeClosure(lhs), Self::NativeClosure(rhs)) => Gc::ptr_eq(lhs, rhs),
-            (Self::UserData(lhs), Self::UserData(rhs)) => GcCell::ptr_eq(lhs, rhs),
-            (Self::Thread(lhs), Self::Thread(rhs)) => GcCell::ptr_eq(lhs, rhs),
+            (Self::Table(lhs), Self::Table(rhs)) => GcCell::ptr_eq(*lhs, *rhs),
+            (Self::LuaClosure(lhs), Self::LuaClosure(rhs)) => Gc::ptr_eq(*lhs, *rhs),
+            (Self::NativeClosure(lhs), Self::NativeClosure(rhs)) => Gc::ptr_eq(*lhs, *rhs),
+            (Self::UserData(lhs), Self::UserData(rhs)) => GcCell::ptr_eq(*lhs, *rhs),
+            (Self::Thread(lhs), Self::Thread(rhs)) => GcCell::ptr_eq(*lhs, *rhs),
             _ => false,
         }
     }
@@ -187,8 +187,8 @@ impl std::hash::Hash for Value<'_, '_> {
             Self::NativeFunction(x) => x.hash(state),
             Self::String(x) => x.hash(state),
             Self::Table(x) => x.as_ptr().hash(state),
-            Self::LuaClosure(x) => x.as_ptr().hash(state),
-            Self::NativeClosure(x) => x.as_ptr().hash(state),
+            Self::LuaClosure(x) => Gc::as_ptr(*x).hash(state),
+            Self::NativeClosure(x) => Gc::as_ptr(*x).hash(state),
             Self::UserData(x) => x.as_ptr().hash(state),
             Self::Thread(x) => x.as_ptr().hash(state),
         }
@@ -226,10 +226,10 @@ impl<'gc, 'a> Value<'gc, 'a> {
             Self::String(x) => f.write_all(x.as_bytes()),
             Self::Table(x) => write!(f, "table: {:p}", x.as_ptr()),
             Self::LuaClosure(x) => {
-                write!(f, "function: {:p}", x.as_ptr())
+                write!(f, "function: {:p}", Gc::as_ptr(*x))
             }
             Self::NativeClosure(x) => {
-                write!(f, "function: {:p}", x.as_ptr())
+                write!(f, "function: {:p}", Gc::as_ptr(*x))
             }
             Self::UserData(x) => {
                 write!(f, "userdata: {:p}", x.as_ptr())
@@ -427,8 +427,8 @@ impl<'gc, 'a> Value<'gc, 'a> {
             Self::NativeFunction(n) => Some(n.as_ptr()),
             Self::String(s) => Some(s.0.as_ptr() as *const _),
             Self::Table(t) => Some(t.as_ptr() as *const _),
-            Self::LuaClosure(l) => Some(l.as_ptr() as *const _),
-            Self::NativeClosure(n) => Some(n.as_ptr() as *const _),
+            Self::LuaClosure(l) => Some(Gc::as_ptr(*l) as *const _),
+            Self::NativeClosure(n) => Some(Gc::as_ptr(*n) as *const _),
             Self::UserData(u) => Some(u.as_ptr() as *const _),
             Self::Thread(t) => Some(t.as_ptr() as *const _),
         }
