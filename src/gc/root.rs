@@ -67,14 +67,14 @@ impl<'gc, 'roots, 'root, T> Root<'gc, 'roots, 'root, T> {
     }
 }
 
-pub struct Rooted<'gc, 'roots, 'root, T>(&'root mut ShadowedRoot<'gc, 'roots, T>);
+pub struct Rooted<'gc, 'roots, 'root, T>(&'root ShadowedRoot<'gc, 'roots, T>);
 
 impl<'gc, 'root, T: GcBind<'gc, 'root>> Deref for Rooted<'gc, '_, 'root, T> {
     type Target = T::Bound;
 
     fn deref(&self) -> &Self::Target {
         let ptr = self.0.value.as_ref().unwrap() as *const T;
-        let ptr = ptr as *const T::Bound;
+        let ptr = ptr.cast::<T::Bound>();
         unsafe { &*ptr }
     }
 }

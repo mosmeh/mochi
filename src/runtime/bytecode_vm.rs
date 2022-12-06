@@ -1048,10 +1048,8 @@ pub(super) fn execute_lua_frame<'gc>(
                     thread_ref.stack[base + insn.a()] =
                         gc.allocate(LuaClosure { proto, upvalues }).into();
                     thread_ref.save_pc(pc);
-                    if gc.should_perform_gc() {
-                        drop(thread_ref);
-                        gc.step(roots);
-                    }
+                    drop(thread_ref);
+                    gc.step(roots);
                     continue 'start;
                 }
                 opcode::VARARG => {

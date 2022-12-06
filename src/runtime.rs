@@ -354,9 +354,7 @@ pub(crate) fn call_value<'gc>(
         thread_ref.stack.append(&mut results);
         thread_ref.frames.pop().unwrap();
     }
-    if gc.should_perform_gc() {
-        gc.step(roots);
-    }
+    gc.step(roots);
     Ok(())
 }
 

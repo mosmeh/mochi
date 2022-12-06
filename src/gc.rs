@@ -72,6 +72,15 @@ impl Default for GcHeap {
     }
 }
 
+impl Drop for GcHeap {
+    fn drop(&mut self) {
+        let mut roots = self.roots.stack.borrow_mut();
+        let ptr = roots.pop().unwrap().unwrap();
+        unsafe { Box::from_raw(ptr.as_ptr()) };
+        assert!(roots.is_empty());
+    }
+}
+
 impl GcHeap {
     pub fn new() -> Self {
         Default::default()
@@ -231,21 +240,21 @@ impl<'gc> GcContext<'gc> {
     }
 
     pub fn step(&mut self, roots: &RootSet) {
-        if self.is_running() && self.debt() > 0 {
-            self.step_inner(roots);
+        if self.should_perform_gc() {
+            self.step_unconditionally(roots);
         }
     }
 
     pub fn force_step(&mut self, roots: &RootSet, kbytes: isize) -> bool {
         let did_step = if kbytes == 0 {
             self.set_debt(0);
-            self.step(roots);
+            self.step_unconditionally(roots);
             true
         } else {
             let debt = kbytes * 1024 + self.debt();
             self.set_debt(debt);
             if debt > 0 {
-                self.step(roots);
+                self.step_unconditionally(roots);
                 true
             } else {
                 false
@@ -279,7 +288,7 @@ impl<'gc> GcContext<'gc> {
         self.set_debt_for_pause_phase();
     }
 
-    fn step_inner(&mut self, roots: &RootSet) {
+    fn step_unconditionally(&mut self, roots: &RootSet) {
         let mut debt = self.debt.get();
         let step_size = 1 << self.step_size.get();
         let step_multiplier = self.step_multiplier.get() | 1; // avoid division by zero
@@ -316,12 +325,20 @@ impl<'gc> GcContext<'gc> {
         }
 
         let gc_box = unsafe { ptr.as_ref() };
-        if gc_box.color.get() == Color::Black {
+        if gc_box.color.get() != Color::Black {
+            return;
+        }
+
+        #[inline(never)]
+        fn slow_path<T: GarbageCollect>(gc: &GcContext, ptr: GcPtr<T>) {
+            let gc_box = unsafe { ptr.as_ref() };
             gc_box.color.set(Color::Gray);
-            self.gray_again
+
+            gc.gray_again
                 .borrow_mut()
                 .push(unsafe { gc_ptr_to_static(ptr) });
         }
+        slow_path(self, ptr);
     }
 
     fn propagate_gray(&mut self, ptr: GcPtr<dyn GarbageCollect>) -> usize {
