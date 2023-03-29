@@ -6,7 +6,7 @@ use mochi_lua::{
     runtime::{OpCode, Runtime, RuntimeError},
     types::{Integer, LineRange, LuaClosureProto, Table, UpvalueDescription, Value},
 };
-use rustyline::{error::ReadlineError, Editor};
+use rustyline::error::ReadlineError;
 use std::{fs::File, io::BufWriter, path::PathBuf};
 
 #[cfg(all(feature = "jemalloc", not(target_env = "msvc")))]
@@ -116,7 +116,7 @@ fn main() -> Result<()> {
 }
 
 fn do_repl(runtime: &mut Runtime) -> Result<()> {
-    let mut rl = Editor::<()>::new()?;
+    let mut rl = rustyline::DefaultEditor::new()?;
     let mut buf = String::new();
     loop {
         let is_first_line = buf.is_empty();
@@ -149,7 +149,7 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
                     });
                     match result {
                         Ok(()) => {
-                            rl.add_history_entry(line);
+                            rl.add_history_entry(line)?;
                             continue;
                         }
                         Err(RuntimeError {
@@ -158,7 +158,7 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
                         }) => (),
                         Err(err) => {
                             eprintln!("{err}");
-                            rl.add_history_entry(line);
+                            rl.add_history_entry(line)?;
                             continue;
                         }
                     }
@@ -176,7 +176,7 @@ fn do_repl(runtime: &mut Runtime) -> Result<()> {
                     Err(err) if is_incomplete_input_error(&err) => continue,
                     Err(err) => eprintln!("{err}"),
                 }
-                rl.add_history_entry(&buf);
+                rl.add_history_entry(&buf)?;
                 buf.clear();
             }
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => return Ok(()),
