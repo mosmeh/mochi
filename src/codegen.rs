@@ -39,6 +39,12 @@ pub enum CodegenError {
     #[error("cannot use '...' outside a vararg function")]
     VarArgExpressionOutsideVarArgFunction,
 
+    #[error("not in a loop block")]
+    NotInLoop,
+
+    #[error("mismatched block")]
+    MismatchedBlock,
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -245,6 +251,7 @@ struct CodeGenerator<'gc> {
     gc: &'gc GcContext,
     source: LuaString<'gc>,
     frames: Vec<Frame<'gc>>,
+    breaks: Vec<Vec<Label>>,
 }
 
 impl<'gc> CodeGenerator<'gc> {
@@ -253,6 +260,7 @@ impl<'gc> CodeGenerator<'gc> {
             gc,
             source,
             frames: Default::default(),
+            breaks: Default::default(),
         }
     }
 

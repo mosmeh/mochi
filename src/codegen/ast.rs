@@ -218,7 +218,14 @@ impl<'gc> CodeGenerator<'gc> {
             Statement::LocalFunction(s) => self.codegen_local_func_statement(s)?,
             Statement::LocalVariable(s) => self.codegen_local_variable_statement(s)?,
             Statement::Label(_) => todo!("label"),
-            Statement::Break => todo!("break"),
+            Statement::Break => {
+                let label = self.declare_label();
+                self.breaks
+                    .last_mut()
+                    .ok_or(CodegenError::NotInLoop)?
+                    .push(label);
+                self.emit(IrInstruction::Jump { target: label });
+            }
             Statement::Goto(_) => todo!("goto"),
             Statement::FunctionCall(s) => self.codegen_func_call_statement(s)?,
             Statement::Assignment(s) => self.codegen_assignment_statement(s)?,
@@ -278,7 +285,18 @@ impl<'gc> CodeGenerator<'gc> {
     ) -> Result<(), CodegenError> {
         let start_label = self.declare_label();
         self.place_label_here(start_label);
-        self.emit_test_then_block_else_fallthrough(statement.condition, statement.body, start_label)
+        self.breaks.push(vec![]);
+        let result = self.emit_test_then_block_else_fallthrough(
+            statement.condition,
+            statement.body,
+            start_label,
+        );
+        self.breaks
+            .pop()
+            .ok_or(CodegenError::MismatchedBlock)?
+            .into_iter()
+            .for_each(|l| self.place_label_here(l));
+        result
     }
 
     fn codegen_for_statement(&mut self, statement: ForStatement<'gc>) -> Result<(), CodegenError> {
@@ -368,6 +386,9 @@ impl<'gc> CodeGenerator<'gc> {
 
         let start_label = self.declare_label();
         self.place_label_here(start_label);
+
+        // TODO: defer pop breaks
+        self.breaks.push(vec![]);
         self.codegen_block(body)?;
         self.place_label_here(end_label);
 
@@ -380,6 +401,12 @@ impl<'gc> CodeGenerator<'gc> {
             next_target: start_label,
             is_generic,
         });
+
+        self.breaks
+            .pop()
+            .ok_or(CodegenError::MismatchedBlock)?
+            .into_iter()
+            .for_each(|l| self.place_label_here(l));
 
         self.current_frame()
             .local_variable_stack
@@ -395,7 +422,15 @@ impl<'gc> CodeGenerator<'gc> {
         let start_label = self.declare_label();
         self.place_label_here(start_label);
 
+        // TODO: defer pop breaks
+        self.breaks.push(vec![]);
         self.codegen_block(statement.body)?;
+
+        self.breaks
+            .pop()
+            .ok_or(CodegenError::MismatchedBlock)?
+            .into_iter()
+            .for_each(|l| self.place_label_here(l));
 
         let condition = self.evaluate_expr(statement.condition)?;
         match condition {
