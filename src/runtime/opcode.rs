@@ -119,3 +119,130 @@ opcodes! {
     VARARGPREP => VarArgPrep,
     EXTRAARG => ExtraArg,
 }
+
+impl OpCode {
+    pub fn modes(self) -> &'static Modes {
+        &OPMODES[self as u8 as usize]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum OpMode {
+    ABC,
+    ABx,
+    AsBx,
+    Ax,
+    IsJ,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Modes {
+    pub mode: OpMode,
+    pub mm: bool,
+    pub ot: bool,
+    pub it: bool,
+    pub test: bool,
+    pub set_a: bool,
+}
+
+impl Modes {
+    const fn new(mm: u8, ot: u8, it: u8, t: u8, a: u8, mode: OpMode) -> Self {
+        Modes {
+            mode,
+            mm: mm != 0,
+            ot: ot != 0,
+            it: it != 0,
+            test: t != 0,
+            set_a: a != 0,
+        }
+    }
+}
+
+use OpMode::*;
+
+pub const OPMODES: &[Modes] = &[
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, AsBx),
+    Modes::new(0, 0, 0, 0, 1, AsBx),
+    Modes::new(0, 0, 0, 0, 1, ABx),
+    Modes::new(0, 0, 0, 0, 1, ABx),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(1, 0, 0, 0, 0, ABC),
+    Modes::new(1, 0, 0, 0, 0, ABC),
+    Modes::new(1, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 0, IsJ),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 0, ABC),
+    Modes::new(0, 0, 0, 1, 1, ABC),
+    Modes::new(0, 1, 1, 0, 1, ABC),
+    Modes::new(0, 1, 1, 0, 1, ABC),
+    Modes::new(0, 0, 1, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABx),
+    Modes::new(0, 0, 0, 0, 1, ABx),
+    Modes::new(0, 0, 0, 0, 0, ABx),
+    Modes::new(0, 0, 0, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABx),
+    Modes::new(0, 0, 1, 0, 0, ABC),
+    Modes::new(0, 0, 0, 0, 1, ABx),
+    Modes::new(0, 1, 0, 0, 1, ABC),
+    Modes::new(0, 0, 1, 0, 1, ABC),
+    Modes::new(0, 0, 0, 0, 0, Ax),
+];
