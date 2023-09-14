@@ -343,6 +343,14 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    pub fn as_lua_string(&self) -> Option<&LuaString<'gc>> {
+        if let Self::String(x) = self {
+            Some(x)
+        } else {
+            None
+        }
+    }
+
     pub fn as_lua_closure(&self) -> Option<&LuaClosure<'gc>> {
         if let Self::LuaClosure(x) = self {
             Some(x.as_ref())
