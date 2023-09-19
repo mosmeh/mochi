@@ -23,6 +23,12 @@ macro_rules! metamethods {
                     $(gc.allocate_string(B($name)),)*
                 ]
             }
+
+            pub fn static_name(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)*
+                }
+            }
         }
 
         impl From<u8> for Metamethod {

@@ -6,8 +6,8 @@ mod user_data;
 
 pub(crate) use function::Upvalue;
 pub use function::{
-    LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeFunction, NativeFunctionPtr,
-    RegisterIndex, UpvalueDescription, UpvalueIndex,
+    AbsLineInfo, LineRange, LocalVar, LuaClosure, LuaClosureProto, NativeClosure, NativeFunction,
+    NativeFunctionPtr, RegisterIndex, UpvalueDescription, UpvalueIndex,
 };
 pub use string::LuaString;
 pub use table::{Table, TableError};

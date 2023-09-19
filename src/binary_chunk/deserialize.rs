@@ -2,8 +2,8 @@ use crate::{
     gc::GcContext,
     runtime::Instruction,
     types::{
-        Integer, LineRange, LuaClosureProto, LuaString, Number, RegisterIndex, UpvalueDescription,
-        UpvalueIndex, Value,
+        AbsLineInfo, Integer, LineRange, LocalVar, LuaClosureProto, LuaString, Number,
+        RegisterIndex, UpvalueDescription, UpvalueIndex, Value,
     },
 };
 use bstr::B;
@@ -96,17 +96,24 @@ fn load_function<'gc, R: Read>(
 
     // AbsLineInfo
     let n = load_int(reader)?;
+    let mut abslineinfo = Vec::with_capacity(n as _);
     for _ in 0..n {
-        load_int(reader)?; // pc
-        load_int(reader)?; // line
+        let pc = load_int(reader)?; // pc
+        let line = load_int(reader)?; // line
+        abslineinfo.push(AbsLineInfo { pc, line });
     }
 
     // LocVar
     let n = load_int(reader)?;
+    let mut localvars = Vec::with_capacity(n as _);
     for _ in 0..n {
-        load_nullable_str(gc, reader)?; // varname
-        load_int(reader)?; // startpc
-        load_int(reader)?; // endpc
+        let name = load_str(gc, reader)?; // varname
+        let start = load_int(reader)?; // startpc
+        let end = load_int(reader)?; // endpc
+        localvars.push(LocalVar {
+            name,
+            pc: start..end,
+        })
     }
 
     // Upvalue
@@ -127,6 +134,21 @@ fn load_function<'gc, R: Read>(
         protos: protos.into_iter().map(|proto| gc.allocate(proto)).collect(),
         upvalues: upvalues.into(),
         source,
+        abslineinfo: if abslineinfo.is_empty() {
+            None
+        } else {
+            Some(abslineinfo.into_boxed_slice())
+        },
+        lineinfo: if line_info.is_empty() {
+            None
+        } else {
+            Some(line_info.into_boxed_slice())
+        },
+        localvars: if localvars.is_empty() {
+            None
+        } else {
+            Some(localvars.into_boxed_slice())
+        },
     })
 }
 
