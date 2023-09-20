@@ -134,7 +134,7 @@ impl Drop for GcContext {
         while let Some(ptr) = it {
             let gc_box = unsafe { ptr.as_ref() };
             it = gc_box.next;
-            unsafe { Box::from_raw(ptr.as_ptr()) };
+            let _ = unsafe { Box::from_raw(ptr.as_ptr()) };
         }
     }
 }
@@ -405,7 +405,7 @@ impl GcContext {
                 debt -= std::mem::size_of_val(gc_box) as isize;
 
                 gc_box.value.finalize(&mut finalizer);
-                unsafe { Box::from_raw(ptr.as_ptr()) };
+                let _ = unsafe { Box::from_raw(ptr.as_ptr()) };
             } else {
                 debug_assert_eq!(gc_box.color.get(), Color::Black);
                 gc_box.color.set(current_white);

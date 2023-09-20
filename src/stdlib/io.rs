@@ -425,7 +425,7 @@ fn file_write<'gc>(
 
 fn common_io_input_or_output<'gc, K: AsRef<[u8]>>(
     gc: &'gc GcContext,
-    vm: &mut Vm<'gc>,
+    vm: &Vm<'gc>,
     args: Vec<Value<'gc>>,
     key: K,
     options: &OpenOptions,

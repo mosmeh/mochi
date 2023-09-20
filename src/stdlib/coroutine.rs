@@ -166,7 +166,7 @@ fn coroutine_yield<'gc>(
     Ok(Action::Yield(args.without_callee().to_vec()))
 }
 
-fn create_coroutine<'gc>(vm: &mut Vm<'gc>, body: Value<'gc>) -> Result<LuaThread<'gc>, ErrorKind> {
+fn create_coroutine<'gc>(vm: &Vm<'gc>, body: Value<'gc>) -> Result<LuaThread<'gc>, ErrorKind> {
     let mut co = LuaThread::new();
     co.stack.push(body);
     vm.push_frame(&mut co, 0)?;
