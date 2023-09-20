@@ -838,6 +838,10 @@ pub(super) fn lower_ir<'gc>(
         protos: protos.into(),
         lines_defined: crate::types::LineRange::File,
         source,
+        // TODO: generate debug info
+        abslineinfo: None,
+        lineinfo: None,
+        localvars: None,
     })
 }
 

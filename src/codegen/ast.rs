@@ -219,11 +219,7 @@ impl<'gc> CodeGenerator<'gc> {
             Statement::LocalVariable(s) => self.codegen_local_variable_statement(s)?,
             Statement::Label(_) => todo!("label"),
             Statement::Break => {
-                let label = self.declare_label();
-                self.breaks
-                    .last_mut()
-                    .ok_or(CodegenError::NotInLoop)?
-                    .push(label);
+                let label = self.break_label()?;
                 self.emit(IrInstruction::Jump { target: label });
             }
             Statement::Goto(_) => todo!("goto"),
@@ -285,17 +281,15 @@ impl<'gc> CodeGenerator<'gc> {
     ) -> Result<(), CodegenError> {
         let start_label = self.declare_label();
         self.place_label_here(start_label);
-        self.breaks.push(vec![]);
+
+        self.push_loop();
         let result = self.emit_test_then_block_else_fallthrough(
             statement.condition,
             statement.body,
             start_label,
         );
-        self.breaks
-            .pop()
-            .ok_or(CodegenError::MismatchedBlock)?
-            .into_iter()
-            .for_each(|l| self.place_label_here(l));
+        self.pop_loop()?;
+
         result
     }
 
@@ -387,8 +381,7 @@ impl<'gc> CodeGenerator<'gc> {
         let start_label = self.declare_label();
         self.place_label_here(start_label);
 
-        // TODO: defer pop breaks
-        self.breaks.push(vec![]);
+        self.push_loop();
         self.codegen_block(body)?;
         self.place_label_here(end_label);
 
@@ -401,12 +394,7 @@ impl<'gc> CodeGenerator<'gc> {
             next_target: start_label,
             is_generic,
         });
-
-        self.breaks
-            .pop()
-            .ok_or(CodegenError::MismatchedBlock)?
-            .into_iter()
-            .for_each(|l| self.place_label_here(l));
+        self.pop_loop()?;
 
         self.current_frame()
             .local_variable_stack
@@ -422,15 +410,10 @@ impl<'gc> CodeGenerator<'gc> {
         let start_label = self.declare_label();
         self.place_label_here(start_label);
 
-        // TODO: defer pop breaks
-        self.breaks.push(vec![]);
-        self.codegen_block(statement.body)?;
-
-        self.breaks
-            .pop()
-            .ok_or(CodegenError::MismatchedBlock)?
-            .into_iter()
-            .for_each(|l| self.place_label_here(l));
+        self.push_loop();
+        let result = self.codegen_block(statement.body);
+        self.pop_loop()?;
+        result?;
 
         let condition = self.evaluate_expr(statement.condition)?;
         match condition {
