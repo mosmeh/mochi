@@ -32,7 +32,7 @@ unsafe impl GarbageCollect for BoxedString {
 
     fn finalize(&self, finalizer: &mut Finalizer) {
         let hash = calc_str_hash(&self.0);
-        let table = finalizer.string_pool.raw_table();
+        let table = finalizer.string_pool.raw_table_mut();
         let bucket = table
             .find(hash, |(k, _)| {
                 let gc_box = unsafe { k.as_ref() };
