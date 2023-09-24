@@ -2,7 +2,7 @@ use crate::{
     gc::GcContext,
     runtime::Instruction,
     types::{
-        AbsLineInfo, Integer, LineRange, LocalVar, LuaClosureProto, LuaString, Number,
+        AbsLineInfo, Integer, LineRange, LocalVariable, LuaClosureProto, LuaString, Number,
         RegisterIndex, UpvalueDescription, UpvalueIndex, Value,
     },
 };
@@ -94,23 +94,23 @@ fn load_function<'gc, R: Read>(
     let mut line_info = vec![0u8; n as usize];
     reader.read_exact(&mut line_info)?;
 
-    // AbsLineInfo
+    // Absolute LineInfo
     let n = load_int(reader)?;
-    let mut abslineinfo = Vec::with_capacity(n as _);
+    let mut abs_line_info = Vec::with_capacity(n as _);
     for _ in 0..n {
         let pc = load_int(reader)?; // pc
         let line = load_int(reader)?; // line
-        abslineinfo.push(AbsLineInfo { pc, line });
+        abs_line_info.push(AbsLineInfo { pc, line });
     }
 
-    // LocVar
+    // Local varialbes
     let n = load_int(reader)?;
-    let mut localvars = Vec::with_capacity(n as _);
+    let mut local_variables = Vec::with_capacity(n as _);
     for _ in 0..n {
         let name = load_str(gc, reader)?; // varname
         let start = load_int(reader)?; // startpc
         let end = load_int(reader)?; // endpc
-        localvars.push(LocalVar {
+        local_variables.push(LocalVariable {
             name,
             pc: start..end,
         })
@@ -134,20 +134,20 @@ fn load_function<'gc, R: Read>(
         protos: protos.into_iter().map(|proto| gc.allocate(proto)).collect(),
         upvalues: upvalues.into(),
         source,
-        abslineinfo: if abslineinfo.is_empty() {
+        abs_line_info: if abs_line_info.is_empty() {
             None
         } else {
-            Some(abslineinfo.into_boxed_slice())
+            Some(abs_line_info.into_boxed_slice())
         },
-        lineinfo: if line_info.is_empty() {
+        line_info: if line_info.is_empty() {
             None
         } else {
             Some(line_info.into_boxed_slice())
         },
-        localvars: if localvars.is_empty() {
+        local_vars: if local_variables.is_empty() {
             None
         } else {
-            Some(localvars.into_boxed_slice())
+            Some(local_variables.into_boxed_slice())
         },
     })
 }

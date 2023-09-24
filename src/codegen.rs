@@ -39,8 +39,8 @@ pub enum CodegenError {
     #[error("cannot use '...' outside a vararg function")]
     VarArgExpressionOutsideVarArgFunction,
 
-    #[error("not in a loop block")]
-    NotInLoop,
+    #[error("break outside loop")]
+    BreakOutsideLoop,
 
     #[error("mismatched block")]
     MismatchedBlock,
@@ -247,10 +247,9 @@ impl Frame<'_> {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, Clone)]
 struct LoopInfo {
-    pub break_label: Option<Label>,
-    pub continue_label: Option<Label>,
+    break_label: Option<Label>,
 }
 
 struct CodeGenerator<'gc> {
@@ -302,7 +301,7 @@ impl<'gc> CodeGenerator<'gc> {
         if let Some(label) = self
             .loops
             .last_mut()
-            .ok_or(CodegenError::NotInLoop)?
+            .ok_or(CodegenError::BreakOutsideLoop)?
             .break_label
             .clone()
         {

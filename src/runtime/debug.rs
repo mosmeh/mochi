@@ -11,14 +11,6 @@ impl<'gc> Vm<'gc> {
         thread: &'a mut LuaThread<'gc>,
         bottom: usize,
     ) -> Option<(&'static str, &'a str)> {
-        // if (ci->callstatus & CIST_HOOKED) {  /* was it called inside a hook? */
-        // *name = "?";
-        // return "hook";
-        // }
-        // else if (ci->callstatus & CIST_FIN) {  /* was it called as a finalizer? */
-        // *name = "__gc";
-        // return "metamethod";  /* report it as such */
-        // }
         let frame = thread.last_lua_frame()?;
         let closure = thread.stack_closure(frame.bottom)?;
         closure.proto.funcname_from_code(frame.last_pc())
@@ -27,11 +19,11 @@ impl<'gc> Vm<'gc> {
 
 impl<'gc> LuaClosureProto<'gc> {
     pub(crate) fn funcname_from_code(&self, pc: usize) -> Option<(&'static str, &'_ str)> {
-        let i = self.code.get(pc)?;
+        let insn = self.code.get(pc)?;
         let mut tm = Metamethod::Index;
-        match i.raw_opcode() {
+        match insn.raw_opcode() {
             opcode::CALL | opcode::TAILCALL => {
-                return self.get_objname(pc, i.a()); // Get function name
+                return self.get_objname(pc, insn.a()); // Get function name
             }
             opcode::TFORCALL => {
                 // For iterator
@@ -49,7 +41,7 @@ impl<'gc> LuaClosureProto<'gc> {
                 tm = Metamethod::NewIndex;
             }
             opcode::MMBIN | opcode::MMBINI | opcode::MMBINK => {
-                tm = Metamethod::from(i.c());
+                tm = Metamethod::from(insn.c());
             }
             opcode::UNM => tm = Metamethod::Unm,
             opcode::BNOT => tm = Metamethod::BNot,
@@ -72,45 +64,45 @@ impl<'gc> LuaClosureProto<'gc> {
         }
 
         let pc = self.find_setreg(lastpc, reg)?;
-        let i = *self.code.get(pc)?;
-        match i.opcode() {
+        let insn = *self.code.get(pc)?;
+        let opcode = insn.opcode();
+        match opcode {
             OpCode::Move => {
-                let b = i.b();
-                if b < i.a() {
+                let b = insn.b();
+                if b < insn.a() {
                     return self.get_objname(pc, b);
                 }
             }
             OpCode::GetTabUp => {
-                let k = i.c();
-                return Some((self.gxf(pc, i, true), self.kname(k)));
+                let k = insn.c();
+                return Some((self.gxf(pc, insn, true), self.kname(k)));
             }
             OpCode::GetTable => {
-                let k = i.c();
-                return Some((self.gxf(pc, i, false), self.rname(pc, k as _)));
+                let k = insn.c();
+                return Some((self.gxf(pc, insn, false), self.rname(pc, k as _)));
             }
             OpCode::GetI => {
                 return Some(("field", "integer index"));
             }
             OpCode::GetField => {
-                let k = i.c();
-                return Some((self.gxf(pc, i, false), self.kname(k)));
+                let k = insn.c();
+                return Some((self.gxf(pc, insn, false), self.kname(k)));
             }
-            OpCode::GetTabUp => {
-                return Some(("upvalue", self.upvalname(i.b())?));
+            OpCode::GetUpval => {
+                return Some(("upvalue", self.upvalname(insn.b())?));
             }
-            // OpCode::LoadK | OpCode::LoadKX => {
-            //     let b = if op == OpCode::LOADK {
-            //         GETARG_Bx(i)
-            //     } else {
-            //         GETARG_Ax(p.code[pc + 1])
-            //     };
-            //     if ttisstring(&p.k[b]) {
-            //         *name = Some(svalue(&p.k[b]));
-            //         return Some("constant");
-            //     }
-            // }
+            OpCode::LoadK | OpCode::LoadKX => {
+                let b = if opcode == OpCode::LoadK {
+                    insn.bx()
+                } else {
+                    insn.ax()
+                };
+                if let Some(s) = self.constants[b].as_lua_string() {
+                    return Some(("constant", s.as_str().ok()?));
+                }
+            }
             OpCode::Self_ => {
-                return Some(("method", self.rkname(pc, &i)));
+                return Some(("method", self.rkname(pc, &insn)));
             }
             _ => {}
         }
@@ -210,10 +202,8 @@ impl<'gc> LuaClosureProto<'gc> {
             .unwrap_or("??")
     }
 
-    fn upvalname(&self, uv: usize) -> Option<&str> {
-        // TString *s = check_exp(uv < p->sizeupvalues, p->upvalues[uv].name);
-        // if (s == NULL) return "?";
-        // else return getstr(s);
+    fn upvalname(&self, _uv: usize) -> Option<&str> {
+        // TODO: fetch name from upvalue
         None
     }
 
@@ -230,10 +220,9 @@ impl<'gc> LuaClosureProto<'gc> {
         } else {
             self.get_objname(pc, t).map(|x| x.1)
         };
-        if name.filter(|&n| n == "_ENV").is_some() {
-            "global"
-        } else {
-            "field"
+        match name {
+            Some("_ENV") => "global",
+            _ => "field",
         }
     }
 
@@ -248,7 +237,7 @@ impl<'gc> LuaClosureProto<'gc> {
      */
     pub fn get_funcline(&self, pc: u32) -> Option<u32> {
         let mut abs = self.get_baseline(pc);
-        let lineinfo = self.lineinfo.as_ref()?;
+        let lineinfo = self.line_info.as_ref()?;
         let mut baseline = abs.line;
         while abs.pc < pc {
             baseline += lineinfo[abs.pc as usize] as u32;
@@ -258,7 +247,7 @@ impl<'gc> LuaClosureProto<'gc> {
     }
 
     pub fn get_baseline(&self, pc: u32) -> AbsLineInfo {
-        self.abslineinfo
+        self.abs_line_info
             .as_ref()
             .and_then(|abs| {
                 let i = match abs.binary_search_by_key(&pc, |i| i.pc) {
@@ -275,7 +264,7 @@ impl<'gc> LuaClosureProto<'gc> {
 
     pub fn get_localname(&self, mut ln: u32, pc: u32) -> Option<&'_ str> {
         let item = self
-            .localvars
+            .local_vars
             .as_ref()?
             .iter()
             .take_while(|l| l.pc.start <= pc)

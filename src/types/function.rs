@@ -52,7 +52,7 @@ pub struct AbsLineInfo {
 }
 
 #[derive(Debug, Clone)]
-pub struct LocalVar<'gc> {
+pub struct LocalVariable<'gc> {
     pub name: LuaString<'gc>,
     pub pc: Range<u32>,
 }
@@ -67,9 +67,9 @@ pub struct LuaClosureProto<'gc> {
     pub upvalues: Box<[UpvalueDescription]>,
     pub source: LuaString<'gc>,
     // Debug information
-    pub abslineinfo: Option<Box<[AbsLineInfo]>>,
-    pub lineinfo: Option<Box<[u8]>>,
-    pub localvars: Option<Box<[LocalVar<'gc>]>>,
+    pub abs_line_info: Option<Box<[AbsLineInfo]>>,
+    pub line_info: Option<Box<[u8]>>,
+    pub local_vars: Option<Box<[LocalVariable<'gc>]>>,
 }
 
 unsafe impl GarbageCollect for LuaClosureProto<'_> {

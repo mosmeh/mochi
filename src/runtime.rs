@@ -309,7 +309,7 @@ impl<'gc> Vm<'gc> {
                 None => {
                     if let Some((kind, name)) = self.funcname_from_call(thread, bottom) {
                         Err(ErrorKind::other(format!(
-                            "attempt to call a nil value ({kind}:{name:?})"
+                            "attempt to call a nil value ({kind} {name:?})"
                         )))
                     } else {
                         Err(ErrorKind::TypeError {

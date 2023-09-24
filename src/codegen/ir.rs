@@ -839,9 +839,9 @@ pub(super) fn lower_ir<'gc>(
         lines_defined: crate::types::LineRange::File,
         source,
         // TODO: generate debug info
-        abslineinfo: None,
-        lineinfo: None,
-        localvars: None,
+        abs_line_info: None,
+        line_info: None,
+        local_vars: None,
     })
 }
 
