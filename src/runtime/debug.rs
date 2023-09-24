@@ -22,7 +22,7 @@ impl<'gc> Vm<'gc> {
         thread: &'a mut LuaThread<'gc>,
         bottom: usize,
     ) -> Option<DebugNameInfo<'a>> {
-        let frame = thread.last_lua_frame()?;
+        let frame = thread.lua_frame_before(bottom)?;
         let closure = thread.stack_closure(frame.bottom)?;
         closure.proto.funcname_from_code(frame.last_pc())
     }
@@ -222,9 +222,9 @@ impl<'gc> LuaClosureProto<'gc> {
      ** Check whether table being indexed by instruction 'i' is the
      ** environment '_ENV'
      */
-    fn gxf(&self, pc: usize, i: Instruction, isup: bool) -> &'static str {
-        let t = i.b(); /* table index */
-        // const char *name;  /* name of indexed variable */
+    fn gxf(&self, pc: usize, insn: Instruction, isup: bool) -> &'static str {
+        let t = insn.b(); /* table index */
+        // name of indexed variable
         let name = if isup {
             /* is an upvalue? */
             self.upvalname(t)

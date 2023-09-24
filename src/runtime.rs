@@ -335,11 +335,11 @@ impl<'gc> LuaThread<'gc> {
         }
     }
 
-    fn last_lua_frame(&self) -> Option<&LuaFrame> {
-        match self.frames.as_slice() {
-            [.., Frame::Lua(frame)] => Some(frame),
-            _ => None,
-        }
+    fn lua_frame_before(&self, bottom: usize) -> Option<&LuaFrame> {
+        self.frames
+            .iter()
+            .rev()
+            .find_map(|f| f.as_lua().filter(|l| l.bottom <= bottom))
     }
 
     fn stack_closure(&self, n: usize) -> Option<&'_ LuaClosure<'gc>> {
