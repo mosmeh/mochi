@@ -139,10 +139,15 @@ pub enum OpMode {
 #[derive(Debug, Clone, Copy)]
 pub struct Modes {
     pub mode: OpMode,
+    /// instruction is an MM instruction (call a metamethod)
     pub mm: bool,
+    /// instruction sets 'L->top' for next instruction (when C == 0)
     pub ot: bool,
+    /// instruction uses 'L->top' set by previous instruction (when B == 0)
     pub it: bool,
+    /// operator is a test (next instruction must be a jump)
     pub test: bool,
+    /// instruction set register A
     pub set_a: bool,
 }
 
