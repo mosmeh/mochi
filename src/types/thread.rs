@@ -66,7 +66,7 @@ impl<'gc> LuaThread<'gc> {
                         let proto = value.as_lua_closure().unwrap().proto;
                         proto
                             .funcname_from_code(frame.last_pc() as _)
-                            .map(|x| x.1.to_string())
+                            .map(|x| x.name.to_string())
                     } else {
                         None
                     };

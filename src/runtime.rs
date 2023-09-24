@@ -23,6 +23,8 @@ use crate::{
 };
 use std::{ops::ControlFlow, path::Path};
 
+use self::debug::DebugNameInfo;
+
 #[derive(Default)]
 pub struct Runtime {
     heap: GcHeap,
@@ -307,7 +309,9 @@ impl<'gc> Vm<'gc> {
                     self.push_frame(thread, bottom)
                 }
                 None => {
-                    if let Some((kind, name)) = self.funcname_from_call(thread, bottom) {
+                    if let Some(DebugNameInfo { kind, name }) =
+                        self.funcname_from_call(thread, bottom)
+                    {
                         Err(ErrorKind::other(format!(
                             "attempt to call a nil value ({kind} {name:?})"
                         )))

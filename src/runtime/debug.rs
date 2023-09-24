@@ -5,12 +5,23 @@ use super::{
     Instruction, LuaFrame, Metamethod, Vm,
 };
 
+pub(crate) struct DebugNameInfo<'a> {
+    pub kind: &'static str,
+    pub name: &'a str,
+}
+
+impl<'a> From<(&'static str, &'a str)> for DebugNameInfo<'a> {
+    fn from((kind, name): (&'static str, &'a str)) -> Self {
+        Self { kind, name }
+    }
+}
+
 impl<'gc> Vm<'gc> {
     pub(crate) fn funcname_from_call<'a>(
         &self,
         thread: &'a mut LuaThread<'gc>,
         bottom: usize,
-    ) -> Option<(&'static str, &'a str)> {
+    ) -> Option<DebugNameInfo<'a>> {
         let frame = thread.last_lua_frame()?;
         let closure = thread.stack_closure(frame.bottom)?;
         closure.proto.funcname_from_code(frame.last_pc())
@@ -18,7 +29,7 @@ impl<'gc> Vm<'gc> {
 }
 
 impl<'gc> LuaClosureProto<'gc> {
-    pub(crate) fn funcname_from_code(&self, pc: usize) -> Option<(&'static str, &'_ str)> {
+    pub(crate) fn funcname_from_code(&self, pc: usize) -> Option<DebugNameInfo<'_>> {
         let insn = self.code.get(pc)?;
         let mut tm = Metamethod::Index;
         match insn.raw_opcode() {
@@ -27,7 +38,7 @@ impl<'gc> LuaClosureProto<'gc> {
             }
             opcode::TFORCALL => {
                 // For iterator
-                return Some(("for iterator", "for iterator"));
+                return Some(("for iterator", "for iterator").into());
             }
             // Other instructions can do calls through metamethods
             opcode::SELF
@@ -54,13 +65,13 @@ impl<'gc> LuaClosureProto<'gc> {
             opcode::CLOSE | opcode::RETURN => tm = Metamethod::Close,
             _ => return None,
         }
-        Some(("metamethod", tm.static_name()))
+        Some(("metamethod", tm.static_name()).into())
     }
 
     // refer to "getobjname" in ldebug.c
-    pub(crate) fn get_objname(&self, lastpc: usize, reg: usize) -> Option<(&'static str, &'_ str)> {
+    pub(crate) fn get_objname(&self, lastpc: usize, reg: usize) -> Option<DebugNameInfo<'_>> {
         if let Some(name) = self.get_localname(reg as u32 + 1, lastpc as _) {
-            return Some(("local", name));
+            return Some(("local", name).into());
         }
 
         let pc = self.find_setreg(lastpc, reg)?;
@@ -75,21 +86,21 @@ impl<'gc> LuaClosureProto<'gc> {
             }
             OpCode::GetTabUp => {
                 let k = insn.c();
-                return Some((self.gxf(pc, insn, true), self.kname(k)));
+                return Some((self.gxf(pc, insn, true), self.kname(k)).into());
             }
             OpCode::GetTable => {
                 let k = insn.c();
-                return Some((self.gxf(pc, insn, false), self.rname(pc, k as _)));
+                return Some((self.gxf(pc, insn, false), self.rname(pc, k as _)).into());
             }
             OpCode::GetI => {
-                return Some(("field", "integer index"));
+                return Some(("field", "integer index").into());
             }
             OpCode::GetField => {
                 let k = insn.c();
-                return Some((self.gxf(pc, insn, false), self.kname(k)));
+                return Some((self.gxf(pc, insn, false), self.kname(k)).into());
             }
             OpCode::GetUpval => {
-                return Some(("upvalue", self.upvalname(insn.b())?));
+                return Some(("upvalue", self.upvalname(insn.b())?).into());
             }
             OpCode::LoadK | OpCode::LoadKX => {
                 let b = if opcode == OpCode::LoadK {
@@ -98,11 +109,11 @@ impl<'gc> LuaClosureProto<'gc> {
                     insn.ax()
                 };
                 if let Some(s) = self.constants[b].as_lua_string() {
-                    return Some(("constant", s.as_str().ok()?));
+                    return Some(("constant", s.as_str().ok()?).into());
                 }
             }
             OpCode::Self_ => {
-                return Some(("method", self.rkname(pc, &insn)));
+                return Some(("method", self.rkname(pc, &insn)).into());
             }
             _ => {}
         }
@@ -198,7 +209,7 @@ impl<'gc> LuaClosureProto<'gc> {
 
     fn rname(&self, pc: usize, c: usize) -> &'_ str {
         self.get_objname(pc, c)
-            .map(|x| if x.0 == "c" { x.1 } else { "?" })
+            .map(|x| if x.kind == "c" { x.name } else { "?" })
             .unwrap_or("??")
     }
 
@@ -218,7 +229,7 @@ impl<'gc> LuaClosureProto<'gc> {
             /* is an upvalue? */
             self.upvalname(t)
         } else {
-            self.get_objname(pc, t).map(|x| x.1)
+            self.get_objname(pc, t).map(|x| x.name)
         };
         match name {
             Some("_ENV") => "global",
@@ -235,7 +246,7 @@ impl<'gc> LuaClosureProto<'gc> {
      ** first gets a base line and from there does the increments until
      ** the desired instruction.
      */
-    pub fn get_funcline(&self, pc: u32) -> Option<u32> {
+    pub(crate) fn get_funcline(&self, pc: u32) -> Option<u32> {
         let mut abs = self.get_baseline(pc);
         let lineinfo = self.line_info.as_ref()?;
         let mut baseline = abs.line;
@@ -246,7 +257,7 @@ impl<'gc> LuaClosureProto<'gc> {
         Some(baseline)
     }
 
-    pub fn get_baseline(&self, pc: u32) -> AbsLineInfo {
+    pub(crate) fn get_baseline(&self, pc: u32) -> AbsLineInfo {
         self.abs_line_info
             .as_ref()
             .and_then(|abs| {
@@ -262,7 +273,7 @@ impl<'gc> LuaClosureProto<'gc> {
             })
     }
 
-    pub fn get_localname(&self, mut ln: u32, pc: u32) -> Option<&'_ str> {
+    pub(crate) fn get_localname(&self, mut ln: u32, pc: u32) -> Option<&'_ str> {
         let item = self
             .local_vars
             .as_ref()?
@@ -278,7 +289,7 @@ impl<'gc> LuaClosureProto<'gc> {
 }
 
 impl LuaFrame {
-    pub fn last_pc(&self) -> usize {
+    pub(crate) fn last_pc(&self) -> usize {
         self.pc.checked_sub(1).unwrap_or(0)
     }
 }
