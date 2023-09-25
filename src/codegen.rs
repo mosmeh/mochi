@@ -39,6 +39,12 @@ pub enum CodegenError {
     #[error("cannot use '...' outside a vararg function")]
     VarArgExpressionOutsideVarArgFunction,
 
+    #[error("break outside loop")]
+    BreakOutsideLoop,
+
+    #[error("mismatched block")]
+    MismatchedBlock,
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -241,10 +247,16 @@ impl Frame<'_> {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+struct LoopInfo {
+    break_label: Option<Label>,
+}
+
 struct CodeGenerator<'gc> {
     gc: &'gc GcContext,
     source: LuaString<'gc>,
     frames: Vec<Frame<'gc>>,
+    loops: Vec<LoopInfo>,
 }
 
 impl<'gc> CodeGenerator<'gc> {
@@ -253,6 +265,7 @@ impl<'gc> CodeGenerator<'gc> {
             gc,
             source,
             frames: Default::default(),
+            loops: Default::default(),
         }
     }
 
@@ -282,6 +295,39 @@ impl<'gc> CodeGenerator<'gc> {
     fn place_label_here(&mut self, label: Label) {
         let current = self.current_frame();
         current.label_ir_addresses[label.0] = Some(IrAddress(current.ir_code.len()));
+    }
+
+    fn break_label(&mut self) -> Result<Label, CodegenError> {
+        if let Some(label) = self
+            .loops
+            .last_mut()
+            .ok_or(CodegenError::BreakOutsideLoop)?
+            .break_label
+            .clone()
+        {
+            Ok(label)
+        } else {
+            let label = self.declare_label();
+            self.loops
+                .last_mut()
+                .expect("loops")
+                .break_label
+                .replace(label);
+            Ok(label)
+        }
+    }
+
+    fn push_loop(&mut self) {
+        self.loops.push(Default::default());
+    }
+
+    fn pop_loop(&mut self) -> Result<(), CodegenError> {
+        self.loops
+            .pop()
+            .ok_or(CodegenError::MismatchedBlock)?
+            .break_label
+            .map(|l| self.place_label_here(l));
+        Ok(())
     }
 
     fn resolve_name(&mut self, name: LuaString<'gc>) -> Result<LazyLValue, CodegenError> {

@@ -6,8 +6,8 @@ mod user_data;
 
 pub(crate) use function::Upvalue;
 pub use function::{
-    LineRange, LuaClosure, LuaClosureProto, NativeClosure, NativeFunction, NativeFunctionPtr,
-    RegisterIndex, UpvalueDescription, UpvalueIndex,
+    AbsLineInfo, LineRange, LocalVariable, LuaClosure, LuaClosureProto, NativeClosure,
+    NativeFunction, NativeFunctionPtr, RegisterIndex, UpvalueDescription, UpvalueIndex,
 };
 pub use string::LuaString;
 pub use table::{Table, TableError};
@@ -338,6 +338,14 @@ impl<'gc> Value<'gc> {
     pub fn borrow_as_table_mut(&self, gc: &'gc GcContext) -> Option<RefMut<Table<'gc>>> {
         if let Self::Table(x) = self {
             Some(x.borrow_mut(gc))
+        } else {
+            None
+        }
+    }
+
+    pub fn as_lua_string(&self) -> Option<&LuaString<'gc>> {
+        if let Self::String(x) = self {
+            Some(x)
         } else {
             None
         }

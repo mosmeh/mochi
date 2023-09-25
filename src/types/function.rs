@@ -3,7 +3,11 @@ use crate::{
     runtime::{Action, ErrorKind, Instruction, Vm},
     types::{LuaString, LuaThread, Value},
 };
-use std::{fmt::Debug, hash::Hash, ops::RangeInclusive};
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    ops::{Range, RangeInclusive},
+};
 
 pub type NativeFunctionPtr =
     for<'gc> fn(&'gc GcContext, &mut Vm<'gc>, Vec<Value<'gc>>) -> Result<Action<'gc>, ErrorKind>;
@@ -41,6 +45,18 @@ impl NativeFunction {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct AbsLineInfo {
+    pub pc: u32,
+    pub line: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalVariable<'gc> {
+    pub name: LuaString<'gc>,
+    pub pc: Range<u32>,
+}
+
 #[derive(Debug, Clone)]
 pub struct LuaClosureProto<'gc> {
     pub max_stack_size: u8,
@@ -50,6 +66,10 @@ pub struct LuaClosureProto<'gc> {
     pub protos: Box<[Gc<'gc, LuaClosureProto<'gc>>]>,
     pub upvalues: Box<[UpvalueDescription]>,
     pub source: LuaString<'gc>,
+    // Debug information
+    pub abs_line_info: Option<Box<[AbsLineInfo]>>,
+    pub line_info: Option<Box<[u8]>>,
+    pub local_vars: Option<Box<[LocalVariable<'gc>]>>,
 }
 
 unsafe impl GarbageCollect for LuaClosureProto<'_> {
@@ -64,6 +84,15 @@ unsafe impl GarbageCollect for LuaClosureProto<'_> {
 pub enum LineRange {
     File,
     Lines(RangeInclusive<u32>),
+}
+
+impl LineRange {
+    pub fn baseline(&self) -> u32 {
+        match self {
+            LineRange::File => 1,
+            LineRange::Lines(r) => *r.start(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -218,7 +218,7 @@ impl<'gc> CodeGenerator<'gc> {
             Statement::LocalFunction(s) => self.codegen_local_func_statement(s)?,
             Statement::LocalVariable(s) => self.codegen_local_variable_statement(s)?,
             Statement::Label(_) => todo!("label"),
-            Statement::Break => todo!("break"),
+            Statement::Break => self.codegen_break_statement()?,
             Statement::Goto(_) => todo!("goto"),
             Statement::FunctionCall(s) => self.codegen_func_call_statement(s)?,
             Statement::Assignment(s) => self.codegen_assignment_statement(s)?,
@@ -233,6 +233,12 @@ impl<'gc> CodeGenerator<'gc> {
             .map(|i| i + 1)
             .unwrap_or_default();
 
+        Ok(())
+    }
+
+    fn codegen_break_statement(&mut self) -> Result<(), CodegenError> {
+        let label = self.break_label()?;
+        self.emit(IrInstruction::Jump { target: label });
         Ok(())
     }
 
@@ -278,7 +284,16 @@ impl<'gc> CodeGenerator<'gc> {
     ) -> Result<(), CodegenError> {
         let start_label = self.declare_label();
         self.place_label_here(start_label);
-        self.emit_test_then_block_else_fallthrough(statement.condition, statement.body, start_label)
+
+        self.push_loop();
+        let result = self.emit_test_then_block_else_fallthrough(
+            statement.condition,
+            statement.body,
+            start_label,
+        );
+        self.pop_loop()?;
+
+        result
     }
 
     fn codegen_for_statement(&mut self, statement: ForStatement<'gc>) -> Result<(), CodegenError> {
@@ -368,6 +383,8 @@ impl<'gc> CodeGenerator<'gc> {
 
         let start_label = self.declare_label();
         self.place_label_here(start_label);
+
+        self.push_loop();
         self.codegen_block(body)?;
         self.place_label_here(end_label);
 
@@ -380,6 +397,7 @@ impl<'gc> CodeGenerator<'gc> {
             next_target: start_label,
             is_generic,
         });
+        self.pop_loop()?;
 
         self.current_frame()
             .local_variable_stack
@@ -395,7 +413,10 @@ impl<'gc> CodeGenerator<'gc> {
         let start_label = self.declare_label();
         self.place_label_here(start_label);
 
-        self.codegen_block(statement.body)?;
+        self.push_loop();
+        let result = self.codegen_block(statement.body);
+        self.pop_loop()?;
+        result?;
 
         let condition = self.evaluate_expr(statement.condition)?;
         match condition {

@@ -2,6 +2,7 @@ pub(crate) mod instruction;
 
 mod action;
 mod bytecode_vm;
+mod debug;
 mod error;
 mod frame;
 mod metamethod;
@@ -21,6 +22,8 @@ use crate::{
     Error, LuaClosure,
 };
 use std::{ops::ControlFlow, path::Path};
+
+use self::debug::DebugNameInfo;
 
 #[derive(Default)]
 pub struct Runtime {
@@ -305,10 +308,20 @@ impl<'gc> Vm<'gc> {
                     thread.stack.insert(bottom, metatable);
                     self.push_frame(thread, bottom)
                 }
-                None => Err(ErrorKind::TypeError {
-                    operation: Operation::Call,
-                    ty: value.ty(),
-                }),
+                None => {
+                    if let Some(DebugNameInfo { kind, name }) =
+                        self.funcname_from_call(thread, bottom)
+                    {
+                        Err(ErrorKind::other(format!(
+                            "attempt to call a nil value ({kind} {name:?})"
+                        )))
+                    } else {
+                        Err(ErrorKind::TypeError {
+                            operation: Operation::Call,
+                            ty: value.ty(),
+                        })
+                    }
+                }
             },
         }
     }
@@ -320,6 +333,17 @@ impl<'gc> LuaThread<'gc> {
             [.., Frame::Lua(frame)] => frame.pc = pc,
             _ => unreachable!(),
         }
+    }
+
+    fn lua_frame_before(&self, bottom: usize) -> Option<&LuaFrame> {
+        self.frames
+            .iter()
+            .rev()
+            .find_map(|f| f.as_lua().filter(|l| l.bottom <= bottom))
+    }
+
+    fn stack_closure(&self, n: usize) -> Option<&'_ LuaClosure<'gc>> {
+        self.stack.get(n).and_then(|v| v.as_lua_closure())
     }
 }
 

@@ -2,8 +2,8 @@ use crate::{
     gc::GcContext,
     runtime::Instruction,
     types::{
-        Integer, LineRange, LuaClosureProto, LuaString, Number, RegisterIndex, UpvalueDescription,
-        UpvalueIndex, Value,
+        AbsLineInfo, Integer, LineRange, LocalVariable, LuaClosureProto, LuaString, Number,
+        RegisterIndex, UpvalueDescription, UpvalueIndex, Value,
     },
 };
 use bstr::B;
@@ -94,19 +94,26 @@ fn load_function<'gc, R: Read>(
     let mut line_info = vec![0u8; n as usize];
     reader.read_exact(&mut line_info)?;
 
-    // AbsLineInfo
+    // Absolute LineInfo
     let n = load_int(reader)?;
+    let mut abs_line_info = Vec::with_capacity(n as _);
     for _ in 0..n {
-        load_int(reader)?; // pc
-        load_int(reader)?; // line
+        let pc = load_int(reader)?; // pc
+        let line = load_int(reader)?; // line
+        abs_line_info.push(AbsLineInfo { pc, line });
     }
 
-    // LocVar
+    // Local varialbes
     let n = load_int(reader)?;
+    let mut local_variables = Vec::with_capacity(n as _);
     for _ in 0..n {
-        load_nullable_str(gc, reader)?; // varname
-        load_int(reader)?; // startpc
-        load_int(reader)?; // endpc
+        let name = load_str(gc, reader)?; // varname
+        let start = load_int(reader)?; // startpc
+        let end = load_int(reader)?; // endpc
+        local_variables.push(LocalVariable {
+            name,
+            pc: start..end,
+        })
     }
 
     // Upvalue
@@ -127,6 +134,21 @@ fn load_function<'gc, R: Read>(
         protos: protos.into_iter().map(|proto| gc.allocate(proto)).collect(),
         upvalues: upvalues.into(),
         source,
+        abs_line_info: if abs_line_info.is_empty() {
+            None
+        } else {
+            Some(abs_line_info.into_boxed_slice())
+        },
+        line_info: if line_info.is_empty() {
+            None
+        } else {
+            Some(line_info.into_boxed_slice())
+        },
+        local_vars: if local_variables.is_empty() {
+            None
+        } else {
+            Some(local_variables.into_boxed_slice())
+        },
     })
 }
 

@@ -22,6 +22,15 @@ pub(crate) enum Frame<'gc> {
     MutateGcContinuation(ContinuationFrame<'gc, ()>),
 }
 
+impl<'gc> Frame<'gc> {
+    pub fn as_lua(&self) -> Option<&LuaFrame> {
+        match self {
+            Self::Lua(f) => Some(f),
+            _ => None,
+        }
+    }
+}
+
 unsafe impl GarbageCollect for Frame<'_> {
     fn trace(&self, tracer: &mut Tracer) {
         match self {

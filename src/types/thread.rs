@@ -46,17 +46,33 @@ impl<'gc> LuaThread<'gc> {
     pub fn traceback(&self) -> Vec<TracebackFrame> {
         self.frames
             .iter()
+            .enumerate()
             .rev()
-            .map(|frame| match frame {
+            .map(|(i, frame)| match frame {
                 Frame::Lua(frame) => {
                     let value = self.stack[frame.bottom];
                     let proto = value.as_lua_closure().unwrap().proto;
                     TracebackFrame::Lua {
                         source: String::from_utf8_lossy(&proto.source).to_string(),
+                        line: proto.get_currentline(frame),
                         lines_defined: proto.lines_defined.clone(),
                     }
                 }
-                _ => TracebackFrame::Native,
+                Frame::Native { .. } => {
+                    let func = if let Some(frame) =
+                        self.frames[..i].iter().rev().find_map(Frame::as_lua)
+                    {
+                        let value = self.stack[frame.bottom];
+                        let proto = value.as_lua_closure().unwrap().proto;
+                        proto
+                            .funcname_from_code(frame.last_pc() as _)
+                            .map(|x| x.name.to_string())
+                    } else {
+                        None
+                    };
+                    TracebackFrame::Native { func }
+                }
+                _ => TracebackFrame::Native { func: None },
             })
             .collect()
     }
@@ -88,9 +104,12 @@ impl Default for ThreadStatus {
 pub enum TracebackFrame {
     Lua {
         source: String,
+        line: Option<u32>,
         lines_defined: LineRange,
     },
-    Native,
+    Native {
+        func: Option<String>,
+    },
 }
 
 impl Display for TracebackFrame {
@@ -98,17 +117,24 @@ impl Display for TracebackFrame {
         match self {
             Self::Lua {
                 source,
+                line,
                 lines_defined,
             } => {
                 let source = crate::chunk_id_from_source(source);
+                let line = line.map(|n| n.to_string()).unwrap_or_else(|| "?".into());
                 match &lines_defined {
-                    LineRange::File => write!(f, "{source}: in main chunk"),
+                    LineRange::File => write!(f, "{source}:{line}: in main chunk"),
                     LineRange::Lines(range) => {
-                        write!(f, "{source}: in function <{source}:{}>", range.start())
+                        write!(
+                            f,
+                            "{source}:{line}: in function <{source}:{}>",
+                            range.start()
+                        )
                     }
                 }
             }
-            Self::Native => f.write_str("[C]: in function"),
+            Self::Native { func: Some(fname) } => write!(f, "[C]: in function '{fname}'"),
+            Self::Native { func: None } => f.write_str("[C]: in function"),
         }
     }
 }
