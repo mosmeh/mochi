@@ -45,7 +45,7 @@ impl NativeFunction {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct AbsLineInfo {
     pub pc: u32,
     pub line: u32,
@@ -87,7 +87,7 @@ pub enum LineRange {
 }
 
 impl LineRange {
-    pub fn baseline(&self) -> u32 {
+    pub fn base_line(&self) -> u32 {
         match self {
             LineRange::File => 1,
             LineRange::Lines(r) => *r.start(),

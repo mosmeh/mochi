@@ -18,16 +18,16 @@ macro_rules! metamethods {
         impl Metamethod {
             pub const COUNT: usize = crate::count!($($variant)*);
 
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)*
+                }
+            }
+
             pub fn allocate_names(gc: &GcContext) -> [LuaString; Self::COUNT] {
                 [
                     $(gc.allocate_string(B($name)),)*
                 ]
-            }
-
-            pub fn static_name(&self) -> &'static str {
-                match self {
-                    $(Self::$variant => $name,)*
-                }
             }
         }
 

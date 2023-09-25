@@ -237,8 +237,22 @@ impl<'gc> CodeGenerator<'gc> {
     }
 
     fn codegen_break_statement(&mut self) -> Result<(), CodegenError> {
-        let label = self.break_label()?;
-        self.emit(IrInstruction::Jump { target: label });
+        let break_label = self
+            .loops
+            .last_mut()
+            .ok_or(CodegenError::BreakOutsideLoop)?
+            .break_label;
+        let break_label = match break_label {
+            Some(label) => label,
+            None => {
+                let label = self.declare_label();
+                self.loops.last_mut().unwrap().break_label.replace(label);
+                label
+            }
+        };
+        self.emit(IrInstruction::Jump {
+            target: break_label,
+        });
         Ok(())
     }
 

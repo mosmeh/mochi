@@ -94,18 +94,18 @@ fn load_function<'gc, R: Read>(
     let mut line_info = vec![0u8; n as usize];
     reader.read_exact(&mut line_info)?;
 
-    // Absolute LineInfo
+    // AbsLineInfo
     let n = load_int(reader)?;
-    let mut abs_line_info = Vec::with_capacity(n as _);
+    let mut abs_line_info = Vec::with_capacity(n as usize);
     for _ in 0..n {
         let pc = load_int(reader)?; // pc
         let line = load_int(reader)?; // line
         abs_line_info.push(AbsLineInfo { pc, line });
     }
 
-    // Local varialbes
+    // LocVar
     let n = load_int(reader)?;
-    let mut local_variables = Vec::with_capacity(n as _);
+    let mut local_variables = Vec::with_capacity(n as usize);
     for _ in 0..n {
         let name = load_str(gc, reader)?; // varname
         let start = load_int(reader)?; // startpc

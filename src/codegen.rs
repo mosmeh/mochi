@@ -42,9 +42,6 @@ pub enum CodegenError {
     #[error("break outside loop")]
     BreakOutsideLoop,
 
-    #[error("mismatched block")]
-    MismatchedBlock,
-
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -247,8 +244,8 @@ impl Frame<'_> {
     }
 }
 
-#[derive(Debug, Default, Clone)]
-struct LoopInfo {
+#[derive(Default)]
+struct Loop {
     break_label: Option<Label>,
 }
 
@@ -256,7 +253,7 @@ struct CodeGenerator<'gc> {
     gc: &'gc GcContext,
     source: LuaString<'gc>,
     frames: Vec<Frame<'gc>>,
-    loops: Vec<LoopInfo>,
+    loops: Vec<Loop>,
 }
 
 impl<'gc> CodeGenerator<'gc> {
@@ -297,37 +294,13 @@ impl<'gc> CodeGenerator<'gc> {
         current.label_ir_addresses[label.0] = Some(IrAddress(current.ir_code.len()));
     }
 
-    fn break_label(&mut self) -> Result<Label, CodegenError> {
-        if let Some(label) = self
-            .loops
-            .last_mut()
-            .ok_or(CodegenError::BreakOutsideLoop)?
-            .break_label
-        {
-            Ok(label)
-        } else {
-            let label = self.declare_label();
-            self.loops
-                .last_mut()
-                .expect("loops")
-                .break_label
-                .replace(label);
-            Ok(label)
-        }
-    }
-
     fn push_loop(&mut self) {
         self.loops.push(Default::default());
     }
 
     fn pop_loop(&mut self) -> Result<(), CodegenError> {
-        if let Some(l) = self
-            .loops
-            .pop()
-            .ok_or(CodegenError::MismatchedBlock)?
-            .break_label
-        {
-            self.place_label_here(l)
+        if let Some(label) = self.loops.pop().unwrap().break_label {
+            self.place_label_here(label)
         }
         Ok(())
     }

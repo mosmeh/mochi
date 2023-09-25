@@ -54,22 +54,22 @@ impl<'gc> LuaThread<'gc> {
                     let proto = value.as_lua_closure().unwrap().proto;
                     TracebackFrame::Lua {
                         source: String::from_utf8_lossy(&proto.source).to_string(),
-                        line: proto.get_currentline(frame),
+                        line: proto.current_line(frame),
                         lines_defined: proto.lines_defined.clone(),
                     }
                 }
                 Frame::Native { .. } => {
-                    let func = if let Some(frame) =
-                        self.frames[..i].iter().rev().find_map(Frame::as_lua)
-                    {
-                        let value = self.stack[frame.bottom];
-                        let proto = value.as_lua_closure().unwrap().proto;
-                        proto
-                            .funcname_from_code(frame.last_pc() as _)
-                            .map(|x| x.name.to_string())
-                    } else {
-                        None
-                    };
+                    let func = self.frames[..i]
+                        .iter()
+                        .rev()
+                        .find_map(Frame::as_lua)
+                        .and_then(|frame| {
+                            let value = self.stack[frame.bottom];
+                            let proto = value.as_lua_closure().unwrap().proto;
+                            proto
+                                .func_name_from_pc(frame.last_pc())
+                                .map(|name| name.name.to_string())
+                        });
                     TracebackFrame::Native { func }
                 }
                 _ => TracebackFrame::Native { func: None },
@@ -133,7 +133,7 @@ impl Display for TracebackFrame {
                     }
                 }
             }
-            Self::Native { func: Some(fname) } => write!(f, "[C]: in function '{fname}'"),
+            Self::Native { func: Some(name) } => write!(f, "[C]: in function '{name}'"),
             Self::Native { func: None } => f.write_str("[C]: in function"),
         }
     }

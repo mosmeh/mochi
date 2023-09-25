@@ -1,101 +1,110 @@
+use super::{opcode::OpCode, Instruction, LuaFrame, Metamethod, Vm};
 use crate::types::{AbsLineInfo, LuaClosureProto, LuaThread, Value};
 
-use super::{
-    opcode::{self, OpCode},
-    Instruction, LuaFrame, Metamethod, Vm,
-};
-
-pub(crate) struct DebugNameInfo<'a> {
+pub(crate) struct Name<'a> {
     pub kind: &'static str,
     pub name: &'a str,
 }
 
-impl<'a> From<(&'static str, &'a str)> for DebugNameInfo<'a> {
+impl<'a> From<(&'static str, &'a str)> for Name<'a> {
     fn from((kind, name): (&'static str, &'a str)) -> Self {
         Self { kind, name }
     }
 }
 
 impl<'gc> Vm<'gc> {
-    pub(crate) fn funcname_from_call<'a>(
+    pub(crate) fn func_name_from_call<'a>(
         &self,
         thread: &'a LuaThread<'gc>,
         bottom: usize,
-    ) -> Option<DebugNameInfo<'a>> {
-        let frame = thread.lua_frame_before(bottom)?;
-        let closure = thread.stack_closure(frame.bottom)?;
-        closure.proto.funcname_from_code(frame.last_pc())
+    ) -> Option<Name<'a>> {
+        let frame = thread
+            .frames
+            .iter()
+            .rev()
+            .find_map(|f| f.as_lua().filter(|l| l.bottom <= bottom))?;
+        let closure = thread
+            .stack
+            .get(frame.bottom)
+            .and_then(|v| v.as_lua_closure())?;
+        closure.proto.func_name_from_pc(frame.last_pc())
     }
 }
 
 impl<'gc> LuaClosureProto<'gc> {
-    pub(crate) fn funcname_from_code(&self, pc: usize) -> Option<DebugNameInfo<'_>> {
+    pub(crate) fn func_name_from_pc(&self, pc: usize) -> Option<Name<'_>> {
         let insn = self.code.get(pc)?;
-        let tm = match insn.raw_opcode() {
-            opcode::CALL | opcode::TAILCALL => {
-                return self.get_objname(pc, insn.a()); // Get function name
+        let metamethod = match insn.opcode() {
+            OpCode::Call | OpCode::TailCall => {
+                return self.obj_name(pc, insn.a()); // Get function name
             }
-            opcode::TFORCALL => {
+            OpCode::TForCall => {
                 // For iterator
                 return Some(("for iterator", "for iterator").into());
             }
             // Other instructions can do calls through metamethods
-            opcode::SELF
-            | opcode::GETTABUP
-            | opcode::GETTABLE
-            | opcode::GETI
-            | opcode::GETFIELD => Metamethod::Index,
-            opcode::SETTABUP | opcode::SETTABLE | opcode::SETI | opcode::SETFIELD => {
+            OpCode::Self_
+            | OpCode::GetTabUp
+            | OpCode::GetTable
+            | OpCode::GetI
+            | OpCode::GetField => Metamethod::Index,
+            OpCode::SetTabUp | OpCode::SetTable | OpCode::SetI | OpCode::SetField => {
                 Metamethod::NewIndex
             }
-            opcode::MMBIN | opcode::MMBINI | opcode::MMBINK => Metamethod::from(insn.c()),
-            opcode::UNM => Metamethod::Unm,
-            opcode::BNOT => Metamethod::BNot,
-            opcode::LEN => Metamethod::Len,
-            opcode::CONCAT => Metamethod::Concat,
-            opcode::EQ => Metamethod::Eq,
+            OpCode::MmBin | OpCode::MmBinI | OpCode::MmBinK => Metamethod::from(insn.c()),
+            OpCode::Unm => Metamethod::Unm,
+            OpCode::BNot => Metamethod::BNot,
+            OpCode::Len => Metamethod::Len,
+            OpCode::Concat => Metamethod::Concat,
+            OpCode::Eq => Metamethod::Eq,
             // No cases for OP_EQI and OP_EQK, as they don't call metamethods
-            opcode::LT | opcode::LTI | opcode::GTI => Metamethod::Lt,
-            opcode::LE | opcode::LEI | opcode::GEI => Metamethod::Le,
-            opcode::CLOSE | opcode::RETURN => Metamethod::Close,
+            OpCode::Lt | OpCode::LtI | OpCode::GtI => Metamethod::Lt,
+            OpCode::Le | OpCode::LeI | OpCode::GeI => Metamethod::Le,
+            OpCode::Close | OpCode::Return => Metamethod::Close,
             _ => return None,
         };
-        Some(("metamethod", tm.static_name()).into())
+        Some(("metamethod", metamethod.name()).into())
     }
 
     // refer to "getobjname" in ldebug.c
-    pub(crate) fn get_objname(&self, lastpc: usize, reg: usize) -> Option<DebugNameInfo<'_>> {
-        if let Some(name) = self.get_localname(reg as u32 + 1, lastpc as _) {
+    fn obj_name(&self, last_pc: usize, register: usize) -> Option<Name<'_>> {
+        if let Some(name) = self.local_name(register as u32 + 1, last_pc as u32) {
             return Some(("local", name).into());
         }
 
-        let pc = self.find_setreg(lastpc, reg)?;
+        let pc = self.find_register_setter(last_pc, register)?;
         let insn = *self.code.get(pc)?;
         let opcode = insn.opcode();
         match opcode {
             OpCode::Move => {
                 let b = insn.b();
                 if b < insn.a() {
-                    return self.get_objname(pc, b);
+                    return self.obj_name(pc, b);
                 }
             }
             OpCode::GetTabUp => {
                 let k = insn.c();
-                return Some((self.gxf(pc, insn, true), self.kname(k)).into());
+                return Some((self.kind_from_insn(pc, insn, true), self.constant_name(k)).into());
             }
             OpCode::GetTable => {
                 let k = insn.c();
-                return Some((self.gxf(pc, insn, false), self.rname(pc, k as _)).into());
+                return Some(
+                    (
+                        self.kind_from_insn(pc, insn, false),
+                        self.register_name(pc, k as usize),
+                    )
+                        .into(),
+                );
             }
             OpCode::GetI => {
                 return Some(("field", "integer index").into());
             }
             OpCode::GetField => {
                 let k = insn.c();
-                return Some((self.gxf(pc, insn, false), self.kname(k)).into());
+                return Some((self.kind_from_insn(pc, insn, false), self.constant_name(k)).into());
             }
             OpCode::GetUpval => {
-                return Some(("upvalue", self.upvalname(insn.b())?).into());
+                return Some(("upvalue", self.upvalue_name(insn.b())?).into());
             }
             OpCode::LoadK | OpCode::LoadKX => {
                 let b = if opcode == OpCode::LoadK {
@@ -108,7 +117,7 @@ impl<'gc> LuaClosureProto<'gc> {
                 }
             }
             OpCode::Self_ => {
-                return Some(("method", self.rkname(pc, &insn)).into());
+                return Some(("method", self.rk_name(pc, insn)).into());
             }
             _ => {}
         }
@@ -116,85 +125,85 @@ impl<'gc> LuaClosureProto<'gc> {
     }
 
     // refer to "findsetreg" in ldebug.c
-    /*
-     ** Try to find last instruction before 'lastpc' that modified register 'reg'.
-     */
-    pub(crate) fn find_setreg(&self, mut lastpc: usize, reg: usize) -> Option<usize> {
-        if self.code.get(lastpc)?.opcode().modes().mm {
+    // Try to find last instruction before `last_pc` that modified `register`.
+    fn find_register_setter(&self, mut last_pc: usize, register: usize) -> Option<usize> {
+        if self
+            .code
+            .get(last_pc)?
+            .opcode()
+            .properties()
+            .calls_metamethod
+        {
             // Previous instruction was not actually executed.
-            lastpc = lastpc.checked_sub(1)?;
+            last_pc = last_pc.checked_sub(1)?;
         }
 
-        let mut setreg = None; // Keep last instruction that changed 'reg'.
-        let mut jmptarget = 0; // Any code before this address is conditional.
+        let mut register_setter = None; // Keep last instruction that changed `register`.
+        let mut jump_target = 0; // Any code before this address is conditional.
         let mut pc = 0;
-        while pc < lastpc {
-            let i = self.code.get(pc)?;
-            let op: OpCode = i.opcode();
-            let a = i.a();
+        while pc < last_pc {
+            let insn = self.code.get(pc)?;
+            let op: OpCode = insn.opcode();
+            let a = insn.a();
 
-            let change; // True if current instruction changed 'reg'.
-            match op {
+            // true if current instruction changed `register`.
+            let is_changed = match op {
                 OpCode::LoadNil => {
                     // Set registers from 'a' to 'a+b'.
-                    let b = i.b();
-                    change = a <= reg && reg <= a + b;
+                    let b = insn.b();
+                    a <= register && register <= a + b
                 }
                 OpCode::TForCall => {
                     // Affect all regs above its base.
-                    change = reg >= a + 2;
+                    register >= a + 2
                 }
                 OpCode::Call | OpCode::TailCall => {
                     // Affect all registers above base.
-                    change = reg >= a;
+                    register >= a
                 }
                 OpCode::Jmp => {
-                    // Doesn't change registers, but changes 'jmptarget'.
-                    let b = i.sj();
+                    // Doesn't change registers, but changes `jump_target`.
+                    let b = insn.sj();
                     let dest = (pc as i32 + 1 + b) as usize;
 
                     // Jump does not skip 'lastpc' and is larger than the current one?
-                    if dest <= lastpc && dest > jmptarget {
-                        jmptarget = dest; // Update 'jmptarget'.
+                    if dest <= last_pc && dest > jump_target {
+                        jump_target = dest;
                     }
-                    change = false;
+                    false
                 }
                 _ => {
                     // Any instruction that sets A.
-                    change = op.modes().set_a && reg == a;
+                    op.properties().sets_a && register == a
                 }
-            }
+            };
 
-            if change {
-                setreg = filterpc(pc, jmptarget);
+            if is_changed {
+                // is code conditional (inside a jump)?
+                register_setter = if pc < jump_target {
+                    None // cannot know who sets that register
+                } else {
+                    // current position sets that register
+                    Some(pc)
+                };
             }
 
             pc += 1;
         }
 
-        fn filterpc(pc: usize, jmptarget: usize) -> Option<usize> {
-            /* is code conditional (inside a jump)? */
-            if pc < jmptarget {
-                None /* cannot know who sets that register */
-            } else {
-                /* current position sets that register */
-                Some(pc)
-            }
-        }
-
-        setreg
+        register_setter
     }
 
-    fn rkname(&self, pc: usize, i: &Instruction) -> &'_ str {
-        let c = i.c();
-        if i.k() {
-            self.kname(c)
+    fn rk_name(&self, pc: usize, insn: Instruction) -> &'_ str {
+        let c = insn.c();
+        if insn.k() {
+            self.constant_name(c)
         } else {
-            self.rname(pc, c as _)
+            self.register_name(pc, c as usize)
         }
     }
 
-    fn kname(&self, k: u8) -> &'_ str {
+    fn constant_name(&self, k: u8) -> &'_ str {
         self.constants
             .get(k as usize)
             .and_then(Value::as_lua_string)
@@ -202,29 +211,25 @@ impl<'gc> LuaClosureProto<'gc> {
             .unwrap_or("?")
     }
 
-    fn rname(&self, pc: usize, c: usize) -> &'_ str {
-        self.get_objname(pc, c)
+    fn register_name(&self, pc: usize, register: usize) -> &'_ str {
+        self.obj_name(pc, register)
             .map(|x| if x.kind == "c" { x.name } else { "?" })
             .unwrap_or("??")
     }
 
-    fn upvalname(&self, _uv: usize) -> Option<&str> {
+    fn upvalue_name(&self, _upvalue: usize) -> Option<&str> {
         // TODO: fetch name from upvalue
         None
     }
 
-    /*
-     ** Check whether table being indexed by instruction 'i' is the
-     ** environment '_ENV'
-     */
-    fn gxf(&self, pc: usize, insn: Instruction, isup: bool) -> &'static str {
-        let t = insn.b(); /* table index */
-        // name of indexed variable
-        let name = if isup {
-            /* is an upvalue? */
-            self.upvalname(t)
+    fn kind_from_insn(&self, pc: usize, insn: Instruction, is_upvalue: bool) -> &'static str {
+        // Check whether table being indexed by instruction `insn` is the
+        // environment '_ENV'
+        let table_register = insn.b(); // table index
+        let name = if is_upvalue {
+            self.upvalue_name(table_register)
         } else {
-            self.get_objname(pc, t).map(|x| x.name)
+            self.obj_name(pc, table_register).map(|x| x.name)
         };
         match name {
             Some("_ENV") => "global",
@@ -232,27 +237,25 @@ impl<'gc> LuaClosureProto<'gc> {
         }
     }
 
-    pub(crate) fn get_currentline(&self, frame: &LuaFrame) -> Option<u32> {
-        self.get_funcline(frame.last_pc() as _)
+    pub(crate) fn current_line(&self, frame: &LuaFrame) -> Option<u32> {
+        self.func_line(frame.last_pc() as u32)
     }
 
-    /*
-     ** Get the line corresponding to instruction 'pc' in function 'f';
-     ** first gets a base line and from there does the increments until
-     ** the desired instruction.
-     */
-    pub(crate) fn get_funcline(&self, pc: u32) -> Option<u32> {
-        let mut abs = self.get_baseline(pc);
-        let lineinfo = self.line_info.as_ref()?;
-        let mut baseline = abs.line;
+    /// Get the line corresponding to instruction `pc` in the function.
+    pub(crate) fn func_line(&self, pc: u32) -> Option<u32> {
+        // first gets a base line and from there does the increments until
+        // the desired instruction.
+        let mut abs = self.base_line(pc);
+        let line_info = self.line_info.as_ref()?;
+        let mut base_line = abs.line;
         while abs.pc < pc {
-            baseline += lineinfo[abs.pc as usize] as u32;
+            base_line += line_info[abs.pc as usize] as u32;
             abs.pc += 1;
         }
-        Some(baseline)
+        Some(base_line)
     }
 
-    pub(crate) fn get_baseline(&self, pc: u32) -> AbsLineInfo {
+    fn base_line(&self, pc: u32) -> AbsLineInfo {
         self.abs_line_info
             .as_ref()
             .and_then(|abs| {
@@ -260,31 +263,30 @@ impl<'gc> LuaClosureProto<'gc> {
                     Ok(i) => i,
                     Err(i) => i.saturating_sub(1),
                 };
-                abs.get(i).filter(|abs| abs.pc <= pc).copied()
+                abs.get(i).filter(|abs| abs.pc <= pc).cloned()
             })
             .unwrap_or_else(|| AbsLineInfo {
                 pc: 0,
-                line: self.lines_defined.baseline(),
+                line: self.lines_defined.base_line(),
             })
     }
 
-    pub(crate) fn get_localname(&self, mut ln: u32, pc: u32) -> Option<&'_ str> {
-        let item = self
-            .local_vars
+    fn local_name(&self, register: u32, pc: u32) -> Option<&'_ str> {
+        if register == 0 {
+            return None;
+        }
+        self.local_vars
             .as_ref()?
             .iter()
             .take_while(|l| l.pc.start <= pc)
             .filter(|l| pc < l.pc.end)
-            .find(|_| {
-                ln = ln.saturating_sub(1);
-                ln == 0
-            })?;
-        item.name.as_str().ok()
+            .nth(register as usize - 1)
+            .and_then(|var| var.name.as_str().ok())
     }
 }
 
 impl LuaFrame {
-    pub(crate) fn last_pc(&self) -> usize {
+    pub fn last_pc(&self) -> usize {
         self.pc.saturating_sub(1)
     }
 }
