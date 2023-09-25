@@ -19,7 +19,7 @@ impl<'a> From<(&'static str, &'a str)> for DebugNameInfo<'a> {
 impl<'gc> Vm<'gc> {
     pub(crate) fn funcname_from_call<'a>(
         &self,
-        thread: &'a mut LuaThread<'gc>,
+        thread: &'a LuaThread<'gc>,
         bottom: usize,
     ) -> Option<DebugNameInfo<'a>> {
         let frame = thread.lua_frame_before(bottom)?;
@@ -31,8 +31,7 @@ impl<'gc> Vm<'gc> {
 impl<'gc> LuaClosureProto<'gc> {
     pub(crate) fn funcname_from_code(&self, pc: usize) -> Option<DebugNameInfo<'_>> {
         let insn = self.code.get(pc)?;
-        let mut tm = Metamethod::Index;
-        match insn.raw_opcode() {
+        let tm = match insn.raw_opcode() {
             opcode::CALL | opcode::TAILCALL => {
                 return self.get_objname(pc, insn.a()); // Get function name
             }
@@ -45,26 +44,22 @@ impl<'gc> LuaClosureProto<'gc> {
             | opcode::GETTABUP
             | opcode::GETTABLE
             | opcode::GETI
-            | opcode::GETFIELD => {
-                tm = Metamethod::Index;
-            }
+            | opcode::GETFIELD => Metamethod::Index,
             opcode::SETTABUP | opcode::SETTABLE | opcode::SETI | opcode::SETFIELD => {
-                tm = Metamethod::NewIndex;
+                Metamethod::NewIndex
             }
-            opcode::MMBIN | opcode::MMBINI | opcode::MMBINK => {
-                tm = Metamethod::from(insn.c());
-            }
-            opcode::UNM => tm = Metamethod::Unm,
-            opcode::BNOT => tm = Metamethod::BNot,
-            opcode::LEN => tm = Metamethod::Len,
-            opcode::CONCAT => tm = Metamethod::Concat,
-            opcode::EQ => tm = Metamethod::Eq,
+            opcode::MMBIN | opcode::MMBINI | opcode::MMBINK => Metamethod::from(insn.c()),
+            opcode::UNM => Metamethod::Unm,
+            opcode::BNOT => Metamethod::BNot,
+            opcode::LEN => Metamethod::Len,
+            opcode::CONCAT => Metamethod::Concat,
+            opcode::EQ => Metamethod::Eq,
             // No cases for OP_EQI and OP_EQK, as they don't call metamethods
-            opcode::LT | opcode::LTI | opcode::GTI => tm = Metamethod::Lt,
-            opcode::LE | opcode::LEI | opcode::GEI => tm = Metamethod::Le,
-            opcode::CLOSE | opcode::RETURN => tm = Metamethod::Close,
+            opcode::LT | opcode::LTI | opcode::GTI => Metamethod::Lt,
+            opcode::LE | opcode::LEI | opcode::GEI => Metamethod::Le,
+            opcode::CLOSE | opcode::RETURN => Metamethod::Close,
             _ => return None,
-        }
+        };
         Some(("metamethod", tm.static_name()).into())
     }
 
@@ -138,7 +133,7 @@ impl<'gc> LuaClosureProto<'gc> {
             let op: OpCode = i.opcode();
             let a = i.a();
 
-            let mut change: bool = false; // True if current instruction changed 'reg'.
+            let change; // True if current instruction changed 'reg'.
             match op {
                 OpCode::LoadNil => {
                     // Set registers from 'a' to 'a+b'.
@@ -263,7 +258,7 @@ impl<'gc> LuaClosureProto<'gc> {
             .and_then(|abs| {
                 let i = match abs.binary_search_by_key(&pc, |i| i.pc) {
                     Ok(i) => i,
-                    Err(i) => i.checked_sub(1).unwrap_or(0),
+                    Err(i) => i.saturating_sub(1),
                 };
                 abs.get(i).filter(|abs| abs.pc <= pc).copied()
             })
@@ -281,7 +276,7 @@ impl<'gc> LuaClosureProto<'gc> {
             .take_while(|l| l.pc.start <= pc)
             .filter(|l| pc < l.pc.end)
             .find(|_| {
-                ln = ln.checked_sub(1).unwrap_or(0);
+                ln = ln.saturating_sub(1);
                 ln == 0
             })?;
         item.name.as_str().ok()
@@ -290,6 +285,6 @@ impl<'gc> LuaClosureProto<'gc> {
 
 impl LuaFrame {
     pub(crate) fn last_pc(&self) -> usize {
-        self.pc.checked_sub(1).unwrap_or(0)
+        self.pc.saturating_sub(1)
     }
 }

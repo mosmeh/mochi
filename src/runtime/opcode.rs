@@ -128,6 +128,7 @@ impl OpCode {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum OpMode {
     ABC,
     ABx,

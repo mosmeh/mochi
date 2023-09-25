@@ -303,7 +303,6 @@ impl<'gc> CodeGenerator<'gc> {
             .last_mut()
             .ok_or(CodegenError::BreakOutsideLoop)?
             .break_label
-            .clone()
         {
             Ok(label)
         } else {
@@ -322,11 +321,14 @@ impl<'gc> CodeGenerator<'gc> {
     }
 
     fn pop_loop(&mut self) -> Result<(), CodegenError> {
-        self.loops
+        if let Some(l) = self
+            .loops
             .pop()
             .ok_or(CodegenError::MismatchedBlock)?
             .break_label
-            .map(|l| self.place_label_here(l));
+        {
+            self.place_label_here(l)
+        }
         Ok(())
     }
 
