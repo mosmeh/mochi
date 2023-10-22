@@ -2,7 +2,7 @@
 
 [![build](https://github.com/mosmeh/mochi/workflows/build/badge.svg)](https://github.com/mosmeh/mochi/actions)
 
-Lua runtime
+Lua runtime implemented in Rust
 
 ## Features
 
@@ -16,13 +16,17 @@ Lua runtime
 
 ```sh
 # run script
-cargo run --release foo.lua bar baz
+cargo run foo.lua bar baz
 
 # launch REPL
-cargo run --release
+cargo run
 
-# compile source code
-cargo run --release compile foo.lua -o luac.out
+# compile source code with mochi
+cargo run compile foo.lua -o luac.out
 # and run bytecode with PUC-Rio Lua
 lua luac.out
+
+# and vice versa
+luac -o luac.out foo.lua
+cargo run luac.out
 ```

@@ -1,0 +1,13 @@
+- [ ] Improve the API of GC
+  - The GC, inspired by the design of [gc-arena](https://github.com/kyren/gc-arena), is awkward to use. The continuation based design makes it difficult to call Lua functions from Rust code.
+- [ ] Implement more standard library functions
+  - Because of the problem in GC, some parts of standard library are tricky to implement. For example:
+    - coercion of sting to number when trying to perform arithmetic operations on number and string (e.g. `1 + '2'`)
+    - `string.find`, `string.match`, `table.sort`, etc.
+- [ ] Complete bytecode VM
+  - To-be-closed variables
+  - Edge cases of arithmetic operations
+- [ ] Complete codegen
+  - Proper variable scopes, debug info, etc.
+- [ ] Add tests
+  - We should run [the official tests](https://github.com/lua/lua/tree/6baee9ef9d5657ab582c8a4b9f885ec58ed502d0/testes) in CI. Because we haven't implemented all the functionalities yet, we have to comment out some parts of the tests.
