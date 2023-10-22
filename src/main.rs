@@ -11,7 +11,7 @@ use std::{fs::File, io::BufWriter, path::PathBuf};
 
 #[cfg(all(feature = "jemalloc", not(target_env = "msvc")))]
 #[global_allocator]
-static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[derive(Debug, Parser)]
 #[command(name = "mochi", version, about, args_conflicts_with_subcommands = true)]
