@@ -1,7 +1,7 @@
 use super::{opcode::OpCode, Instruction, LuaFrame, Metamethod, Vm};
 use crate::types::{AbsLineInfo, LuaClosureProto, LuaThread, Value};
 
-pub(crate) struct Name<'a> {
+pub struct Name<'a> {
     pub kind: &'static str,
     pub name: &'a str,
 }
@@ -217,7 +217,7 @@ impl<'gc> LuaClosureProto<'gc> {
             .unwrap_or("??")
     }
 
-    fn upvalue_name(&self, _upvalue: usize) -> Option<&str> {
+    const fn upvalue_name(&self, _upvalue: usize) -> Option<&str> {
         // TODO: fetch name from upvalue
         None
     }
@@ -286,7 +286,7 @@ impl<'gc> LuaClosureProto<'gc> {
 }
 
 impl LuaFrame {
-    pub fn last_pc(&self) -> usize {
+    pub const fn last_pc(&self) -> usize {
         self.pc.saturating_sub(1)
     }
 }

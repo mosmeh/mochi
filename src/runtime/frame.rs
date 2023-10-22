@@ -5,7 +5,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub(crate) enum Frame<'gc> {
+pub enum Frame<'gc> {
     Lua(LuaFrame),
     Native {
         bottom: usize,
@@ -23,7 +23,7 @@ pub(crate) enum Frame<'gc> {
 }
 
 impl<'gc> Frame<'gc> {
-    pub fn as_lua(&self) -> Option<&LuaFrame> {
+    pub const fn as_lua(&self) -> Option<&LuaFrame> {
         match self {
             Self::Lua(f) => Some(f),
             _ => None,
@@ -45,7 +45,7 @@ unsafe impl GarbageCollect for Frame<'_> {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct LuaFrame {
+pub struct LuaFrame {
     pub bottom: usize,
     pub base: usize,
     pub pc: usize,
@@ -53,7 +53,7 @@ pub(crate) struct LuaFrame {
 }
 
 impl LuaFrame {
-    pub fn new(bottom: usize) -> Self {
+    pub const fn new(bottom: usize) -> Self {
         Self {
             bottom,
             base: bottom + 1,
@@ -63,7 +63,7 @@ impl LuaFrame {
     }
 }
 
-pub(crate) struct ContinuationFrame<'gc, R> {
+pub struct ContinuationFrame<'gc, R> {
     pub bottom: usize,
     pub continuation: Option<Continuation<'gc, R>>,
 }

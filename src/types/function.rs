@@ -87,10 +87,10 @@ pub enum LineRange {
 }
 
 impl LineRange {
-    pub fn base_line(&self) -> u32 {
+    pub const fn base_line(&self) -> u32 {
         match self {
-            LineRange::File => 1,
-            LineRange::Lines(r) => *r.start(),
+            Self::File => 1,
+            Self::Lines(r) => *r.start(),
         }
     }
 }

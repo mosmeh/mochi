@@ -155,7 +155,7 @@ pub struct OpProperties {
 
 impl OpProperties {
     const fn new(mm: u8, ot: u8, it: u8, t: u8, a: u8, mode: OpMode) -> Self {
-        OpProperties {
+        Self {
             mode,
             calls_metamethod: mm != 0,
             is_out_top: ot != 0,

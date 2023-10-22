@@ -160,7 +160,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
             Token::Function => Ok(Statement::Function(self.parse_func_statement()?)),
             Token::Local => {
                 self.expect(Token::Local)?;
-                Ok(if let Some(Token::Function) = self.lexer.peek()? {
+                Ok(if self.lexer.peek()? == Some(&Token::Function) {
                     Statement::LocalFunction(self.parse_func_statement()?)
                 } else {
                     Statement::LocalVariable(self.parse_local_variable_statement()?)
@@ -415,7 +415,7 @@ impl<'gc, R: Read> Parser<'gc, R> {
 
     fn parse_sub_expr(&mut self, min_priority: usize) -> Result<Expression<'gc>, ErrorKind> {
         const UNARY_PRIORITY: usize = 12;
-        fn binary_priority(op: BinaryOp) -> (usize, usize) {
+        const fn binary_priority(op: BinaryOp) -> (usize, usize) {
             match op {
                 BinaryOp::Add | BinaryOp::Sub => (10, 10),
                 BinaryOp::Mul | BinaryOp::Mod => (11, 11),

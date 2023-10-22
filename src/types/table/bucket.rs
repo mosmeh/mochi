@@ -57,7 +57,7 @@ impl<'gc> Bucket<'gc> {
         self.key_tag == Tag::String && unsafe { self.key_payload.string } == key
     }
 
-    pub fn has_next(&self) -> bool {
+    pub const fn has_next(&self) -> bool {
         self.has_next
     }
 

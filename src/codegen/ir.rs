@@ -104,7 +104,7 @@ impl From<ConstantIndex8> for RkIndex {
 }
 
 impl RkIndex {
-    fn to_c_and_k(&self) -> (u8, bool) {
+    const fn to_c_and_k(&self) -> (u8, bool) {
         match self {
             Self::Register(r) => (r.0, false),
             Self::Constant(c) => (c.0, true),
@@ -846,7 +846,7 @@ pub(super) fn lower_ir<'gc>(
 }
 
 impl UnaryOp {
-    fn opcode(&self) -> OpCode {
+    const fn opcode(&self) -> OpCode {
         match self {
             Self::Unm => OpCode::Unm,
             Self::Not => OpCode::Not,

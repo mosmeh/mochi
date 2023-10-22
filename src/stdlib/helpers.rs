@@ -43,15 +43,15 @@ pub struct Argument<'gc> {
 }
 
 impl<'gc> Argument<'gc> {
-    pub fn is_present(&self) -> bool {
+    pub const fn is_present(&self) -> bool {
         !matches!(self.value, Some(Value::Nil) | None)
     }
 
-    pub fn is_none(&self) -> bool {
+    pub const fn is_none(&self) -> bool {
         self.value.is_none()
     }
 
-    pub fn get(&self) -> Option<Value<'gc>> {
+    pub const fn get(&self) -> Option<Value<'gc>> {
         self.value
     }
 

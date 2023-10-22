@@ -96,7 +96,7 @@ impl<'gc, R: Read> Lexer<'gc, R> {
         Ok(self.peeked.get(1))
     }
 
-    pub fn lineno(&self) -> usize {
+    pub const fn lineno(&self) -> usize {
         self.inner.lineno
     }
 }
@@ -570,14 +570,14 @@ impl<'gc, R: Read> LexerInner<'gc, R> {
     }
 }
 
-fn is_newline(ch: u8) -> bool {
+const fn is_newline(ch: u8) -> bool {
     ch == b'\n' || ch == b'\r'
 }
 
-fn is_lua_alphabetic(ch: u8) -> bool {
+const fn is_lua_alphabetic(ch: u8) -> bool {
     ch.is_ascii_alphabetic() || ch == b'_'
 }
 
-fn is_lua_alphanumeric(ch: u8) -> bool {
+const fn is_lua_alphanumeric(ch: u8) -> bool {
     ch.is_ascii_alphanumeric() || ch == b'_'
 }

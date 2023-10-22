@@ -44,7 +44,7 @@ unsafe impl GarbageCollect for BoxedString {
 }
 
 impl BoxedString {
-    pub fn as_bytes(&self) -> &[u8] {
+    pub const fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 }

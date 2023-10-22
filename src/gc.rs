@@ -520,7 +520,7 @@ unsafe impl<T: GarbageCollect> GarbageCollect for Gc<'_, T> {
 }
 
 impl<T: GarbageCollect> Gc<'_, T> {
-    fn new(ptr: GcPtr<T>) -> Self {
+    const fn new(ptr: GcPtr<T>) -> Self {
         Self {
             ptr,
             phantom: PhantomData,
@@ -531,7 +531,7 @@ impl<T: GarbageCollect> Gc<'_, T> {
         self.ptr.as_ptr() == other.ptr.as_ptr()
     }
 
-    pub fn as_ptr(&self) -> *const T {
+    pub const fn as_ptr(&self) -> *const T {
         let gc_box = unsafe { self.ptr.as_ref() };
         &gc_box.value as *const T
     }
@@ -550,7 +550,7 @@ unsafe impl<T: GarbageCollect> GarbageCollect for GcRefCell<T> {
 }
 
 impl<T: GarbageCollect> GcRefCell<T> {
-    fn new(value: T) -> Self {
+    const fn new(value: T) -> Self {
         Self(RefCell::new(value))
     }
 }

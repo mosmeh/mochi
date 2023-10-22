@@ -328,7 +328,7 @@ pub(super) fn modf(m: Number, n: Number) -> Number {
     }
 }
 
-pub(super) fn shl(x: Integer, y: Integer) -> Integer {
+pub(super) const fn shl(x: Integer, y: Integer) -> Integer {
     const BITS: Integer = Integer::BITS as Integer;
     if y <= -BITS || BITS <= y {
         0
@@ -339,7 +339,7 @@ pub(super) fn shl(x: Integer, y: Integer) -> Integer {
     }
 }
 
-pub(super) fn shr(x: Integer, y: Integer) -> Integer {
+pub(super) const fn shr(x: Integer, y: Integer) -> Integer {
     shl(x, y.wrapping_neg())
 }
 

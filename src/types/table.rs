@@ -241,7 +241,7 @@ impl<'gc> Table<'gc> {
         false
     }
 
-    pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
+    pub const fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
         self.metatable
     }
 
@@ -253,7 +253,7 @@ impl<'gc> Table<'gc> {
     }
 
     pub fn lua_len(&self) -> Integer {
-        if let Some(Value::Nil) = self.array.last() {
+        if self.array.last() == Some(&Value::Nil) {
             let mut i = 0;
             let mut j = self.array.len();
             while j - i > 1 {
@@ -480,7 +480,7 @@ impl<'gc> Table<'gc> {
         let mut num_positive = 0;
 
         // array part
-        match self.array.get(0) {
+        match self.array.first() {
             Some(Value::Nil) => (),
             Some(_) => {
                 bins[0] = 1;

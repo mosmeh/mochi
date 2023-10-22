@@ -18,7 +18,7 @@ macro_rules! metamethods {
         impl Metamethod {
             pub const COUNT: usize = crate::count!($($variant)*);
 
-            pub fn name(&self) -> &'static str {
+            pub const fn name(&self) -> &'static str {
                 match self {
                     $(Self::$variant => $name,)*
                 }

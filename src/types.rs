@@ -39,7 +39,7 @@ macro_rules! types {
         impl Type {
             pub const COUNT: usize = crate::count!($($variant)*);
 
-            pub fn name(&self) -> &'static str {
+            pub const fn name(&self) -> &'static str {
                 match self {
                     $(Self::$variant => $name,)*
                 }
@@ -234,7 +234,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn ty(&self) -> Type {
+    pub const fn ty(&self) -> Type {
         match self {
             Self::Nil => Type::Nil,
             Self::Boolean(_) => Type::Boolean,
@@ -249,11 +249,11 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn is_nil(&self) -> bool {
+    pub const fn is_nil(&self) -> bool {
         matches!(self, Value::Nil)
     }
 
-    pub fn to_boolean(&self) -> bool {
+    pub const fn to_boolean(&self) -> bool {
         !matches!(self, Value::Nil | Value::Boolean(false))
     }
 
@@ -266,7 +266,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn to_number_without_string_coercion(&self) -> Option<Number> {
+    pub const fn to_number_without_string_coercion(&self) -> Option<Number> {
         match self {
             Self::Number(x) => Some(*x),
             Self::Integer(x) => Some(*x as Number),
@@ -319,7 +319,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_table(&self) -> Option<GcCell<'gc, Table<'gc>>> {
+    pub const fn as_table(&self) -> Option<GcCell<'gc, Table<'gc>>> {
         if let Self::Table(x) = self {
             Some(*x)
         } else {
@@ -343,7 +343,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_lua_string(&self) -> Option<&LuaString<'gc>> {
+    pub const fn as_lua_string(&self) -> Option<&LuaString<'gc>> {
         if let Self::String(x) = self {
             Some(x)
         } else {
@@ -367,7 +367,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn as_thread(&self) -> Option<GcCell<'gc, LuaThread<'gc>>> {
+    pub const fn as_thread(&self) -> Option<GcCell<'gc, LuaThread<'gc>>> {
         if let Self::Thread(x) = self {
             Some(*x)
         } else {
@@ -517,7 +517,7 @@ fn fmt_number<W: std::io::Write>(writer: &mut W, x: Number) -> std::io::Result<(
 
     s = s.trim_end_with(|ch| ch == '0');
     writer.write_all(s)?;
-    if let Some(b'.') = s.last() {
+    if s.last() == Some(&b'.') {
         writer.write_all(b"0")?;
     }
     Ok(())

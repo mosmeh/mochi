@@ -8,7 +8,7 @@ pub struct Address(pub usize);
 
 impl Instruction {
     /// iABC
-    pub fn from_a_b_c_k(opcode: OpCode, a: u8, b: u8, c: u8, k: bool) -> Self {
+    pub const fn from_a_b_c_k(opcode: OpCode, a: u8, b: u8, c: u8, k: bool) -> Self {
         Self(
             opcode as u32
                 | (a as u32) << 7

@@ -88,7 +88,7 @@ impl<'gc> LuaThread<'gc> {
 }
 
 #[derive(Debug)]
-pub(crate) enum ThreadStatus {
+pub enum ThreadStatus {
     Resumable,
     Unresumable,
     Error(ErrorKind),

@@ -233,7 +233,7 @@ fn string_upper<'gc>(
     Ok(Action::Return(vec![gc.allocate_string(upper).into()]))
 }
 
-fn indices_to_range(i: Integer, j: Integer, len: Integer) -> Range<usize> {
+const fn indices_to_range(i: Integer, j: Integer, len: Integer) -> Range<usize> {
     let start = match i {
         1.. => i - 1,
         0 => 0,

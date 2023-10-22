@@ -47,7 +47,7 @@ impl From<LuaFile> for FileHandle {
 }
 
 impl FileHandle {
-    pub fn is_open(&self) -> bool {
+    pub const fn is_open(&self) -> bool {
         self.0.is_some()
     }
 

@@ -137,11 +137,11 @@ impl<'gc> Vm<'gc> {
         }
     }
 
-    pub fn registry(&self) -> GcCell<'gc, Table<'gc>> {
+    pub const fn registry(&self) -> GcCell<'gc, Table<'gc>> {
         self.registry
     }
 
-    pub fn main_thread(&self) -> GcCell<'gc, LuaThread<'gc>> {
+    pub const fn main_thread(&self) -> GcCell<'gc, LuaThread<'gc>> {
         self.main_thread
     }
 
@@ -152,7 +152,7 @@ impl<'gc> Vm<'gc> {
         }
     }
 
-    pub fn globals(&self) -> GcCell<'gc, Table<'gc>> {
+    pub const fn globals(&self) -> GcCell<'gc, Table<'gc>> {
         self.globals
     }
 
@@ -191,7 +191,7 @@ impl<'gc> Vm<'gc> {
         Ok(closure)
     }
 
-    pub fn metamethod_name(&self, metamethod: Metamethod) -> LuaString<'gc> {
+    pub const fn metamethod_name(&self, metamethod: Metamethod) -> LuaString<'gc> {
         self.metamethod_names[metamethod as usize]
     }
 

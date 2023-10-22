@@ -5,7 +5,7 @@ use crate::{
 
 pub const MAX_UTF8: u32 = 0x7fffffff;
 
-pub fn is_utf8_continuation_byte(b: u8) -> bool {
+pub const fn is_utf8_continuation_byte(b: u8) -> bool {
     b & 0xc0 == 0x80
 }
 
@@ -61,12 +61,12 @@ pub fn decode_utf8<B: AsRef<[u8]>>(bytes: B) -> Option<(u32, usize)> {
     (res <= MAX_UTF8 && res >= LIMITS[count]).then_some((res, count + 1))
 }
 
-pub fn is_lua_whitespace(ch: u8) -> bool {
+pub const fn is_lua_whitespace(ch: u8) -> bool {
     // u8::is_ascii_whitespace + 0xb
     matches!(ch, b'\t' | b'\n' | 0xc | b'\r' | b' ' | 0xb)
 }
 
-pub fn trim_whitespaces(bytes: &[u8]) -> &[u8] {
+pub const fn trim_whitespaces(bytes: &[u8]) -> &[u8] {
     let mut slice = bytes;
     while let [first, rest @ ..] = slice {
         if is_lua_whitespace(*first) {
@@ -85,7 +85,7 @@ pub fn trim_whitespaces(bytes: &[u8]) -> &[u8] {
     slice
 }
 
-pub fn parse_hex_digit(ch: u8) -> Option<u8> {
+pub const fn parse_hex_digit(ch: u8) -> Option<u8> {
     match ch {
         b'0'..=b'9' => Some(ch - b'0'),
         b'a'..=b'f' => Some(ch - b'a' + 10),
@@ -121,7 +121,7 @@ pub fn parse_positive_hex_float<S: AsRef<[u8]>>(s: S) -> Option<Number> {
     let mut has_dot = false;
     let mut num_significant_digits = 0;
     let mut has_non_significant_digit = false;
-    let mut mantissa = 0.0;
+    let mut mantissa = 0.0f64;
     let mut shift = 0;
     let mut iter = s.as_ref().iter().peekable();
 
@@ -138,7 +138,7 @@ pub fn parse_positive_hex_float<S: AsRef<[u8]>>(s: S) -> Option<Number> {
                     has_non_significant_digit = true;
                 } else if num_significant_digits < MAX_NUM_SIGNIFICANT_DIGITS {
                     num_significant_digits += 1;
-                    mantissa = mantissa * 16.0 + parse_hex_digit(ch).unwrap() as Number;
+                    mantissa = mantissa.mul_add(16.0, parse_hex_digit(ch).unwrap() as Number);
                 } else {
                     shift += 1;
                 }

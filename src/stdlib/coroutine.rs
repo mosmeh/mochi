@@ -187,7 +187,7 @@ impl std::fmt::Display for CoroutineStatus {
 }
 
 impl CoroutineStatus {
-    fn name(&self) -> &'static str {
+    const fn name(&self) -> &'static str {
         match self {
             Self::Running => "running",
             Self::Suspended => "suspended",

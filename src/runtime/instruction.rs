@@ -22,47 +22,47 @@ impl Instruction {
         OpCode::from(self.raw_opcode() as u8)
     }
 
-    pub fn raw_opcode(&self) -> u32 {
+    pub const fn raw_opcode(&self) -> u32 {
         self.0 & 0x7f
     }
 
-    pub fn a(&self) -> usize {
+    pub const fn a(&self) -> usize {
         ((self.0 >> 7) & 0xff) as usize
     }
 
-    pub fn b(&self) -> usize {
+    pub const fn b(&self) -> usize {
         (self.0 >> 16 & 0xff) as usize
     }
 
-    pub fn sb(&self) -> i16 {
+    pub const fn sb(&self) -> i16 {
         self.b() as i16 - OFFSET_SB
     }
 
-    pub fn c(&self) -> u8 {
+    pub const fn c(&self) -> u8 {
         (self.0 >> 24) as u8
     }
 
-    pub fn sc(&self) -> i16 {
+    pub const fn sc(&self) -> i16 {
         self.c() as i16 - OFFSET_SC
     }
 
-    pub fn k(&self) -> bool {
+    pub const fn k(&self) -> bool {
         ((self.0 >> 15) & 1) != 0
     }
 
-    pub fn bx(&self) -> usize {
+    pub const fn bx(&self) -> usize {
         (self.0 >> 15) as usize
     }
 
-    pub fn sbx(&self) -> i32 {
+    pub const fn sbx(&self) -> i32 {
         (self.0 >> 15) as i32 - OFFSET_SBX
     }
 
-    pub fn ax(&self) -> usize {
+    pub const fn ax(&self) -> usize {
         (self.0 >> 7) as usize
     }
 
-    pub fn sj(&self) -> i32 {
+    pub const fn sj(&self) -> i32 {
         (self.0 >> 7) as i32 - OFFSET_SJ
     }
 }

@@ -280,7 +280,7 @@ fn utf8_offset<'gc>(
     Ok(Action::Return(vec![result]))
 }
 
-fn is_valid_unicode_char(i: u32) -> bool {
+const fn is_valid_unicode_char(i: u32) -> bool {
     char::from_u32(i).is_some()
 }
 

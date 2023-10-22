@@ -34,7 +34,7 @@ impl<'gc> UserData<'gc> {
         self.data.downcast_mut()
     }
 
-    pub fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
+    pub const fn metatable(&self) -> Option<GcCell<'gc, Table<'gc>>> {
         self.metatable
     }
 

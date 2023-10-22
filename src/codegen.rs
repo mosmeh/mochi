@@ -186,7 +186,7 @@ impl From<ProtoIndex> for LazyRValue<'_> {
 }
 
 impl LazyRValue<'_> {
-    fn may_have_multiple_values(&self) -> bool {
+    const fn may_have_multiple_values(&self) -> bool {
         match self {
             Self::FunctionCall {
                 may_return_multiple_values,
